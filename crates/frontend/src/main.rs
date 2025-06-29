@@ -1,47 +1,68 @@
-use shared::{BACKEND_PORT, CLIENT_TIMEOUT, BackendRequest, BackendResponse};
+use shared::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT};
 use bincode;
-use tokio::net::TcpStream;
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tokio_stream::StreamExt;
-use futures_util::SinkExt;
-use tokio::time;
+use std::net::TcpStream;
+use std::io::{Read, Write};
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    let mut stream = connect_to_backend();
+
+    send_ping(&mut stream);
+    send_init_colony(&mut stream);
+}
+
+fn connect_to_backend() -> TcpStream {
     let addr = format!("127.0.0.1:{}", BACKEND_PORT);
-    match TcpStream::connect(&addr).await {
-        Ok(socket) => {
-            println!("[FO] Connected to backend at {}", addr);
-            let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
-            // Send BackendRequest::Ping
-            let ping = BackendRequest::Ping;
-            let encoded = bincode::serialize(&ping).expect("Failed to serialize BackendRequest");
-            if let Err(e) = framed.send(encoded.into()).await {
-                println!("[FO] Failed to send PingRequest: {}", e);
-                return;
-            }
-            // Wait for BackendResponse with timeout
-            let response = time::timeout(CLIENT_TIMEOUT, framed.next()).await;
-            match response {
-                Ok(Some(Ok(bytes))) => {
-                    match bincode::deserialize::<BackendResponse>(&bytes) {
-                        Ok(BackendResponse::Ping) => println!("[FO] Received PingResponse"),
-                        Err(e) => println!("[FO] Failed to deserialize BackendResponse: {}", e),
-                    }
-                }
-                Ok(Some(Err(e))) => {
-                    println!("[FO] Error reading response: {}", e);
-                }
-                Ok(None) => {
-                    println!("[FO] Connection closed by server");
-                }
-                Err(_) => {
-                    println!("[FO] Timed out waiting for server response");
-                }
-            }
-        }
-        Err(e) => {
-            println!("[FO] Failed to connect to backend: {}", e);
+    let stream = TcpStream::connect(&addr).expect("Failed to connect to backend");
+    stream
+        .set_read_timeout(Some(CLIENT_TIMEOUT))
+        .expect("set_read_timeout call failed");
+    stream
+}
+
+fn send_ping(stream: &mut TcpStream) {
+    let ping = BackendRequest::Ping;
+    send_message(stream, &ping);
+
+    if let Some(response) = receive_message::<BackendResponse>(stream) {
+        match response {
+            BackendResponse::Ping => println!("[FO] Received PingResponse"),
+            _ => println!("[FO] Unexpected response"),
         }
     }
+}
+
+fn send_init_colony(stream: &mut TcpStream) {
+    let init = BackendRequest::InitColony(InitColonyRequest { width: 500, height: 500 });
+    send_message(stream, &init);
+
+    if let Some(response) = receive_message::<BackendResponse>(stream) {
+        match response {
+            BackendResponse::InitColony => println!("[FO] Received InitColony response"),
+            _ => println!("[FO] Unexpected response"),
+        }
+    }
+}
+
+// Helper to send a length-prefixed message
+fn send_message<T: serde::Serialize>(stream: &mut TcpStream, msg: &T) {
+    let encoded = bincode::serialize(msg).expect("Failed to serialize message");
+    let len = (encoded.len() as u32).to_be_bytes();
+    stream.write_all(&len).expect("Failed to write length");
+    stream.write_all(&encoded).expect("Failed to write message");
+}
+
+// Helper to receive a length-prefixed message
+fn receive_message<T: serde::de::DeserializeOwned>(stream: &mut TcpStream) -> Option<T> {
+    let mut len_buf = [0u8; 4];
+    if stream.read_exact(&mut len_buf).is_err() {
+        println!("[FO] Failed to read message length");
+        return None;
+    }
+    let len = u32::from_be_bytes(len_buf) as usize;
+    let mut buf = vec![0u8; len];
+    if stream.read_exact(&mut buf).is_err() {
+        println!("[FO] Failed to read message body");
+        return None;
+    }
+    bincode::deserialize(&buf).ok()
 } 
