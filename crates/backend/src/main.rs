@@ -2,7 +2,7 @@ use tokio::net::TcpListener;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::{BACKEND_PORT, BackendRequest, BackendResponse, PingResponse};
+use shared::{BACKEND_PORT, BackendRequest, BackendResponse};
 use bincode;
 
 async fn handle_client(socket: tokio::net::TcpStream) {
@@ -10,10 +10,10 @@ async fn handle_client(socket: tokio::net::TcpStream) {
     while let Some(Ok(bytes)) = framed.next().await {
         // Try to deserialize a BackendRequest
         match bincode::deserialize::<BackendRequest>(&bytes) {
-            Ok(BackendRequest::Ping(_ping)) => {
+            Ok(BackendRequest::Ping) => {
                 println!("[BE] Received PingRequest");
                 // Respond with BackendResponse::Ping
-                let response = BackendResponse::Ping(PingResponse);
+                let response = BackendResponse::Ping;
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
                     println!("[BE] Failed to send PingResponse: {}", e);
