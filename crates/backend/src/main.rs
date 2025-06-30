@@ -22,7 +22,7 @@ async fn handle_client(socket: tokio::net::TcpStream) {
             }
             Ok(BackendRequest::InitColony(req)) => {
                 println!("[BE] Received InitColonyRequest: width={}, height={}", req.width, req.height);
-                ColonySubGrid::instance().lock().unwrap().init_colony(&req);
+                ColonySubGrid::instance().init_colony(&req);
                 let response = BackendResponse::InitColony;
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
@@ -38,9 +38,6 @@ async fn handle_client(socket: tokio::net::TcpStream) {
 
 #[tokio::main]
 async fn main() {
-    // Initialize the ColonySubGrid singleton
-    ColonySubGrid::instance().lock().unwrap().init();
-
     let addr = format!("127.0.0.1:{}", BACKEND_PORT);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
     println!("[BE] Listening on {}", addr);
