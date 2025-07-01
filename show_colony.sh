@@ -1,0 +1,1 @@
+cargo run -p frontend && open output/colony.png

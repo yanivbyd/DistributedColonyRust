@@ -24,7 +24,9 @@ async fn handle_client(socket: tokio::net::TcpStream) {
             }
             Ok(BackendRequest::InitColony(req)) => {
                 println!("[BE] Received InitColonyRequest: width={}, height={}", req.width, req.height);
-                ColonySubGrid::init_colony(&req);
+                if !ColonySubGrid::is_initialized() {
+                    ColonySubGrid::init_colony(&req);
+                }
                 let response = BackendResponse::InitColony;
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
