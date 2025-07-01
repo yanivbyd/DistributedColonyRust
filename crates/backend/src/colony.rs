@@ -32,15 +32,20 @@ impl ColonySubGrid {
     }
 
     pub fn get_sub_image(&self, req: &GetSubImageRequest) -> Vec<Color> {
-        let mut result = Vec::new();
+        if !(0 <= req.x && 0 <= req.y && req.width > 0 && req.height > 0 && req.x + req.width <= self.width && req.y + req.height <= self.height) {
+            return Vec::new();
+        }
+    
+        let expected_len = (req.width * req.height) as usize;
+        let mut result = Vec::with_capacity(expected_len);
+    
         for y in req.y..(req.y + req.height) {
             for x in req.x..(req.x + req.width) {
-                if y >= 0 && y < self.height && x >= 0 && x < self.width {
-                    let idx = y as usize * self.width as usize + x as usize;
-                    result.push(self.grid[idx]);
-                }
+                let idx = y as usize * self.width as usize + x as usize;
+                result.push(self.grid[idx]);
             }
         }
         result
     }
+        
 }
