@@ -4,7 +4,7 @@ use shared::{InitColonyRequest, Color};
 pub struct ColonySubGrid {
     pub width: i32,
     pub height: i32,
-    pub grid: Vec<Vec<Color>>,
+    pub grid: Vec<Color>,
 }
 
 #[allow(static_mut_refs)]
@@ -26,7 +26,7 @@ impl ColonySubGrid {
             COLONY_SUBGRID = Some(ColonySubGrid {
                 width: req.width,
                 height: req.height,
-                grid: vec![vec![Color { red: 255, green: 255, blue: 255 }; req.width as usize]; req.height as usize],
+                grid: vec![Color { red: 255, green: 255, blue: 255 }; (req.width * req.height) as usize],
             });
         }
     }
