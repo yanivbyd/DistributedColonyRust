@@ -22,6 +22,37 @@ static COLONY_SUBGRID: OnceLock<Mutex<ColonySubGrid>> = OnceLock::new();
 const NUM_RANDOM_COLORS: usize = 50;
 const NEIGHBOR_OFFSETS: [(isize, isize); 4] = [(-1,0), (1,0), (0,-1), (0,1)];
 
+// Precompute all 24 permutations of NEIGHBOR_OFFSETS at compile time
+const NEIGHBOR_PERMUTATIONS: [[(isize, isize); 4]; 24] = {
+    let perms = [
+        [(-1,0), (1,0), (0,-1), (0,1)],
+        [(-1,0), (1,0), (0,1), (0,-1)],
+        [(-1,0), (0,-1), (1,0), (0,1)],
+        [(-1,0), (0,-1), (0,1), (1,0)],
+        [(-1,0), (0,1), (1,0), (0,-1)],
+        [(-1,0), (0,1), (0,-1), (1,0)],
+        [ (1,0), (-1,0), (0,-1), (0,1)],
+        [ (1,0), (-1,0), (0,1), (0,-1)],
+        [ (1,0), (0,-1), (-1,0), (0,1)],
+        [ (1,0), (0,-1), (0,1), (-1,0)],
+        [ (1,0), (0,1), (-1,0), (0,-1)],
+        [ (1,0), (0,1), (0,-1), (-1,0)],
+        [ (0,-1), (-1,0), (1,0), (0,1)],
+        [ (0,-1), (-1,0), (0,1), (1,0)],
+        [ (0,-1), (1,0), (-1,0), (0,1)],
+        [ (0,-1), (1,0), (0,1), (-1,0)],
+        [ (0,-1), (0,1), (-1,0), (1,0)],
+        [ (0,-1), (0,1), (1,0), (-1,0)],
+        [ (0,1), (-1,0), (1,0), (0,-1)],
+        [ (0,1), (-1,0), (0,-1), (1,0)],
+        [ (0,1), (1,0), (-1,0), (0,-1)],
+        [ (0,1), (1,0), (0,-1), (-1,0)],
+        [ (0,1), (0,-1), (-1,0), (1,0)],
+        [ (0,1), (0,-1), (1,0), (-1,0)],
+    ];
+    perms
+};
+
 impl ColonySubGrid {
     pub fn instance() -> std::sync::MutexGuard<'static, ColonySubGrid> {
         COLONY_SUBGRID
@@ -63,27 +94,28 @@ impl ColonySubGrid {
         let mut rng = SmallRng::from_entropy();
         let width = self.width as usize;
         let height = self.height as usize;
-        let original_grid = self.grid.clone();
         if self.grid.is_empty() { return; }
-        let tick_bit = original_grid[0].tick_bit;
+        let tick_bit = self.grid[0].tick_bit;
         let next_bit = !tick_bit;
+        let mut offsets = &NEIGHBOR_PERMUTATIONS[rng.gen_range(0..NEIGHBOR_PERMUTATIONS.len())];
         for y in 0..height {
             for x in 0..width {
                 let idx = y * width + x;
-                if original_grid[idx].tick_bit != tick_bit {
+                if self.grid[idx].tick_bit != tick_bit {
                     continue;
                 }
-                let my_color = original_grid[idx].color;
-                // Shuffle neighbor offsets
-                let mut offsets = NEIGHBOR_OFFSETS.to_vec();
-                offsets.shuffle(&mut rng);
+                if idx % 50 == 0 {
+                    offsets = &NEIGHBOR_PERMUTATIONS[rng.gen_range(0..NEIGHBOR_PERMUTATIONS.len())];
+                }
+
+                let my_color = self.grid[idx].color;
                 for (dx, dy) in offsets.iter() {
                     let nx = x as isize + dx;
                     let ny = y as isize + dy;
                     if nx >= 0 && nx < width as isize && ny >= 0 && ny < height as isize {
                         let nidx = ny as usize * width + nx as usize;
-                        let neighbor = original_grid[nidx].color;
-                        if neighbor.red == 255 && neighbor.green == 255 && neighbor.blue == 255 && original_grid[nidx].tick_bit == tick_bit {
+                        let neighbor = &self.grid[nidx];
+                        if neighbor.color.red == 255 && neighbor.color.green == 255 && neighbor.color.blue == 255 && neighbor.tick_bit == tick_bit {
                             self.grid[nidx].color = my_color;
                             self.grid[nidx].tick_bit = next_bit;
                             break;
