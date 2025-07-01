@@ -10,4 +10,6 @@ tokio-util = { version = "0.7", features = ["codec"] }
 tokio-stream = "0.1"
 bincode = "1.3"
 futures-util = { version = "0.3", features = ["sink"] }
-rand = { version = "0.8", features = ["small_rng"] } 
+rand = { version = "0.8", features = ["small_rng"] }
+prometheus = "0.13"
+lazy_static = "1.4" 

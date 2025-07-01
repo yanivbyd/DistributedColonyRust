@@ -2,7 +2,7 @@ use tokio::net::TcpListener;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::{BACKEND_PORT, BackendRequest, BackendResponse};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetSubImageResponse};
 use bincode;
 mod colony;
 mod ticker;
@@ -36,7 +36,7 @@ async fn handle_client(socket: tokio::net::TcpStream) {
             Ok(BackendRequest::GetSubImage(req)) => {
                 println!("[BE] Received GetSubImageRequest: x={}, y={}, width={}, height={}", req.x, req.y, req.width, req.height);
                 let colors = ColonySubGrid::instance().get_sub_image(&req);
-                let response = BackendResponse::GetSubImage(shared::GetSubImageResponse { colors });
+                let response = BackendResponse::GetSubImage(GetSubImageResponse { colors });
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
                     println!("[BE] Failed to send GetSubImage response: {}", e);
@@ -51,6 +51,7 @@ async fn handle_client(socket: tokio::net::TcpStream) {
 
 #[tokio::main]
 async fn main() {
+    shared::metrics::start_metrics_endpoint();
     ticker::start_ticker();
     let addr = format!("127.0.0.1:{}", BACKEND_PORT);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");

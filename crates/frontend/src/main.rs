@@ -1,4 +1,4 @@
-use shared::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT, GetSubImageRequest};
 use bincode;
 use std::net::TcpStream;
 use std::io::{Read, Write};
@@ -54,13 +54,13 @@ fn send_init_colony(stream: &mut TcpStream) {
 }
 
 fn send_get_sub_image(stream: &mut TcpStream, x: i32, y: i32, width: i32, height: i32) {
-    let req = BackendRequest::GetSubImage(shared::GetSubImageRequest { x, y, width, height });
+    let req = BackendRequest::GetSubImage(GetSubImageRequest { x, y, width, height });
     send_message(stream, &req);
 
     if let Some(response) = receive_message::<BackendResponse>(stream) {
         match response {
             BackendResponse::GetSubImage(resp) => {
-                println!("[FO] Received GetSubImage response with {} colors", resp.colors.len());
+                println!("[FO] Received GetSubImage response with {} pixels", resp.colors.len());
                 std::fs::create_dir_all("output").expect("Failed to create output directory");
                 save_colony_as_png(&resp.colors, width as u32, height as u32, "output/colony.png");
                 println!("[FO] Saved sub-image as output/colony.png");

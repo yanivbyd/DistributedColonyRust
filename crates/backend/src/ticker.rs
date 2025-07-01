@@ -1,14 +1,15 @@
-use std::thread;
-use std::time::Duration;
 use crate::colony::ColonySubGrid;
+use shared::metrics::LatencyMonitor;
 
 pub fn start_ticker() {
-    thread::spawn(|| {
+    // Start the ticker thread
+    std::thread::spawn(|| {
         loop {
             if ColonySubGrid::is_initialized() {
+                let _monitor = LatencyMonitor::start("tick_latency_ms");
                 ColonySubGrid::instance().tick();
             }
-            thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
     });
 } 

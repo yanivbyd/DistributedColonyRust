@@ -1,14 +1,20 @@
-use shared::{InitColonyRequest, Color, GetSubImageRequest};
+use shared::be_api::{InitColonyRequest, Color, GetSubImageRequest};
 use std::sync::{Mutex, OnceLock};
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 
+#[derive(Debug, Clone)]
+pub struct Cell {
+    pub color: Color,
+    pub tick_bit: bool,
+}
+
 #[derive(Debug)]
 pub struct ColonySubGrid {
     pub width: i32,
     pub height: i32,
-    pub grid: Vec<Color>,
+    pub grid: Vec<Cell>,
 }
 
 static COLONY_SUBGRID: OnceLock<Mutex<ColonySubGrid>> = OnceLock::new();
@@ -39,11 +45,12 @@ impl ColonySubGrid {
             })
             .collect();
         let grid = (0..(req.width * req.height)).map(|_| {
-            if rng.gen_bool(0.99) {
+            let color = if rng.gen_bool(0.99) {
                 Color { red: 255, green: 255, blue: 255 }
             } else {
                 random_colors[rng.gen_range(0..random_colors.len())]
-            }
+            };
+            Cell { color, tick_bit: false }
         }).collect();
         COLONY_SUBGRID.set(Mutex::new(ColonySubGrid {
             width: req.width,
@@ -57,10 +64,16 @@ impl ColonySubGrid {
         let width = self.width as usize;
         let height = self.height as usize;
         let original_grid = self.grid.clone();
+        if self.grid.is_empty() { return; }
+        let tick_bit = original_grid[0].tick_bit;
+        let next_bit = !tick_bit;
         for y in 0..height {
             for x in 0..width {
                 let idx = y * width + x;
-                let my_color = original_grid[idx];
+                if original_grid[idx].tick_bit != tick_bit {
+                    continue;
+                }
+                let my_color = original_grid[idx].color;
                 // Shuffle neighbor offsets
                 let mut offsets = NEIGHBOR_OFFSETS.to_vec();
                 offsets.shuffle(&mut rng);
@@ -69,13 +82,15 @@ impl ColonySubGrid {
                     let ny = y as isize + dy;
                     if nx >= 0 && nx < width as isize && ny >= 0 && ny < height as isize {
                         let nidx = ny as usize * width + nx as usize;
-                        let neighbor = original_grid[nidx];
-                        if neighbor.red == 255 && neighbor.green == 255 && neighbor.blue == 255 {
-                            self.grid[nidx] = my_color;
+                        let neighbor = original_grid[nidx].color;
+                        if neighbor.red == 255 && neighbor.green == 255 && neighbor.blue == 255 && original_grid[nidx].tick_bit == tick_bit {
+                            self.grid[nidx].color = my_color;
+                            self.grid[nidx].tick_bit = next_bit;
                             break;
                         }
                     }
                 }
+                self.grid[idx].tick_bit = next_bit;
             }
         }
     }
@@ -91,7 +106,7 @@ impl ColonySubGrid {
         for y in req.y..(req.y + req.height) {
             for x in req.x..(req.x + req.width) {
                 let idx = y as usize * self.width as usize + x as usize;
-                result.push(self.grid[idx]);
+                result.push(self.grid[idx].color);
             }
         }
         result

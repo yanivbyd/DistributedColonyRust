@@ -1,4 +1,4 @@
-use shared::Color;
+use shared::be_api::Color;
 use std::path::Path;
 
 pub fn save_colony_as_png(colors: &[Color], width: u32, height: u32, path: &str) {
