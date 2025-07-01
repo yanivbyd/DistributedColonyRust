@@ -2,7 +2,6 @@ use shared::be_api::{InitColonyRequest, Color, GetSubImageRequest};
 use std::sync::{Mutex, OnceLock};
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
-use rand::seq::SliceRandom;
 
 #[derive(Debug, Clone)]
 pub struct Cell {
@@ -20,7 +19,6 @@ pub struct ColonySubGrid {
 static COLONY_SUBGRID: OnceLock<Mutex<ColonySubGrid>> = OnceLock::new();
 
 const NUM_RANDOM_COLORS: usize = 50;
-const NEIGHBOR_OFFSETS: [(isize, isize); 4] = [(-1,0), (1,0), (0,-1), (0,1)];
 
 // Precompute all 24 permutations of NEIGHBOR_OFFSETS at compile time
 const NEIGHBOR_PERMUTATIONS: [[(isize, isize); 4]; 24] = {
@@ -91,15 +89,19 @@ impl ColonySubGrid {
     }
 
     pub fn tick(&mut self) {
+        if self.grid.is_empty() { return; }
         let mut rng = SmallRng::from_entropy();
         let width = self.width as usize;
         let height = self.height as usize;
-        if self.grid.is_empty() { return; }
         let tick_bit = self.grid[0].tick_bit;
         let next_bit = !tick_bit;
         let mut offsets = &NEIGHBOR_PERMUTATIONS[rng.gen_range(0..NEIGHBOR_PERMUTATIONS.len())];
         for y in 0..height {
             for x in 0..width {
+                if rng.gen_bool(0.8) {
+                    // For performance reasons, do only 20% of the work
+                    continue;
+                }
                 let idx = y * width + x;
                 if self.grid[idx].tick_bit != tick_bit {
                     continue;
