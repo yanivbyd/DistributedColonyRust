@@ -5,6 +5,7 @@ use futures_util::SinkExt;
 use shared::{BACKEND_PORT, BackendRequest, BackendResponse};
 use bincode;
 mod colony;
+mod ticker;
 #[allow(dead_code)]
 use colony::ColonySubGrid;
 
@@ -48,6 +49,7 @@ async fn handle_client(socket: tokio::net::TcpStream) {
 
 #[tokio::main]
 async fn main() {
+    ticker::start_ticker();
     let addr = format!("127.0.0.1:{}", BACKEND_PORT);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
     println!("[BE] Listening on {}", addr);

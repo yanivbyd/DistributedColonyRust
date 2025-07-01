@@ -50,7 +50,6 @@ impl ColonySubGrid {
             height: req.height,
             grid,
         })).expect("Failed to initialize ColonySubGrid");
-        Self::instance().tick();
     }
 
     pub fn tick(&mut self) {
@@ -98,4 +97,7 @@ impl ColonySubGrid {
         result
     }
         
+    pub fn is_initialized() -> bool {
+        COLONY_SUBGRID.get().is_some()
+    }
 }

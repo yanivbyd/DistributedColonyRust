@@ -2,6 +2,8 @@ use shared::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, C
 use bincode;
 use std::net::TcpStream;
 use std::io::{Read, Write};
+use std::time::Duration;
+use std::thread;
 mod image_save;
 use image_save::save_colony_as_png;
 
@@ -13,6 +15,8 @@ fn main() {
 
     send_ping(&mut stream);
     send_init_colony(&mut stream);
+    thread::sleep(Duration::from_secs(1));
+
     send_get_sub_image(&mut stream, 0, 0, WIDTH, HEIGHT);
 }
 
