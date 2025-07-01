@@ -90,6 +90,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "futures-util",
+ "rand",
  "shared",
  "tokio",
  "tokio-stream",

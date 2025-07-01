@@ -1,5 +1,7 @@
 use shared::{InitColonyRequest, Color, GetSubImageRequest};
 use std::sync::{Mutex, OnceLock};
+use rand::{Rng, SeedableRng};
+use rand::rngs::SmallRng;
 
 #[derive(Debug)]
 pub struct ColonySubGrid {
@@ -9,6 +11,8 @@ pub struct ColonySubGrid {
 }
 
 static COLONY_SUBGRID: OnceLock<Mutex<ColonySubGrid>> = OnceLock::new();
+
+const NUM_RANDOM_COLORS: usize = 50;
 
 impl ColonySubGrid {
     pub fn instance() -> std::sync::MutexGuard<'static, ColonySubGrid> {
@@ -23,10 +27,26 @@ impl ColonySubGrid {
         if COLONY_SUBGRID.get().is_some() {
             panic!("ColonySubGrid is already initialized!");
         }
+        let mut rng = SmallRng::from_entropy();
+        // Generate 50 random colors
+        let random_colors: Vec<Color> = (0..NUM_RANDOM_COLORS)
+            .map(|_| Color {
+                red: rng.gen_range(0..=255),
+                green: rng.gen_range(0..=255),
+                blue: rng.gen_range(0..=255),
+            })
+            .collect();
+        let grid = (0..(req.width * req.height)).map(|_| {
+            if rng.gen_bool(0.8) {
+                Color { red: 255, green: 255, blue: 255 }
+            } else {
+                random_colors[rng.gen_range(0..random_colors.len())]
+            }
+        }).collect();
         COLONY_SUBGRID.set(Mutex::new(ColonySubGrid {
             width: req.width,
             height: req.height,
-            grid: vec![Color { red: 255, green: 255, blue: 255 }; (req.width * req.height) as usize],
+            grid,
         })).expect("Failed to initialize ColonySubGrid");
     }
 
