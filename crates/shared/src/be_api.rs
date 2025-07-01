@@ -15,16 +15,31 @@ pub struct Color {
 pub enum BackendRequest {
     Ping,
     InitColony(InitColonyRequest),
+    GetSubImage(GetSubImageRequest),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum BackendResponse {
     Ping,
     InitColony,
+    GetSubImage(GetSubImageResponse),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InitColonyRequest {
     pub width: i32,
     pub height: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetSubImageRequest {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetSubImageResponse {
+    pub colors: Vec<Color>,
 }

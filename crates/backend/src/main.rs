@@ -30,6 +30,15 @@ async fn handle_client(socket: tokio::net::TcpStream) {
                     println!("[BE] Failed to send InitColony response: {}", e);
                 }
             }
+            Ok(BackendRequest::GetSubImage(req)) => {
+                println!("[BE] Received GetSubImageRequest: x={}, y={}, width={}, height={}", req.x, req.y, req.width, req.height);
+                let colors = ColonySubGrid::instance().get_sub_image(&req);
+                let response = BackendResponse::GetSubImage(shared::GetSubImageResponse { colors });
+                let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
+                if let Err(e) = framed.send(encoded.into()).await {
+                    println!("[BE] Failed to send GetSubImage response: {}", e);
+                }
+            }
             Err(e) => {
                 println!("[BE] Failed to deserialize BackendRequest: {}", e);
             }

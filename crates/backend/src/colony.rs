@@ -1,6 +1,6 @@
-use shared::{InitColonyRequest, Color};
+use shared::{InitColonyRequest, Color, GetSubImageRequest};
 
-#[allow(dead_code, static_mut_refs)]
+#[allow(static_mut_refs)]
 pub struct ColonySubGrid {
     pub width: i32,
     pub height: i32,
@@ -10,7 +10,7 @@ pub struct ColonySubGrid {
 #[allow(static_mut_refs)]
 static mut COLONY_SUBGRID: Option<ColonySubGrid> = None;
 
-#[allow(dead_code, static_mut_refs)]
+#[allow(static_mut_refs)]
 impl ColonySubGrid {
     pub fn instance() -> &'static mut ColonySubGrid {
         unsafe {
@@ -29,5 +29,18 @@ impl ColonySubGrid {
                 grid: vec![Color { red: 255, green: 255, blue: 255 }; (req.width * req.height) as usize],
             });
         }
+    }
+
+    pub fn get_sub_image(&self, req: &GetSubImageRequest) -> Vec<Color> {
+        let mut result = Vec::new();
+        for y in req.y..(req.y + req.height) {
+            for x in req.x..(req.x + req.width) {
+                if y >= 0 && y < self.height && x >= 0 && x < self.width {
+                    let idx = y as usize * self.width as usize + x as usize;
+                    result.push(self.grid[idx]);
+                }
+            }
+        }
+        result
     }
 }

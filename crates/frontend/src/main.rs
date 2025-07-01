@@ -2,12 +2,18 @@ use shared::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, C
 use bincode;
 use std::net::TcpStream;
 use std::io::{Read, Write};
+mod image_save;
+use image_save::save_colony_as_png;
+
+const WIDTH: i32 = 500;
+const HEIGHT: i32 = 500;
 
 fn main() {
     let mut stream = connect_to_backend();
 
     send_ping(&mut stream);
     send_init_colony(&mut stream);
+    send_get_sub_image(&mut stream, 0, 0, WIDTH, HEIGHT);
 }
 
 fn connect_to_backend() -> TcpStream {
@@ -32,12 +38,29 @@ fn send_ping(stream: &mut TcpStream) {
 }
 
 fn send_init_colony(stream: &mut TcpStream) {
-    let init = BackendRequest::InitColony(InitColonyRequest { width: 500, height: 500 });
+    let init = BackendRequest::InitColony(InitColonyRequest { width: WIDTH, height: HEIGHT });
     send_message(stream, &init);
 
     if let Some(response) = receive_message::<BackendResponse>(stream) {
         match response {
             BackendResponse::InitColony => println!("[FO] Received InitColony response"),
+            _ => println!("[FO] Unexpected response"),
+        }
+    }
+}
+
+fn send_get_sub_image(stream: &mut TcpStream, x: i32, y: i32, width: i32, height: i32) {
+    let req = BackendRequest::GetSubImage(shared::GetSubImageRequest { x, y, width, height });
+    send_message(stream, &req);
+
+    if let Some(response) = receive_message::<BackendResponse>(stream) {
+        match response {
+            BackendResponse::GetSubImage(resp) => {
+                println!("[FO] Received GetSubImage response with {} colors", resp.colors.len());
+                std::fs::create_dir_all("output").expect("Failed to create output directory");
+                save_colony_as_png(&resp.colors, width as u32, height as u32, "output/colony.png");
+                println!("[FO] Saved sub-image as output/colony.png");
+            }
             _ => println!("[FO] Unexpected response"),
         }
     }
