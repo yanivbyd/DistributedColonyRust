@@ -2,6 +2,7 @@ use shared::{InitColonyRequest, Color, GetSubImageRequest};
 use std::sync::{Mutex, OnceLock};
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
+use rand::seq::SliceRandom;
 
 #[derive(Debug)]
 pub struct ColonySubGrid {
@@ -13,6 +14,7 @@ pub struct ColonySubGrid {
 static COLONY_SUBGRID: OnceLock<Mutex<ColonySubGrid>> = OnceLock::new();
 
 const NUM_RANDOM_COLORS: usize = 50;
+const NEIGHBOR_OFFSETS: [(isize, isize); 4] = [(-1,0), (1,0), (0,-1), (0,1)];
 
 impl ColonySubGrid {
     pub fn instance() -> std::sync::MutexGuard<'static, ColonySubGrid> {
@@ -37,7 +39,7 @@ impl ColonySubGrid {
             })
             .collect();
         let grid = (0..(req.width * req.height)).map(|_| {
-            if rng.gen_bool(0.8) {
+            if rng.gen_bool(0.99) {
                 Color { red: 255, green: 255, blue: 255 }
             } else {
                 random_colors[rng.gen_range(0..random_colors.len())]
@@ -48,6 +50,35 @@ impl ColonySubGrid {
             height: req.height,
             grid,
         })).expect("Failed to initialize ColonySubGrid");
+        Self::instance().tick();
+    }
+
+    pub fn tick(&mut self) {
+        let mut rng = SmallRng::from_entropy();
+        let width = self.width as usize;
+        let height = self.height as usize;
+        let original_grid = self.grid.clone();
+        for y in 0..height {
+            for x in 0..width {
+                let idx = y * width + x;
+                let my_color = original_grid[idx];
+                // Shuffle neighbor offsets
+                let mut offsets = NEIGHBOR_OFFSETS.to_vec();
+                offsets.shuffle(&mut rng);
+                for (dx, dy) in offsets.iter() {
+                    let nx = x as isize + dx;
+                    let ny = y as isize + dy;
+                    if nx >= 0 && nx < width as isize && ny >= 0 && ny < height as isize {
+                        let nidx = ny as usize * width + nx as usize;
+                        let neighbor = original_grid[nidx];
+                        if neighbor.red == 255 && neighbor.green == 255 && neighbor.blue == 255 {
+                            self.grid[nidx] = my_color;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn get_sub_image(&self, req: &GetSubImageRequest) -> Vec<Color> {
