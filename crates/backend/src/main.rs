@@ -5,6 +5,7 @@ use futures_util::SinkExt;
 use shared::{BACKEND_PORT, BackendRequest, BackendResponse};
 use bincode;
 mod colony;
+#[allow(dead_code)]
 use colony::ColonySubGrid;
 
 async fn handle_client(socket: tokio::net::TcpStream) {
@@ -22,7 +23,7 @@ async fn handle_client(socket: tokio::net::TcpStream) {
             }
             Ok(BackendRequest::InitColony(req)) => {
                 println!("[BE] Received InitColonyRequest: width={}, height={}", req.width, req.height);
-                ColonySubGrid::instance().init_colony(&req);
+                ColonySubGrid::init_colony(&req);
                 let response = BackendResponse::InitColony;
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
