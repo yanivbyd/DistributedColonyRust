@@ -2,6 +2,7 @@ use shared::be_api::{InitColonyRequest, Color, GetSubImageRequest};
 use std::sync::{Mutex, OnceLock};
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
+use rand::seq::SliceRandom;
 
 #[derive(Debug, Clone)]
 pub struct Cell {
@@ -20,36 +21,28 @@ static COLONY_SUBGRID: OnceLock<Mutex<ColonySubGrid>> = OnceLock::new();
 
 const NUM_RANDOM_COLORS: usize = 50;
 
-// Precompute all 24 permutations of NEIGHBOR_OFFSETS at compile time
-const NEIGHBOR_PERMUTATIONS: [[(isize, isize); 4]; 24] = {
-    let perms = [
-        [(-1,0), (1,0), (0,-1), (0,1)],
-        [(-1,0), (1,0), (0,1), (0,-1)],
-        [(-1,0), (0,-1), (1,0), (0,1)],
-        [(-1,0), (0,-1), (0,1), (1,0)],
-        [(-1,0), (0,1), (1,0), (0,-1)],
-        [(-1,0), (0,1), (0,-1), (1,0)],
-        [ (1,0), (-1,0), (0,-1), (0,1)],
-        [ (1,0), (-1,0), (0,1), (0,-1)],
-        [ (1,0), (0,-1), (-1,0), (0,1)],
-        [ (1,0), (0,-1), (0,1), (-1,0)],
-        [ (1,0), (0,1), (-1,0), (0,-1)],
-        [ (1,0), (0,1), (0,-1), (-1,0)],
-        [ (0,-1), (-1,0), (1,0), (0,1)],
-        [ (0,-1), (-1,0), (0,1), (1,0)],
-        [ (0,-1), (1,0), (-1,0), (0,1)],
-        [ (0,-1), (1,0), (0,1), (-1,0)],
-        [ (0,-1), (0,1), (-1,0), (1,0)],
-        [ (0,-1), (0,1), (1,0), (-1,0)],
-        [ (0,1), (-1,0), (1,0), (0,-1)],
-        [ (0,1), (-1,0), (0,-1), (1,0)],
-        [ (0,1), (1,0), (-1,0), (0,-1)],
-        [ (0,1), (1,0), (0,-1), (-1,0)],
-        [ (0,1), (0,-1), (-1,0), (1,0)],
-        [ (0,1), (0,-1), (1,0), (-1,0)],
-    ];
-    perms
-};
+// 8-neighbor offsets (including diagonals)
+const NEIGHBOR_OFFSETS: [(isize, isize); 8] = [
+    (-1, -1), (0, -1), (1, -1),
+    (-1,  0),          (1,  0),
+    (-1,  1), (0,  1), (1,  1),
+];
+
+// At startup, generate 100 random permutations of NEIGHBOR_OFFSETS
+static NEIGHBOR_PERMUTATIONS: OnceLock<Vec<[ (isize, isize); 8 ]>> = OnceLock::new();
+
+fn get_neighbor_permutations() -> &'static Vec<[ (isize, isize); 8 ]> {
+    NEIGHBOR_PERMUTATIONS.get_or_init(|| {
+        let mut rng = rand::thread_rng();
+        let mut perms = Vec::with_capacity(100);
+        for _ in 0..100 {
+            let mut arr = NEIGHBOR_OFFSETS;
+            arr.shuffle(&mut rng);
+            perms.push(arr);
+        }
+        perms
+    })
+}
 
 impl ColonySubGrid {
     pub fn instance() -> std::sync::MutexGuard<'static, ColonySubGrid> {
@@ -95,11 +88,11 @@ impl ColonySubGrid {
         let height = self.height as usize;
         let tick_bit = self.grid[0].tick_bit;
         let next_bit = !tick_bit;
-        let mut offsets = &NEIGHBOR_PERMUTATIONS[rng.gen_range(0..NEIGHBOR_PERMUTATIONS.len())];
+        let neighbor_perms = get_neighbor_permutations();
+        let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
         for y in 0..height {
             for x in 0..width {
                 if rng.gen_bool(0.8) {
-                    // For performance reasons, do only 20% of the work
                     continue;
                 }
                 let idx = y * width + x;
@@ -107,9 +100,8 @@ impl ColonySubGrid {
                     continue;
                 }
                 if idx % 50 == 0 {
-                    offsets = &NEIGHBOR_PERMUTATIONS[rng.gen_range(0..NEIGHBOR_PERMUTATIONS.len())];
+                    offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
                 }
-
                 let my_color = self.grid[idx].color;
                 for (dx, dy) in offsets.iter() {
                     let nx = x as isize + dx;
