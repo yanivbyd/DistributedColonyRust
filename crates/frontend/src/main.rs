@@ -7,7 +7,7 @@ use std::thread;
 use std::process::Command;
 use indicatif::{ProgressBar, ProgressStyle};
 mod image_save;
-use image_save::save_colony_as_png;
+use image_save::{save_colony_as_png, generate_video_from_frames};
 
 const WIDTH: i32 = 500;
 const HEIGHT: i32 = 500;
@@ -36,12 +36,12 @@ fn main() {
             std::thread::sleep(Duration::from_secs(1));
         }
         pb.finish_with_message("Frames generated");
-        // Use ffmpeg to create video
-        let status = Command::new("ffmpeg")
-            .args(&["-y", "-framerate", "10", "-i", "output/frame_%02d.png", "-c:v", "libx264", "-pix_fmt", "yuv420p", "output/colony_video.mp4"])
-            .status()
-            .expect("Failed to run ffmpeg");
-        if status.success() {
+        // Use helper to create video
+        let video_created = generate_video_from_frames(
+            "output/colony_video.mp4",
+            "output/frame_%02d.png"
+        );
+        if video_created {
             println!("[FO] Video created as output/colony_video.mp4");
         } else {
             eprintln!("[FO] ffmpeg failed");

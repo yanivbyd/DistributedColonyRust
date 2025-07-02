@@ -8,7 +8,7 @@ use rand::seq::SliceRandom;
 pub struct Cell {
     pub color: Color,
     pub tick_bit: bool,
-    pub str: u8    
+    pub strength: u8    
 }
 
 #[derive(Debug)]
@@ -77,7 +77,7 @@ impl ColonySubGrid {
             } else {
                 random_colors[rng.gen_range(0..random_colors.len())]
             };
-            Cell { color, tick_bit: false, str: rng.gen_range(20..255) }
+            Cell { color, tick_bit: false, strength: rng.gen_range(20..255) }
         }).collect();
         COLONY_SUBGRID.set(Mutex::new(ColonySubGrid {
             width: req.width,
@@ -116,7 +116,7 @@ impl ColonySubGrid {
                         let neighbour = ny as usize * width + nx as usize;
                         if self.grid[neighbour].color.is_white() && self.grid[neighbour].tick_bit == tick_bit {
                             self.grid[neighbour].color = self.grid[my_cell].color;
-                            self.grid[neighbour].str = self.grid[my_cell].str;
+                            self.grid[neighbour].strength = self.grid[my_cell].strength;
                             self.grid[neighbour].tick_bit = next_bit;
                             is_done = true;
                             break;
@@ -129,10 +129,10 @@ impl ColonySubGrid {
                     let ny = y as isize + dy;
                     if in_grid_range(width, height, nx, ny) {
                         let neighbour = ny as usize * width + nx as usize;
-                        if self.grid[my_cell].str > self.grid[neighbour].str {
+                        if self.grid[my_cell].strength > self.grid[neighbour].strength {
                             if self.grid[my_cell].color.is_different(&self.grid[neighbour].color) {
                                 self.grid[neighbour].color = self.grid[my_cell].color;
-                                self.grid[neighbour].str = self.grid[my_cell].str;
+                                self.grid[neighbour].strength = self.grid[my_cell].strength;
                                 self.grid[neighbour].tick_bit = next_bit;
                                 is_done = true;
                                 break;
