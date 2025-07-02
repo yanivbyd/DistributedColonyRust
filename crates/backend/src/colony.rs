@@ -77,7 +77,7 @@ impl ColonySubGrid {
             } else {
                 random_colors[rng.gen_range(0..random_colors.len())]
             };
-            Cell { color, tick_bit: false, str: rng.gen_range(20..150) }
+            Cell { color, tick_bit: false, str: rng.gen_range(20..255) }
         }).collect();
         COLONY_SUBGRID.set(Mutex::new(ColonySubGrid {
             width: req.width,
@@ -129,14 +129,14 @@ impl ColonySubGrid {
                     let ny = y as isize + dy;
                     if in_grid_range(width, height, nx, ny) {
                         let neighbour = ny as usize * width + nx as usize;
-                        if (self.grid[my_cell].str > self.grid[neighbour].str) || rng.gen_bool(0.1) {
+                        if self.grid[my_cell].str > self.grid[neighbour].str {
                             if self.grid[my_cell].color.is_different(&self.grid[neighbour].color) {
                                 self.grid[neighbour].color = self.grid[my_cell].color;
                                 self.grid[neighbour].str = self.grid[my_cell].str;
                                 self.grid[neighbour].tick_bit = next_bit;
+                                is_done = true;
+                                break;
                             }
-                            is_done = true;
-                            break;
                         }
                     }
                 }

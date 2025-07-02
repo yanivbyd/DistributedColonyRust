@@ -34,7 +34,7 @@ async fn handle_client(socket: tokio::net::TcpStream) {
                 }
             }
             Ok(BackendRequest::GetSubImage(req)) => {
-                println!("[BE] Received GetSubImageRequest: x={}, y={}, width={}, height={}", req.x, req.y, req.width, req.height);
+                // println!("[BE] Received GetSubImageRequest: x={}, y={}, width={}, height={}", req.x, req.y, req.width, req.height);
                 let colors = ColonySubGrid::instance().get_sub_image(&req);
                 let response = BackendResponse::GetSubImage(GetSubImageResponse { colors });
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
