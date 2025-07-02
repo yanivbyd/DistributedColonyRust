@@ -145,7 +145,7 @@ impl ColonySubGrid {
                 if is_done { continue; }
             }
         }
-        if color_changes <= 5 {
+        if color_changes <= 0 {
             self.meta_changes();
         }
     }

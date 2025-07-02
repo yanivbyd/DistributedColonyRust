@@ -8,6 +8,4 @@ sleep 1
 
 cargo run -p frontend
 
-open output/colony.png
-
 curl http://localhost:9898/metrics

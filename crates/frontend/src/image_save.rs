@@ -35,8 +35,16 @@ pub fn generate_video_from_frames(video_path: &str, frame_pattern: &str) -> bool
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
-    match status {
+    let success = match status {
         Ok(s) if s.success() => true,
         _ => false,
+    };
+    if success {
+        // Remove all frame files using a shell command for simplicity
+        let _ = Command::new("sh")
+            .arg("-c")
+            .arg("rm output/frame_*.png")
+            .status();
     }
+    success
 } 

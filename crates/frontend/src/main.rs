@@ -20,7 +20,7 @@ fn main() {
     thread::sleep(Duration::from_secs(1));
 
     if video_mode {
-        let num_frames = 50;
+        let num_frames = 200;
         let pb = ProgressBar::new(num_frames);
         pb.set_style(ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} frames ({percent}%)")
@@ -31,7 +31,7 @@ fn main() {
         for i in 0..num_frames {
             send_get_sub_image_with_name(&mut stream, 0, 0, WIDTH, HEIGHT, &format!("output/frame_{:02}.png", i), true);
             pb.inc(1);
-            std::thread::sleep(Duration::from_millis(200));
+            std::thread::sleep(Duration::from_millis(500));
         }
         pb.finish_with_message("Frames generated");
         // Use helper to create video
