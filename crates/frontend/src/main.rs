@@ -4,6 +4,8 @@ use std::net::TcpStream;
 use std::io::{Read, Write};
 use std::time::Duration;
 use std::thread;
+use std::process::Command;
+use indicatif::{ProgressBar, ProgressStyle};
 mod image_save;
 use image_save::save_colony_as_png;
 
@@ -11,13 +13,42 @@ const WIDTH: i32 = 500;
 const HEIGHT: i32 = 500;
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let video_mode = args.iter().any(|a| a == "--video");
     let mut stream = connect_to_backend();
 
     send_ping(&mut stream);
     send_init_colony(&mut stream);
     thread::sleep(Duration::from_secs(1));
 
-    send_get_sub_image(&mut stream, 0, 0, WIDTH, HEIGHT);
+    if video_mode {
+        let num_frames = 20;
+        let pb = ProgressBar::new(num_frames);
+        pb.set_style(ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} frames ({percent}%)")
+            .expect("Invalid progress bar template")
+            .progress_chars("#>-")
+        );
+        std::fs::create_dir_all("output").expect("Failed to create output directory");
+        for i in 0..num_frames {
+            send_get_sub_image_with_name(&mut stream, 0, 0, WIDTH, HEIGHT, &format!("output/frame_{:02}.png", i), true);
+            pb.inc(1);
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        pb.finish_with_message("Frames generated");
+        // Use ffmpeg to create video
+        let status = Command::new("ffmpeg")
+            .args(&["-y", "-framerate", "10", "-i", "output/frame_%02d.png", "-c:v", "libx264", "-pix_fmt", "yuv420p", "output/colony_video.mp4"])
+            .status()
+            .expect("Failed to run ffmpeg");
+        if status.success() {
+            println!("[FO] Video created as output/colony_video.mp4");
+        } else {
+            eprintln!("[FO] ffmpeg failed");
+        }
+    } else {
+        send_get_sub_image(&mut stream, 0, 0, WIDTH, HEIGHT);
+    }
 }
 
 fn connect_to_backend() -> TcpStream {
@@ -67,6 +98,26 @@ fn send_get_sub_image(stream: &mut TcpStream, x: i32, y: i32, width: i32, height
             }
             _ => println!("[FO] Unexpected response"),
         }
+    }
+}
+
+fn send_get_sub_image_with_name(stream: &mut TcpStream, x: i32, y: i32, width: i32, height: i32, filename: &str, quiet: bool) {
+    let req = BackendRequest::GetSubImage(GetSubImageRequest { x, y, width, height });
+    send_message(stream, &req);
+
+    if let Some(response) = receive_message::<BackendResponse>(stream) {
+        match response {
+            BackendResponse::GetSubImage(resp) => {
+                save_colony_as_png(&resp.colors, width as u32, height as u32, filename);
+                if !quiet {
+                    println!("[FO] Received GetSubImage response with {} pixels", resp.colors.len());
+                    println!("[FO] Saved sub-image as {}", filename);
+                }
+            }
+            _ => if !quiet { println!("[FO] Unexpected response"); },
+        }
+    } else if !quiet {
+        println!("[FO] Failed to receive GetSubImage response");
     }
 }
 

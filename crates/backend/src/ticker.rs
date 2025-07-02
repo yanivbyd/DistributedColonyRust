@@ -9,7 +9,7 @@ pub fn start_ticker() {
                 let _monitor = LatencyMonitor::start("tick_latency_ms");
                 ColonySubGrid::instance().tick();
             }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            std::thread::sleep(std::time::Duration::from_millis(50));
         }
     });
 } 
