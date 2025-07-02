@@ -98,7 +98,7 @@ impl ColonySubGrid {
         let mut color_changes = 0;
         for y in 0..height {
             for x in 0..width {
-                if rng.gen_bool(0.5) {
+                if rng.gen_bool(0.6) {
                     continue;
                 }
                 let my_cell = y * width + x;
@@ -174,7 +174,9 @@ impl ColonySubGrid {
     pub fn meta_changes(&mut self) {
         let mut rng = SmallRng::from_entropy();
         for cell in self.grid.iter_mut() {
-            cell.strength = rng.gen_range(20..255);
+            if rng.gen_bool(0.5) {
+                cell.strength = rng.gen_range(20..255);
+            }
         }
     }
 }
