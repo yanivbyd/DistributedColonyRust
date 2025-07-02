@@ -11,6 +11,17 @@ pub struct Color {
     pub blue: u8,
 }
 
+impl Color {
+    /// Returns true if the color is white (all RGB components are 255)
+    pub fn is_white(&self) -> bool {
+        self.red == 255 && self.green == 255 && self.blue == 255
+    }
+    /// Returns true if the color is different from another color
+    pub fn is_different(&self, other: &Color) -> bool {
+        self.red != other.red || self.green != other.green || self.blue != other.blue
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum BackendRequest {
     Ping,

@@ -8,6 +8,7 @@ use rand::seq::SliceRandom;
 pub struct Cell {
     pub color: Color,
     pub tick_bit: bool,
+    pub str: u8    
 }
 
 #[derive(Debug)]
@@ -44,6 +45,10 @@ fn get_neighbor_permutations() -> &'static Vec<[ (isize, isize); 8 ]> {
     })
 }
 
+fn in_grid_range(width: usize, height: usize, x: isize, y: isize) -> bool {
+    x >= 0 && x < width as isize && y >= 0 && y < height as isize
+}
+
 impl ColonySubGrid {
     pub fn instance() -> std::sync::MutexGuard<'static, ColonySubGrid> {
         COLONY_SUBGRID
@@ -72,7 +77,7 @@ impl ColonySubGrid {
             } else {
                 random_colors[rng.gen_range(0..random_colors.len())]
             };
-            Cell { color, tick_bit: false }
+            Cell { color, tick_bit: false, str: rng.gen_range(20..50) }
         }).collect();
         COLONY_SUBGRID.set(Mutex::new(ColonySubGrid {
             width: req.width,
@@ -92,31 +97,50 @@ impl ColonySubGrid {
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
         for y in 0..height {
             for x in 0..width {
-                if rng.gen_bool(0.8) {
+                if rng.gen_bool(0.5) {
                     continue;
                 }
-                let idx = y * width + x;
-                if self.grid[idx].tick_bit != tick_bit {
+                let my_cell = y * width + x;
+                if self.grid[my_cell].tick_bit != tick_bit {
                     continue;
                 }
-                if idx % 50 == 0 {
+                self.grid[my_cell].tick_bit = next_bit;
+                if my_cell % 50 == 0 {
                     offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
                 }
-                let my_color = self.grid[idx].color;
+                let mut is_done = false;
                 for (dx, dy) in offsets.iter() {
                     let nx = x as isize + dx;
                     let ny = y as isize + dy;
-                    if nx >= 0 && nx < width as isize && ny >= 0 && ny < height as isize {
-                        let nidx = ny as usize * width + nx as usize;
-                        let neighbor = &self.grid[nidx];
-                        if neighbor.color.red == 255 && neighbor.color.green == 255 && neighbor.color.blue == 255 && neighbor.tick_bit == tick_bit {
-                            self.grid[nidx].color = my_color;
-                            self.grid[nidx].tick_bit = next_bit;
+                    if in_grid_range(width, height, nx, ny) {
+                        let neighbour = ny as usize * width + nx as usize;
+                        if self.grid[neighbour].color.is_white() && self.grid[neighbour].tick_bit == tick_bit {
+                            self.grid[neighbour].color = self.grid[my_cell].color;
+                            self.grid[neighbour].str = self.grid[my_cell].str;
+                            self.grid[neighbour].tick_bit = next_bit;
+                            is_done = true;
                             break;
                         }
                     }
                 }
-                self.grid[idx].tick_bit = next_bit;
+                if is_done { continue; }
+                for (dx, dy) in offsets.iter() {
+                    let nx = x as isize + dx;
+                    let ny = y as isize + dy;
+                    if in_grid_range(width, height, nx, ny) {
+                        let neighbour = ny as usize * width + nx as usize;
+                        if self.grid[my_cell].str > self.grid[neighbour].str {
+                            if self.grid[my_cell].color.is_different(&self.grid[neighbour].color) {
+                                self.grid[neighbour].color = self.grid[my_cell].color;
+                                self.grid[neighbour].str = self.grid[my_cell].str;
+                                self.grid[neighbour].tick_bit = next_bit;
+                            }
+                            is_done = true;
+                            break;
+                        }
+                    }
+                }
+                if is_done { continue; }
             }
         }
     }
