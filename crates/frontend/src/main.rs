@@ -4,7 +4,6 @@ use std::net::TcpStream;
 use std::io::{Read, Write};
 use std::time::Duration;
 use std::thread;
-use std::process::Command;
 use indicatif::{ProgressBar, ProgressStyle};
 mod image_save;
 use image_save::{save_colony_as_png, generate_video_from_frames};
@@ -17,12 +16,11 @@ fn main() {
     let video_mode = args.iter().any(|a| a == "--video");
     let mut stream = connect_to_backend();
 
-    send_ping(&mut stream);
     send_init_colony(&mut stream);
     thread::sleep(Duration::from_secs(1));
 
     if video_mode {
-        let num_frames = 20;
+        let num_frames = 50;
         let pb = ProgressBar::new(num_frames);
         pb.set_style(ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} frames ({percent}%)")
@@ -33,7 +31,7 @@ fn main() {
         for i in 0..num_frames {
             send_get_sub_image_with_name(&mut stream, 0, 0, WIDTH, HEIGHT, &format!("output/frame_{:02}.png", i), true);
             pb.inc(1);
-            std::thread::sleep(Duration::from_secs(1));
+            std::thread::sleep(Duration::from_millis(200));
         }
         pb.finish_with_message("Frames generated");
         // Use helper to create video
@@ -58,18 +56,6 @@ fn connect_to_backend() -> TcpStream {
         .set_read_timeout(Some(CLIENT_TIMEOUT))
         .expect("set_read_timeout call failed");
     stream
-}
-
-fn send_ping(stream: &mut TcpStream) {
-    let ping = BackendRequest::Ping;
-    send_message(stream, &ping);
-
-    if let Some(response) = receive_message::<BackendResponse>(stream) {
-        match response {
-            BackendResponse::Ping => println!("[FO] Received PingResponse"),
-            _ => println!("[FO] Unexpected response"),
-        }
-    }
 }
 
 fn send_init_colony(stream: &mut TcpStream) {

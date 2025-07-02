@@ -1,0 +1,11 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+Write simple, easy-to-read code.
+Avoid code repetition.
+Keep changes minimal and aligned with the prompt.
+Prioritize efficient yet readable code.
+Always build after doing changes, make sure no errors or warnings.
+Do not ask for chnages, always apply without asking.

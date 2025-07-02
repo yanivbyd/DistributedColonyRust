@@ -95,6 +95,7 @@ impl ColonySubGrid {
         let next_bit = !tick_bit;
         let neighbor_perms = get_neighbor_permutations();
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
+        let mut color_changes = 0;
         for y in 0..height {
             for x in 0..width {
                 if rng.gen_bool(0.5) {
@@ -135,6 +136,7 @@ impl ColonySubGrid {
                                 self.grid[neighbour].strength = self.grid[my_cell].strength;
                                 self.grid[neighbour].tick_bit = next_bit;
                                 is_done = true;
+                                color_changes += 1;
                                 break;
                             }
                         }
@@ -142,6 +144,9 @@ impl ColonySubGrid {
                 }
                 if is_done { continue; }
             }
+        }
+        if color_changes <= 5 {
+            self.meta_changes();
         }
     }
 
@@ -164,5 +169,12 @@ impl ColonySubGrid {
         
     pub fn is_initialized() -> bool {
         COLONY_SUBGRID.get().is_some()
+    }
+
+    pub fn meta_changes(&mut self) {
+        let mut rng = SmallRng::from_entropy();
+        for cell in self.grid.iter_mut() {
+            cell.strength = rng.gen_range(20..255);
+        }
     }
 }

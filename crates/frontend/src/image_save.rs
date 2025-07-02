@@ -2,6 +2,7 @@ use shared::be_api::Color;
 use std::path::Path;
 use std::process::Command;
 use std::fs;
+use std::process::Stdio;
 
 pub fn save_colony_as_png(colors: &[Color], width: u32, height: u32, path: &str) {
     use image::{RgbImage, Rgb};
@@ -17,8 +18,22 @@ pub fn save_colony_as_png(colors: &[Color], width: u32, height: u32, path: &str)
 pub fn generate_video_from_frames(video_path: &str, frame_pattern: &str) -> bool {
     // Remove the video file if it exists
     let _ = fs::remove_file(video_path);
+    let output_dir = Path::new("output");
+    let video_file = Path::new(video_path).file_name().unwrap();
+    let frame_file_pattern = Path::new(frame_pattern).file_name().unwrap();
+    let ffmpeg_args = [
+        "-y",
+        "-framerate", "5",
+        "-i", frame_file_pattern.to_str().unwrap(),
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        video_file.to_str().unwrap()
+    ];
     let status = Command::new("ffmpeg")
-        .args(&["-y", "-framerate", "10", "-i", frame_pattern, "-c:v", "libx264", "-pix_fmt", "yuv420p", video_path])
+        .current_dir(output_dir)
+        .args(&ffmpeg_args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status();
     match status {
         Ok(s) if s.success() => true,

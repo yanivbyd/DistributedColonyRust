@@ -15,7 +15,6 @@ async fn handle_client(socket: tokio::net::TcpStream) {
         // Try to deserialize a BackendRequest
         match bincode::deserialize::<BackendRequest>(&bytes) {
             Ok(BackendRequest::Ping) => {
-                println!("[BE] Received PingRequest");
                 let response = BackendResponse::Ping;
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
@@ -23,7 +22,6 @@ async fn handle_client(socket: tokio::net::TcpStream) {
                 }
             }
             Ok(BackendRequest::InitColony(req)) => {
-                println!("[BE] Received InitColonyRequest: width={}, height={}", req.width, req.height);
                 if !ColonySubGrid::is_initialized() {
                     ColonySubGrid::init_colony(&req);
                 }
