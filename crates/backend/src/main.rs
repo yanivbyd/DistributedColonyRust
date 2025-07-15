@@ -4,21 +4,26 @@ use tokio_stream::StreamExt;
 use futures_util::SinkExt;
 use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetSubImageResponse};
 use bincode;
+use shared::logging::{log_startup, init_logging};
+use shared::{log, log_error};
+
 mod colony;
 mod ticker;
 #[allow(dead_code)]
 use colony::ColonyShard;
 
 async fn handle_client(socket: tokio::net::TcpStream) {
+    log!("[BE] handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
     while let Some(Ok(bytes)) = framed.next().await {
+        log!("[BE] handle_client: received bytes");
         // Try to deserialize a BackendRequest
         match bincode::deserialize::<BackendRequest>(&bytes) {
             Ok(BackendRequest::Ping) => {
                 let response = BackendResponse::Ping;
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
-                    println!("[BE] Failed to send PingResponse: {}", e);
+                    log_error!("[BE] Failed to send PingResponse: {}", e);
                 }
             }
             Ok(BackendRequest::InitColony(req)) => {
@@ -28,39 +33,57 @@ async fn handle_client(socket: tokio::net::TcpStream) {
                 let response = BackendResponse::InitColony;
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
-                    println!("[BE] Failed to send InitColony response: {}", e);
+                    log_error!("[BE] Failed to send InitColony response: {}", e);
                 }
             }
             Ok(BackendRequest::GetSubImage(req)) => {
-                // println!("[BE] Received GetSubImageRequest: x={}, y={}, width={}, height={}", req.x, req.y, req.width, req.height);
-                let colors = ColonyShard::instance().get_sub_image(&req);
-                let response = BackendResponse::GetSubImage(GetSubImageResponse { colors });
+                log!("[BE] GetSubImage request: x={}, y={}, w={}, h={}", req.x, req.y, req.width, req.height);
+                let image = ColonyShard::instance().get_sub_image(&req);
+                let response = BackendResponse::GetSubImage(GetSubImageResponse { colors: image });
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
-                    println!("[BE] Failed to send GetSubImage response: {}", e);
+                    log_error!("[BE] Failed to send GetSubImage response: {}", e);
+                } else {
+                    log!("[BE] Sent GetSubImage response");
                 }
             }
             Err(e) => {
-                println!("[BE] Failed to deserialize BackendRequest: {}", e);
+                log_error!("[BE] Failed to deserialize BackendRequest: {}", e);
             }
         }
     }
+    log!("[BE] handle_client: connection closed");
 }
 
 #[tokio::main]
 async fn main() {
+    init_logging("output/logs/be.log");
+    log_startup("BE");
+
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("[PANIC] {}", panic_info);
+        if let Some(location) = panic_info.location() {
+            eprintln!("[PANIC] at {}:{}", location.file(), location.line());
+        }
+        if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            eprintln!("[PANIC] payload: {}", s);
+        }
+        // Rust will print a backtrace automatically if RUST_BACKTRACE=1
+    }));
     shared::metrics::start_metrics_endpoint();
     ticker::start_ticker();
     let addr = format!("127.0.0.1:{}", BACKEND_PORT);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
-    println!("[BE] Listening on {}", addr);
+    log!("[BE] Listening on {}", addr);
 
     loop {
+        log!("[BE] Waiting for connection...");
         match listener.accept().await {
             Ok((socket, _)) => {
+                log!("[BE] Accepted connection");
                 tokio::spawn(handle_client(socket));
             }
-            Err(e) => println!("[BE] Connection failed: {}", e),
+            Err(e) => log_error!("[BE] Connection failed: {}", e),
         }
     }
 } 

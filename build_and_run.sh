@@ -2,6 +2,7 @@
 set -e
 
 pkill -x backend || true
+rm -rf output/logs/*
 
 cargo run -p backend &
 sleep 1

@@ -5,6 +5,8 @@ use std::io::{Read, Write};
 use std::time::Duration;
 use std::thread;
 use indicatif::{ProgressBar, ProgressStyle};
+use shared::logging::{init_logging, log_startup};
+use shared::log;
 mod image_save;
 use image_save::{save_colony_as_png, generate_video_from_frames};
 
@@ -12,6 +14,9 @@ const WIDTH: i32 = 500;
 const HEIGHT: i32 = 500;
 
 fn main() {
+    init_logging("output/logs/fo.log");
+    log_startup("FO");
+    
     let args: Vec<String> = std::env::args().collect();
     let video_mode = args.iter().any(|a| a == "--video");
     let mut stream = connect_to_backend();
@@ -71,6 +76,7 @@ fn send_init_colony(stream: &mut TcpStream) {
 }
 
 fn send_get_sub_image(stream: &mut TcpStream, x: i32, y: i32, width: i32, height: i32) {
+    log!("[FO] GetSubImage request: x={}, y={}, w={}, h={}", x, y, width, height);
     let req = BackendRequest::GetSubImage(GetSubImageRequest { x, y, width, height });
     send_message(stream, &req);
 
@@ -88,6 +94,7 @@ fn send_get_sub_image(stream: &mut TcpStream, x: i32, y: i32, width: i32, height
 }
 
 fn send_get_sub_image_with_name(stream: &mut TcpStream, x: i32, y: i32, width: i32, height: i32, filename: &str, quiet: bool) {
+    log!("[FO] GetSubImage request: x={}, y={}, w={}, h={}, file={}", x, y, width, height, filename);
     let req = BackendRequest::GetSubImage(GetSubImageRequest { x, y, width, height });
     send_message(stream, &req);
 
