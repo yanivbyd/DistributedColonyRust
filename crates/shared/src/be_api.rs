@@ -22,6 +22,14 @@ impl Color {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct Shard {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum BackendRequest {
     Ping,

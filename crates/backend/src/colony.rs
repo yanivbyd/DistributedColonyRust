@@ -1,4 +1,4 @@
-use shared::be_api::{InitColonyRequest, Color, GetSubImageRequest};
+use shared::be_api::{Color, GetSubImageRequest, InitColonyRequest, Shard};
 use std::sync::{Mutex, OnceLock};
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
@@ -12,13 +12,12 @@ pub struct Cell {
 }
 
 #[derive(Debug)]
-pub struct ColonySubGrid {
-    pub width: i32,
-    pub height: i32,
+pub struct ColonyShard {
+    pub shard: Shard,
     pub grid: Vec<Cell>,
 }
 
-static COLONY_SUBGRID: OnceLock<Mutex<ColonySubGrid>> = OnceLock::new();
+static COLONY_SUBGRID: OnceLock<Mutex<ColonyShard>> = OnceLock::new();
 
 const NUM_RANDOM_COLORS: usize = 50;
 
@@ -49,8 +48,8 @@ fn in_grid_range(width: usize, height: usize, x: isize, y: isize) -> bool {
     x >= 0 && x < width as isize && y >= 0 && y < height as isize
 }
 
-impl ColonySubGrid {
-    pub fn instance() -> std::sync::MutexGuard<'static, ColonySubGrid> {
+impl ColonyShard {
+    pub fn instance() -> std::sync::MutexGuard<'static, ColonyShard> {
         COLONY_SUBGRID
             .get()
             .expect("ColonySubGrid is not initialized!")
@@ -79,9 +78,13 @@ impl ColonySubGrid {
             };
             Cell { color, tick_bit: false, strength: rng.gen_range(20..255) }
         }).collect();
-        COLONY_SUBGRID.set(Mutex::new(ColonySubGrid {
-            width: req.width,
-            height: req.height,
+        COLONY_SUBGRID.set(Mutex::new(ColonyShard {
+            shard: Shard {
+                x: 0,
+                y: 0,
+                width: req.width,
+                height: req.height,
+            },
             grid,
         })).expect("Failed to initialize ColonySubGrid");
     }
@@ -89,8 +92,8 @@ impl ColonySubGrid {
     pub fn tick(&mut self) {
         if self.grid.is_empty() { return; }
         let mut rng = SmallRng::from_entropy();
-        let width = self.width as usize;
-        let height = self.height as usize;
+        let width = self.shard.width as usize;
+        let height = self.shard.height as usize;
         let tick_bit = self.grid[0].tick_bit;
         let next_bit = !tick_bit;
         let neighbor_perms = get_neighbor_permutations();
@@ -151,7 +154,8 @@ impl ColonySubGrid {
     }
 
     pub fn get_sub_image(&self, req: &GetSubImageRequest) -> Vec<Color> {
-        if !(0 <= req.x && 0 <= req.y && req.width > 0 && req.height > 0 && req.x + req.width <= self.width && req.y + req.height <= self.height) {
+        if !(0 <= req.x && 0 <= req.y && req.width > 0 && req.height > 0 && 
+            req.x + req.width <= self.shard.width && req.y + req.height <= self.shard.height) {
             return Vec::new();
         }
     
@@ -160,7 +164,7 @@ impl ColonySubGrid {
     
         for y in req.y..(req.y + req.height) {
             for x in req.x..(req.x + req.width) {
-                let idx = y as usize * self.width as usize + x as usize;
+                let idx = y as usize * self.shard.width as usize + x as usize;
                 result.push(self.grid[idx].color);
             }
         }

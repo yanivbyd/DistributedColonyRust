@@ -7,7 +7,7 @@ use bincode;
 mod colony;
 mod ticker;
 #[allow(dead_code)]
-use colony::ColonySubGrid;
+use colony::ColonyShard;
 
 async fn handle_client(socket: tokio::net::TcpStream) {
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
@@ -22,8 +22,8 @@ async fn handle_client(socket: tokio::net::TcpStream) {
                 }
             }
             Ok(BackendRequest::InitColony(req)) => {
-                if !ColonySubGrid::is_initialized() {
-                    ColonySubGrid::init_colony(&req);
+                if !ColonyShard::is_initialized() {
+                    ColonyShard::init_colony(&req);
                 }
                 let response = BackendResponse::InitColony;
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
@@ -33,7 +33,7 @@ async fn handle_client(socket: tokio::net::TcpStream) {
             }
             Ok(BackendRequest::GetSubImage(req)) => {
                 // println!("[BE] Received GetSubImageRequest: x={}, y={}, width={}, height={}", req.x, req.y, req.width, req.height);
-                let colors = ColonySubGrid::instance().get_sub_image(&req);
+                let colors = ColonyShard::instance().get_sub_image(&req);
                 let response = BackendResponse::GetSubImage(GetSubImageResponse { colors });
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
