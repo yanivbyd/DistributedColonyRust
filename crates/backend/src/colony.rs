@@ -51,4 +51,11 @@ impl Colony {
     pub fn get_colony_shard(&self, shard: &Shard) -> Option<&ColonyShard> {
         self.shards.get(shard)
     }
+
+    pub fn is_valid_shard_dimensions(&self, shard: &Shard) -> bool {
+        shard.x >= 0 && shard.y >= 0 &&
+        shard.width > 0 && shard.height > 0 &&
+        shard.x + shard.width <= self._width &&
+        shard.y + shard.height <= self._height
+    }
 }
