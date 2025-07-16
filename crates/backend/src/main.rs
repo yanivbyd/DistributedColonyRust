@@ -2,7 +2,7 @@ use tokio::net::TcpListener;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log, log_error};
@@ -56,6 +56,23 @@ async fn handle_client(socket: tokio::net::TcpStream) {
                     log_error!("[BE] Failed to send GetShardImage response: {}", e);
                 } else {
                     log!("[BE] Sent GetShardImage response");
+                }
+            }
+            Ok(BackendRequest::InitColonyShard(_req)) => {
+                let response = if !Colony::is_initialized() {
+                    BackendResponse::InitColonyShard(InitColonyShardResponse::ColonyNotInitialized)
+                } else {
+                    if Colony::instance().shard.is_some() {
+                        BackendResponse::InitColonyShard(InitColonyShardResponse::ShardAlreadyInitialized)
+                    } else {
+                        BackendResponse::InitColonyShard(InitColonyShardResponse::Ok)
+                    }
+                };
+                let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
+                if let Err(e) = framed.send(encoded.into()).await {
+                    log_error!("[BE] Failed to send InitColonyShard response: {}", e);
+                } else {
+                    log!("[BE] Sent InitColonyShard response");
                 }
             }
             Err(e) => {

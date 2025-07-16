@@ -1,4 +1,4 @@
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT, GetShardImageRequest, GetShardImageResponse, Shard};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT, GetShardImageRequest, GetShardImageResponse, Shard, InitColonyShardRequest, InitColonyShardResponse};
 use bincode;
 use std::net::TcpStream;
 use std::io::{Read, Write};
@@ -26,6 +26,7 @@ fn main() {
 
     send_init_colony(&mut stream);
     thread::sleep(Duration::from_secs(1));
+    send_init_colony_shard(&mut stream, &SINGLE_SHARD);
 
     if video_mode {
         let num_frames = 200;
@@ -74,6 +75,25 @@ fn send_init_colony(stream: &mut TcpStream) {
         match response {
             BackendResponse::InitColony => println!("[FO] Received InitColony response"),
             _ => println!("[FO] Unexpected response"),
+        }
+    }
+}
+
+fn send_init_colony_shard(stream: &mut TcpStream, shard: &Shard) {
+    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard.clone() });
+    send_message(stream, &req);
+    if let Some(response) = receive_message::<BackendResponse>(stream) {
+        match response {
+            BackendResponse::InitColonyShard(InitColonyShardResponse::Ok) => {
+                println!("[FO] Shard initialized");
+            },
+            BackendResponse::InitColonyShard(InitColonyShardResponse::ShardAlreadyInitialized) => {
+                println!("[FO] Shard already initialized");
+            },
+            BackendResponse::InitColonyShard(InitColonyShardResponse::ColonyNotInitialized) => {
+                println!("[FO] Colony not initialized");
+            },
+            _ => println!("[FO] Unexpected response to InitColonyShard"),
         }
     }
 }
