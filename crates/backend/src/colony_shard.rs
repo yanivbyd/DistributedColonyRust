@@ -1,4 +1,4 @@
-use shared::be_api::{Color, GetSubImageRequest, InitColonyRequest, Shard};
+use shared::be_api::{Color, Shard};
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
@@ -41,9 +41,8 @@ pub struct ColonyShard {
 }
 
 impl ColonyShard {
-    pub fn new(req: &InitColonyRequest) -> Self {
+    pub fn randomize_at_start(&mut self) {
         let mut rng = SmallRng::from_entropy();
-        // Generate 50 random colors
         let random_colors: Vec<Color> = (0..NUM_RANDOM_COLORS)
             .map(|_| Color {
                 red: rng.gen_range(0..=255),
@@ -51,24 +50,13 @@ impl ColonyShard {
                 blue: rng.gen_range(0..=255),
             })
             .collect();
-        let grid = (0..(req.width * req.height)).map(|_| {
-            let color = if rng.gen_bool(0.99) {
-                Color { red: 255, green: 255, blue: 255 }
-            } else {
-                random_colors[rng.gen_range(0..random_colors.len())]
-            };
-            Cell { color, tick_bit: false, strength: rng.gen_range(20..255) }
-        }).collect();
 
-        ColonyShard {
-            shard: Shard {
-                x: 0,
-                y: 0,
-                width: req.width,
-                height: req.height,
-            },
-            grid,
-        }
+        for id in 0..self.grid.len() {
+            self.grid[id].strength = rng.gen_range(20..255);
+            if rng.gen_bool(0.99) {
+                self.grid[id].color = random_colors[rng.gen_range(0..random_colors.len())];
+            }
+        }    
     }
 
     pub fn tick(&mut self) {
@@ -133,24 +121,6 @@ impl ColonyShard {
         if color_changes <= 0 {
             self.meta_changes();
         }
-    }
-
-    pub fn get_sub_image(&self, req: &GetSubImageRequest) -> Vec<Color> {
-        if !(0 <= req.x && 0 <= req.y && req.width > 0 && req.height > 0 && 
-            req.x + req.width <= self.shard.width && req.y + req.height <= self.shard.height) {
-            return Vec::new();
-        }
-    
-        let expected_len = (req.width * req.height) as usize;
-        let mut result = Vec::with_capacity(expected_len);
-    
-        for y in req.y..(req.y + req.height) {
-            for x in req.x..(req.x + req.width) {
-                let idx = y as usize * self.shard.width as usize + x as usize;
-                result.push(self.grid[idx].color);
-            }
-        }
-        result
     }
         
     pub fn meta_changes(&mut self) {

@@ -10,8 +10,10 @@ use shared::{log, log_error};
 mod colony;
 mod ticker;
 mod colony_shard;
+mod shard_utils;
 
 use crate::colony::Colony;
+use crate::shard_utils::ShardUtils;
 
 async fn handle_client(socket: tokio::net::TcpStream) {
     log!("[BE] handle_client: new connection");
@@ -38,7 +40,7 @@ async fn handle_client(socket: tokio::net::TcpStream) {
             }
             Ok(BackendRequest::GetSubImage(req)) => {
                 log!("[BE] GetSubImage request: x={}, y={}, w={}, h={}", req.x, req.y, req.width, req.height);
-                let image = Colony::instance().shard.as_ref().unwrap().get_sub_image(&req);
+                let image = ShardUtils::get_sub_image(Colony::instance().shard.as_ref().unwrap(), &req);
                 let response = BackendResponse::GetSubImage(GetSubImageResponse { image });
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {

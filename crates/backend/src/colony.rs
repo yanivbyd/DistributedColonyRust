@@ -2,6 +2,7 @@ use shared::be_api::InitColonyRequest;
 use shared::log;
 use std::sync::{Mutex, OnceLock};
 use crate::colony_shard::ColonyShard;
+use crate::shard_utils::ShardUtils;
 
 #[derive(Debug)]
 pub struct Colony {
@@ -29,7 +30,7 @@ impl Colony {
         COLONY.set(Mutex::new(Colony {
             _width: req.width,
             _height: req.height,
-            shard: Some(ColonyShard::new(req))
+            shard: Some(ShardUtils::new_colony_shard(req))
         })).expect("Failed to initialize ColonySubGrid");
     }
 }
