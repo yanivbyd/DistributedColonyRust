@@ -9,6 +9,7 @@ use shared::{log, log_error};
 
 mod colony;
 mod ticker;
+mod colony_shard;
 
 use crate::colony::Colony;
 
