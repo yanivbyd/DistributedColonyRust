@@ -108,6 +108,7 @@ dependencies = [
  "lazy_static",
  "prometheus",
  "rand",
+ "rayon",
  "shared",
  "tokio",
  "tokio-stream",

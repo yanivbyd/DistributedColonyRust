@@ -1,6 +1,7 @@
 use crate::colony::Colony;
 use shared::metrics::LatencyMonitor;
 use shared::log;
+use rayon::prelude::*;
 
 pub fn start_ticker() {
     std::thread::spawn(move || {
@@ -10,16 +11,15 @@ pub fn start_ticker() {
                 if tick_count == 1 || tick_count % 10 == 0 {
                     log!("[BE] Ticker: tick {}", tick_count);
                 }
-
-                let mut has_shards = false;
-                for colony_shard in Colony::instance().shards.values_mut() {
-                    let _monitor = LatencyMonitor::start("tick_latency_ms");
-                    colony_shard.tick();
-                    has_shards = true;
-                }
-                if has_shards {
+                let mut colony = Colony::instance();
+                if !colony.shards.is_empty() {
                     tick_count += 1;
                 }
+
+                colony.shards.par_iter_mut().for_each(|colony_shard| {
+                    let _ = LatencyMonitor::start("shard_tick_latency_ms");
+                    colony_shard.tick();
+                });
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }

@@ -91,7 +91,7 @@ fn send_init_colony(stream: &mut TcpStream) {
     if let Some(response) = receive_message::<BackendResponse>(stream) {
         match response {
             BackendResponse::InitColony(InitColonyResponse::Ok) => println!("[FO] Colony initialized"),
-            BackendResponse::InitColony(InitColonyResponse::ColonyAlreadyInitialized) => println!("[FO] Colony already initialized"),
+            BackendResponse::InitColony(InitColonyResponse::ColonyAlreadyInitialized) => log!("[FO] Colony already initialized"),
             _ => println!("[FO] Unexpected response"),
         }
     }
