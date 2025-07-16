@@ -5,7 +5,7 @@ use shared::be_api::{Color, Shard};
 pub struct ShardUtils;
 
 impl ShardUtils {
-    pub fn new_colony_shard(shard: Shard) -> ColonyShard {
+pub fn new_colony_shard(shard: &Shard) -> ColonyShard {
         let white_color = Color { red: 255, green: 255, blue: 255 };
         let mut shard = ColonyShard {
             shard: Shard { x: 0, y: 0, width: shard.width, height: shard.height },
