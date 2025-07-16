@@ -39,7 +39,7 @@ async fn handle_client(socket: tokio::net::TcpStream) {
             Ok(BackendRequest::GetSubImage(req)) => {
                 log!("[BE] GetSubImage request: x={}, y={}, w={}, h={}", req.x, req.y, req.width, req.height);
                 let image = Colony::instance().shard.as_ref().unwrap().get_sub_image(&req);
-                let response = BackendResponse::GetSubImage(GetSubImageResponse { colors: image });
+                let response = BackendResponse::GetSubImage(GetSubImageResponse { image });
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
                     log_error!("[BE] Failed to send GetSubImage response: {}", e);

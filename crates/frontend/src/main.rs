@@ -84,9 +84,9 @@ fn send_get_sub_image(stream: &mut TcpStream, x: i32, y: i32, width: i32, height
     if let Some(response) = receive_message::<BackendResponse>(stream) {
         match response {
             BackendResponse::GetSubImage(resp) => {
-                println!("[FO] Received GetSubImage response with {} pixels", resp.colors.len());
+                println!("[FO] Received GetSubImage response with {} pixels", resp.image.len());
                 std::fs::create_dir_all("output").expect("Failed to create output directory");
-                save_colony_as_png(&resp.colors, width as u32, height as u32, "output/colony.png");
+                save_colony_as_png(&resp.image, width as u32, height as u32, "output/colony.png");
                 println!("[FO] Saved sub-image as output/colony.png");
             }
             _ => println!("[FO] Unexpected response"),
@@ -102,9 +102,9 @@ fn send_get_sub_image_with_name(stream: &mut TcpStream, x: i32, y: i32, width: i
     if let Some(response) = receive_message::<BackendResponse>(stream) {
         match response {
             BackendResponse::GetSubImage(resp) => {
-                save_colony_as_png(&resp.colors, width as u32, height as u32, filename);
+                save_colony_as_png(&resp.image, width as u32, height as u32, filename);
                 if !quiet {
-                    println!("[FO] Received GetSubImage response with {} pixels", resp.colors.len());
+                    println!("[FO] Received GetSubImage response with {} pixels", resp.image.len());
                     println!("[FO] Saved sub-image as {}", filename);
                 }
             }

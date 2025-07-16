@@ -60,5 +60,5 @@ pub struct GetSubImageRequest {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetSubImageResponse {
-    pub colors: Vec<Color>,
+    pub image: Vec<Color>,
 }
