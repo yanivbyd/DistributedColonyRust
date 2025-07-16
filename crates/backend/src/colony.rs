@@ -1,4 +1,5 @@
 use shared::be_api::{Color, GetSubImageRequest, InitColonyRequest, Shard};
+use shared::log;
 use std::sync::{Mutex, OnceLock};
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
@@ -12,12 +13,19 @@ pub struct Cell {
 }
 
 #[derive(Debug)]
+pub struct Colony {
+    pub _width: i32,
+    pub _height: i32,
+    pub shard: Option<ColonyShard>,
+}
+
+#[derive(Debug)]
 pub struct ColonyShard {
     pub shard: Shard,
     pub grid: Vec<Cell>,
 }
 
-static COLONY_SUBGRID: OnceLock<Mutex<ColonyShard>> = OnceLock::new();
+static COLONY: OnceLock<Mutex<Colony>> = OnceLock::new();
 
 const NUM_RANDOM_COLORS: usize = 50;
 
@@ -48,19 +56,31 @@ fn in_grid_range(width: usize, height: usize, x: isize, y: isize) -> bool {
     x >= 0 && x < width as isize && y >= 0 && y < height as isize
 }
 
-impl ColonyShard {
-    pub fn instance() -> std::sync::MutexGuard<'static, ColonyShard> {
-        COLONY_SUBGRID
-            .get()
-            .expect("ColonySubGrid is not initialized!")
-            .lock()
-            .expect("Failed to lock ColonySubGrid")
+impl Colony {
+    pub fn instance() -> std::sync::MutexGuard<'static, Colony> {
+        COLONY.get().expect("Colony is not initialized!").lock().expect("Failed to lock Colony")
     }
 
-    pub fn init_colony(req: &InitColonyRequest) {
-        if COLONY_SUBGRID.get().is_some() {
-            panic!("ColonySubGrid is already initialized!");
+    pub fn is_initialized() -> bool {
+        COLONY.get().is_some()
+    }
+
+    pub fn init(req: &InitColonyRequest) {
+        if COLONY.get().is_some() {
+            log!("ColonySubGrid is already initialized!");
+            return;
         }
+        COLONY.set(Mutex::new(Colony {
+            _width: req.width,
+            _height: req.height,
+            shard: Some(ColonyShard::new(req))
+        })).expect("Failed to initialize ColonySubGrid");
+    }
+}
+
+
+impl ColonyShard {
+    pub fn new(req: &InitColonyRequest) -> Self {
         let mut rng = SmallRng::from_entropy();
         // Generate 50 random colors
         let random_colors: Vec<Color> = (0..NUM_RANDOM_COLORS)
@@ -78,7 +98,8 @@ impl ColonyShard {
             };
             Cell { color, tick_bit: false, strength: rng.gen_range(20..255) }
         }).collect();
-        COLONY_SUBGRID.set(Mutex::new(ColonyShard {
+
+        ColonyShard {
             shard: Shard {
                 x: 0,
                 y: 0,
@@ -86,7 +107,7 @@ impl ColonyShard {
                 height: req.height,
             },
             grid,
-        })).expect("Failed to initialize ColonySubGrid");
+        }
     }
 
     pub fn tick(&mut self) {
@@ -171,10 +192,6 @@ impl ColonyShard {
         result
     }
         
-    pub fn is_initialized() -> bool {
-        COLONY_SUBGRID.get().is_some()
-    }
-
     pub fn meta_changes(&mut self) {
         let mut rng = SmallRng::from_entropy();
         for cell in self.grid.iter_mut() {

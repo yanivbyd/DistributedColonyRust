@@ -9,15 +9,14 @@ use shared::{log, log_error};
 
 mod colony;
 mod ticker;
-#[allow(dead_code)]
-use colony::ColonyShard;
+
+use crate::colony::Colony;
 
 async fn handle_client(socket: tokio::net::TcpStream) {
     log!("[BE] handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
     while let Some(Ok(bytes)) = framed.next().await {
         log!("[BE] handle_client: received bytes");
-        // Try to deserialize a BackendRequest
         match bincode::deserialize::<BackendRequest>(&bytes) {
             Ok(BackendRequest::Ping) => {
                 let response = BackendResponse::Ping;
@@ -27,8 +26,8 @@ async fn handle_client(socket: tokio::net::TcpStream) {
                 }
             }
             Ok(BackendRequest::InitColony(req)) => {
-                if !ColonyShard::is_initialized() {
-                    ColonyShard::init_colony(&req);
+                if !Colony::is_initialized() {
+                    Colony::init(&req);
                 }
                 let response = BackendResponse::InitColony;
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
@@ -38,7 +37,7 @@ async fn handle_client(socket: tokio::net::TcpStream) {
             }
             Ok(BackendRequest::GetSubImage(req)) => {
                 log!("[BE] GetSubImage request: x={}, y={}, w={}, h={}", req.x, req.y, req.width, req.height);
-                let image = ColonyShard::instance().get_sub_image(&req);
+                let image = Colony::instance().shard.as_ref().unwrap().get_sub_image(&req);
                 let response = BackendResponse::GetSubImage(GetSubImageResponse { colors: image });
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
