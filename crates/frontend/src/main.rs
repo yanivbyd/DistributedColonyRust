@@ -1,4 +1,4 @@
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT, GetShardImageRequest, GetShardImageResponse, Shard, InitColonyShardRequest, InitColonyShardResponse};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT, GetShardImageRequest, GetShardImageResponse, Shard, InitColonyShardRequest, InitColonyShardResponse, InitColonyResponse};
 use bincode;
 use std::net::TcpStream;
 use std::io::{Read, Write};
@@ -73,7 +73,8 @@ fn send_init_colony(stream: &mut TcpStream) {
 
     if let Some(response) = receive_message::<BackendResponse>(stream) {
         match response {
-            BackendResponse::InitColony => println!("[FO] Received InitColony response"),
+            BackendResponse::InitColony(InitColonyResponse::Ok) => println!("[FO] Colony initialized"),
+            BackendResponse::InitColony(InitColonyResponse::ColonyAlreadyInitialized) => println!("[FO] Colony already initialized"),
             _ => println!("[FO] Unexpected response"),
         }
     }

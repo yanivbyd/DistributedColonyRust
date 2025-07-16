@@ -3,7 +3,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log, log_error};
@@ -21,7 +21,7 @@ type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
 fn call_label(response: &BackendResponse) -> &'static str {
     match response {
         BackendResponse::Ping => "Ping",
-        BackendResponse::InitColony => "InitColony",
+        BackendResponse::InitColony(_) => "InitColony",
         BackendResponse::GetShardImage(_) => "GetShardImage",
         BackendResponse::InitColonyShard(_) => "InitColonyShard",
     }
@@ -62,10 +62,12 @@ async fn handle_ping() -> BackendResponse {
 }
 
 async fn handle_init_colony(req: InitColonyRequest) -> BackendResponse {
-    if !Colony::is_initialized() {
+    if Colony::is_initialized() {
+        BackendResponse::InitColony(InitColonyResponse::ColonyAlreadyInitialized)
+    } else {
         Colony::init(&req);
+        BackendResponse::InitColony(InitColonyResponse::Ok)
     }
-    BackendResponse::InitColony
 }
 
 async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {

@@ -41,7 +41,7 @@ pub enum BackendRequest {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum BackendResponse {
     Ping,
-    InitColony,
+    InitColony(InitColonyResponse),
     GetShardImage(GetShardImageResponse),
     InitColonyShard(InitColonyShardResponse),
 }
@@ -64,6 +64,11 @@ pub enum InitColonyShardResponse {
     ColonyNotInitialized,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub enum InitColonyResponse {
+    Ok,
+    ColonyAlreadyInitialized,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetShardImageRequest {
