@@ -3,6 +3,7 @@ use std::path::Path;
 use std::process::Command;
 use std::fs;
 use std::process::Stdio;
+use shared::be_api::Shard;
 
 pub fn save_colony_as_png(colors: &[Color], width: u32, height: u32, path: &str) {
     use image::{RgbImage, Rgb};
@@ -47,4 +48,30 @@ pub fn generate_video_from_frames(video_path: &str, frame_pattern: &str) -> bool
             .status();
     }
     success
+}
+
+/// Combines a list of shard images (as color vectors) into a single color vector for the full image.
+/// Each image must correspond to its Shard definition in the same order.
+/// Shards must not overlap and must fully cover the output image.
+pub fn combine_shards(
+    images: &[Vec<Color>],
+    shards: &[Shard],
+    full_width: u32,
+    full_height: u32,
+) -> Vec<Color> {
+    let mut combined = vec![Color { red: 0, green: 0, blue: 0 }; (full_width * full_height) as usize];
+    for (img, shard) in images.iter().zip(shards.iter()) {
+        for y in 0..shard.height {
+            for x in 0..shard.width {
+                let global_x = shard.x as u32 + x as u32;
+                let global_y = shard.y as u32 + y as u32;
+                let global_idx = (global_y * full_width + global_x) as usize;
+                let local_idx = (y as u32 * shard.width as u32 + x as u32) as usize;
+                if global_x < full_width && global_y < full_height && local_idx < img.len() {
+                    combined[global_idx] = img[local_idx];
+                }
+            }
+        }
+    }
+    combined
 } 

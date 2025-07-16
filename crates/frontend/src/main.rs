@@ -2,18 +2,24 @@ use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRe
 use bincode;
 use std::net::TcpStream;
 use std::io::{Read, Write};
-use std::time::Duration;
-use std::thread;
-use indicatif::{ProgressBar, ProgressStyle};
 use shared::logging::{init_logging, log_startup, set_panic_hook};
-use shared::log;
+use shared::{log, log_error};
 mod image_save;
-use image_save::{save_colony_as_png, generate_video_from_frames};
+use image_save::{save_colony_as_png, combine_shards};
+use indicatif::{ProgressBar, ProgressStyle};
 
 const WIDTH: i32 = 500;
 const HEIGHT: i32 = 500;
 
-const SINGLE_SHARD: Shard = Shard { x: 0, y: 0, width: WIDTH, height: HEIGHT };
+const HALF_WIDTH: i32 = WIDTH / 2;
+const HALF_HEIGHT: i32 = HEIGHT / 2;
+
+const SHARDS: [Shard; 4] = [
+    Shard { x: 0, y: 0, width: HALF_WIDTH, height: HALF_HEIGHT }, // top-left
+    Shard { x: HALF_WIDTH, y: 0, width: HALF_WIDTH, height: HALF_HEIGHT }, // top-right
+    Shard { x: 0, y: HALF_HEIGHT, width: HALF_WIDTH, height: HALF_HEIGHT }, // bottom-left
+    Shard { x: HALF_WIDTH, y: HALF_HEIGHT, width: HALF_WIDTH, height: HALF_HEIGHT }, // bottom-right
+];
 
 fn main() {
     init_logging("output/logs/fo.log");
@@ -25,12 +31,14 @@ fn main() {
     let mut stream = connect_to_backend();
 
     send_init_colony(&mut stream);
-    send_init_colony_shard(&mut stream, SINGLE_SHARD);
+    for shard in SHARDS.iter() {
+        send_init_colony_shard(&mut stream, *shard);
+    }
 
-    thread::sleep(Duration::from_secs(1));
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     if video_mode {
-        let num_frames = 200;
+        let num_frames = 20;
         let pb = ProgressBar::new(num_frames);
         pb.set_style(ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} frames ({percent}%)")
@@ -38,14 +46,18 @@ fn main() {
             .progress_chars("#>-")
         );
         std::fs::create_dir_all("output").expect("Failed to create output directory");
-        for _i in 0..num_frames {
-            send_get_shard_image(&mut stream, SINGLE_SHARD);
+        for i in 0..num_frames {
+            if let Some(combined) = get_combined_colony_image(&mut stream) {
+                let frame_path = format!("output/frame_{:02}.png", i);
+                save_colony_as_png(&combined, WIDTH as u32, HEIGHT as u32, &frame_path);
+            } else {
+                return;
+            }
             pb.inc(1);
-            std::thread::sleep(Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_millis(500));
         }
         pb.finish_with_message("Frames generated");
-        // Use helper to create video
-        let video_created = generate_video_from_frames(
+        let video_created = image_save::generate_video_from_frames(
             "output/colony_video.mp4",
             "output/frame_%02d.png"
         );
@@ -55,7 +67,11 @@ fn main() {
             eprintln!("[FO] ffmpeg failed");
         }
     } else {
-        send_get_shard_image(&mut stream, SINGLE_SHARD);
+        if let Some(combined) = get_combined_colony_image(&mut stream) {
+            std::fs::create_dir_all("output").expect("Failed to create output directory");
+            save_colony_as_png(&combined, WIDTH as u32, HEIGHT as u32, "output/colony.png");
+            println!("[FO] Saved combined colony image as output/colony.png");
+        }
     }
 }
 
@@ -87,20 +103,20 @@ fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
     if let Some(response) = receive_message::<BackendResponse>(stream) {
         match response {
             BackendResponse::InitColonyShard(InitColonyShardResponse::Ok) => {
-                println!("[FO] Shard initialized");
+                log!("[FO] Shard initialized");
             },
             BackendResponse::InitColonyShard(InitColonyShardResponse::ShardAlreadyInitialized) => {
-                println!("[FO] Shard already initialized");
+                log!("[FO] Shard already initialized");
             },
             BackendResponse::InitColonyShard(InitColonyShardResponse::ColonyNotInitialized) => {
-                println!("[FO] Colony not initialized");
+                log_error!("[FO] Colony not initialized");
             },
             _ => println!("[FO] Unexpected response to InitColonyShard"),
         }
     }
 }
 
-fn send_get_shard_image(stream: &mut TcpStream, shard: Shard) {
+fn get_shard_image_colors(stream: &mut TcpStream, shard: Shard) -> Option<Vec<shared::be_api::Color>> {
     log!("[FO] GetShardImage request: shard=({},{},{},{})", shard.x, shard.y, shard.width, shard.height);
     let req = BackendRequest::GetShardImage(GetShardImageRequest { shard: shard.clone() });
     send_message(stream, &req);
@@ -109,18 +125,35 @@ fn send_get_shard_image(stream: &mut TcpStream, shard: Shard) {
         match response {
             BackendResponse::GetShardImage(resp) => match resp {
                 GetShardImageResponse::Image { image } => {
-                    println!("[FO] Received GetShardImage response with {} pixels", image.len());
-                    std::fs::create_dir_all("output").expect("Failed to create output directory");
-                    save_colony_as_png(&image, shard.width as u32, shard.height as u32, "output/colony.png");
-                    println!("[FO] Saved shard image as output/colony.png");
+                    log!("[FO] Received GetShardImage response with {} pixels", image.len());
+                    Some(image)
                 },
                 GetShardImageResponse::ShardNotAvailable => {
-                    println!("[FO] Shard not available");
+                    log!("[FO] Shard not available");
+                    None
                 }
             },
-            _ => println!("[FO] Unexpected response"),
+            _ => {
+                log_error!("[FO] Unexpected response");
+                None
+            },
+        }
+    } else {
+        None
+    }
+}
+
+fn get_combined_colony_image(stream: &mut TcpStream) -> Option<Vec<shared::be_api::Color>> {
+    let mut images = Vec::with_capacity(SHARDS.len());
+    for shard in SHARDS.iter() {
+        if let Some(colors) = get_shard_image_colors(stream, *shard) {
+            images.push(colors);
+        } else {
+            println!("[FO] Failed to get image for shard: ({},{},{},{})", shard.x, shard.y, shard.width, shard.height);
+            return None;
         }
     }
+    Some(combine_shards(&images, &SHARDS, WIDTH as u32, HEIGHT as u32))
 }
 
 // Helper to send a length-prefixed message
