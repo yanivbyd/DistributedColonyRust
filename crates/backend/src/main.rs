@@ -1,8 +1,9 @@
 use tokio::net::TcpListener;
+use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log, log_error};
@@ -15,72 +16,79 @@ mod shard_utils;
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
 
-async fn handle_client(socket: tokio::net::TcpStream) {
+type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
+
+fn call_label(response: &BackendResponse) -> &'static str {
+    match response {
+        BackendResponse::Ping => "Ping",
+        BackendResponse::InitColony => "InitColony",
+        BackendResponse::GetShardImage(_) => "GetShardImage",
+        BackendResponse::InitColonyShard(_) => "InitColonyShard",
+    }
+}
+
+async fn send_response(framed: &mut FramedStream, response: BackendResponse) {
+    let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
+    let label = call_label(&response);
+    if let Err(e) = framed.send(encoded.into()).await {
+        log_error!("[BE] Failed to send {} response: {}", label, e);
+    } else {
+        log!("[BE] Sent {} response", label);
+    }
+}
+
+async fn handle_client(socket: TcpStream) {
     log!("[BE] handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
     while let Some(Ok(bytes)) = framed.next().await {
         log!("[BE] handle_client: received bytes");
-        match bincode::deserialize::<BackendRequest>(&bytes) {
-            Ok(BackendRequest::Ping) => {
-                let response = BackendResponse::Ping;
-                let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
-                if let Err(e) = framed.send(encoded.into()).await {
-                    log_error!("[BE] Failed to send PingResponse: {}", e);
-                }
-            }
-            Ok(BackendRequest::InitColony(req)) => {
-                if !Colony::is_initialized() {
-                    Colony::init(&req);
-                }
-                let response = BackendResponse::InitColony;
-                let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
-                if let Err(e) = framed.send(encoded.into()).await {
-                    log_error!("[BE] Failed to send InitColony response: {}", e);
-                }
-            }
-            Ok(BackendRequest::GetShardImage(req)) => {
-                log!("[BE] GetShardImage request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
-                let response = {
-                    let colony = Colony::instance();
-                    if let Some(shard) = &colony.shard {
-                        match ShardUtils::get_shard_image(shard, &req.shard) {
-                            Some(image) => BackendResponse::GetShardImage(GetShardImageResponse::Image { image }),
-                            None => BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable),
-                        }
-                    } else {
-                        BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable)
-                    }
-                };
-                let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
-                if let Err(e) = framed.send(encoded.into()).await {
-                    log_error!("[BE] Failed to send GetShardImage response: {}", e);
-                } else {
-                    log!("[BE] Sent GetShardImage response");
-                }
-            }
-            Ok(BackendRequest::InitColonyShard(_req)) => {
-                let response = if !Colony::is_initialized() {
-                    BackendResponse::InitColonyShard(InitColonyShardResponse::ColonyNotInitialized)
-                } else {
-                    if Colony::instance().shard.is_some() {
-                        BackendResponse::InitColonyShard(InitColonyShardResponse::ShardAlreadyInitialized)
-                    } else {
-                        BackendResponse::InitColonyShard(InitColonyShardResponse::Ok)
-                    }
-                };
-                let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
-                if let Err(e) = framed.send(encoded.into()).await {
-                    log_error!("[BE] Failed to send InitColonyShard response: {}", e);
-                } else {
-                    log!("[BE] Sent InitColonyShard response");
-                }
-            }
+        let response = match bincode::deserialize::<BackendRequest>(&bytes) {
+            Ok(BackendRequest::Ping) => handle_ping().await,
+            Ok(BackendRequest::InitColony(req)) => handle_init_colony(req).await,
+            Ok(BackendRequest::GetShardImage(req)) => handle_get_shard_image(req).await,
+            Ok(BackendRequest::InitColonyShard(req)) => handle_init_colony_shard(req).await,
             Err(e) => {
                 log_error!("[BE] Failed to deserialize BackendRequest: {}", e);
+                continue;
             }
-        }
+        };
+        send_response(&mut framed, response).await;
     }
     log!("[BE] handle_client: connection closed");
+}
+
+async fn handle_ping() -> BackendResponse {
+    BackendResponse::Ping
+}
+
+async fn handle_init_colony(req: InitColonyRequest) -> BackendResponse {
+    if !Colony::is_initialized() {
+        Colony::init(&req);
+    }
+    BackendResponse::InitColony
+}
+
+async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {
+    log!("[BE] GetShardImage request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
+    let colony = Colony::instance();
+    if let Some(shard) = &colony.shard {
+        match ShardUtils::get_shard_image(shard, &req.shard) {
+            Some(image) => BackendResponse::GetShardImage(GetShardImageResponse::Image { image }),
+            None => BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable),
+        }
+    } else {
+        BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable)
+    }
+}
+
+async fn handle_init_colony_shard(_: InitColonyShardRequest) -> BackendResponse {
+    if !Colony::is_initialized() {
+        BackendResponse::InitColonyShard(InitColonyShardResponse::ColonyNotInitialized)
+    } else if Colony::instance().shard.is_some() {
+        BackendResponse::InitColonyShard(InitColonyShardResponse::ShardAlreadyInitialized)
+    } else {
+        BackendResponse::InitColonyShard(InitColonyShardResponse::Ok)
+    }
 }
 
 #[tokio::main]
