@@ -44,4 +44,17 @@ macro_rules! log_error {
 
 pub fn log_startup(process_name: &str) {
     log_to_file(&format!("{} Startup", process_name));
+}
+
+pub fn set_panic_hook() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        let msg = match panic_info.payload().downcast_ref::<&str>() {
+            Some(s) => *s,
+            None => "<no message>",
+        };
+        let location = panic_info.location().map(|l| format!("at {}:{}", l.file(), l.line())).unwrap_or_default();
+        log_error!("[PANIC] {} {}", msg, location);
+        // Also print to stderr for visibility
+        eprintln!("[PANIC] {} {}", msg, location);
+    }));
 } 

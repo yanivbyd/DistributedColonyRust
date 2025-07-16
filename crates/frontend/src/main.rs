@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::time::Duration;
 use std::thread;
 use indicatif::{ProgressBar, ProgressStyle};
-use shared::logging::{init_logging, log_startup};
+use shared::logging::{init_logging, log_startup, set_panic_hook};
 use shared::log;
 mod image_save;
 use image_save::{save_colony_as_png, generate_video_from_frames};
@@ -16,6 +16,7 @@ const HEIGHT: i32 = 500;
 fn main() {
     init_logging("output/logs/fo.log");
     log_startup("FO");
+    set_panic_hook();
     
     let args: Vec<String> = std::env::args().collect();
     let video_mode = args.iter().any(|a| a == "--video");

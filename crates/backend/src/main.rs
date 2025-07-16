@@ -4,7 +4,7 @@ use tokio_stream::StreamExt;
 use futures_util::SinkExt;
 use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetSubImageResponse};
 use bincode;
-use shared::logging::{log_startup, init_logging};
+use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log, log_error};
 
 mod colony;
@@ -59,17 +59,7 @@ async fn handle_client(socket: tokio::net::TcpStream) {
 async fn main() {
     init_logging("output/logs/be.log");
     log_startup("BE");
-
-    std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("[PANIC] {}", panic_info);
-        if let Some(location) = panic_info.location() {
-            eprintln!("[PANIC] at {}:{}", location.file(), location.line());
-        }
-        if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
-            eprintln!("[PANIC] payload: {}", s);
-        }
-        // Rust will print a backtrace automatically if RUST_BACKTRACE=1
-    }));
+    set_panic_hook();
     shared::metrics::start_metrics_endpoint();
     ticker::start_ticker();
     let addr = format!("127.0.0.1:{}", BACKEND_PORT);
