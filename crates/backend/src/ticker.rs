@@ -6,7 +6,7 @@ pub fn start_ticker() {
     std::thread::spawn(move || {
         let mut tick_count: u64 = 1;
         loop {
-            if Colony::is_initialized() {
+            if Colony::is_initialized() && Colony::instance().shard.is_some() {
                 let _monitor = LatencyMonitor::start("tick_latency_ms");
                 if tick_count == 1 || tick_count % 10 == 0 {
                     log!("[BE] Ticker: tick {}", tick_count);

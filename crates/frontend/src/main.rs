@@ -25,8 +25,9 @@ fn main() {
     let mut stream = connect_to_backend();
 
     send_init_colony(&mut stream);
+    send_init_colony_shard(&mut stream, SINGLE_SHARD);
+
     thread::sleep(Duration::from_secs(1));
-    send_init_colony_shard(&mut stream, &SINGLE_SHARD);
 
     if video_mode {
         let num_frames = 200;
@@ -38,7 +39,7 @@ fn main() {
         );
         std::fs::create_dir_all("output").expect("Failed to create output directory");
         for _i in 0..num_frames {
-            send_get_shard_image(&mut stream, &SINGLE_SHARD);
+            send_get_shard_image(&mut stream, SINGLE_SHARD);
             pb.inc(1);
             std::thread::sleep(Duration::from_millis(500));
         }
@@ -54,7 +55,7 @@ fn main() {
             eprintln!("[FO] ffmpeg failed");
         }
     } else {
-        send_get_shard_image(&mut stream, &SINGLE_SHARD);
+        send_get_shard_image(&mut stream, SINGLE_SHARD);
     }
 }
 
@@ -80,8 +81,8 @@ fn send_init_colony(stream: &mut TcpStream) {
     }
 }
 
-fn send_init_colony_shard(stream: &mut TcpStream, shard: &Shard) {
-    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard.clone() });
+fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
+    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard });
     send_message(stream, &req);
     if let Some(response) = receive_message::<BackendResponse>(stream) {
         match response {
@@ -99,7 +100,7 @@ fn send_init_colony_shard(stream: &mut TcpStream, shard: &Shard) {
     }
 }
 
-fn send_get_shard_image(stream: &mut TcpStream, shard: &Shard) {
+fn send_get_shard_image(stream: &mut TcpStream, shard: Shard) {
     log!("[FO] GetShardImage request: shard=({},{},{},{})", shard.x, shard.y, shard.width, shard.height);
     let req = BackendRequest::GetShardImage(GetShardImageRequest { shard: shard.clone() });
     send_message(stream, &req);

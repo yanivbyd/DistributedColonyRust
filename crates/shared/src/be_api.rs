@@ -62,6 +62,7 @@ pub enum InitColonyShardResponse {
     Ok,
     ShardAlreadyInitialized,
     ColonyNotInitialized,
+    ShardDimensionsMismatch
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -1,15 +1,15 @@
 use crate::colony_shard::ColonyShard;
 use crate::colony_shard::{Cell};
-use shared::be_api::{Color, InitColonyRequest, Shard};
+use shared::be_api::{Color, Shard};
 
 pub struct ShardUtils;
 
 impl ShardUtils {
-    pub fn new_colony_shard(req: &InitColonyRequest) -> ColonyShard {
+    pub fn new_colony_shard(shard: Shard) -> ColonyShard {
         let white_color = Color { red: 255, green: 255, blue: 255 };
         let mut shard = ColonyShard {
-            shard: Shard { x: 0, y: 0, width: req.width, height: req.height },
-            grid: (0..(req.width * req.height)).map(|_| {
+            shard: Shard { x: 0, y: 0, width: shard.width, height: shard.height },
+            grid: (0..(shard.width * shard.height)).map(|_| {
                 Cell { color: white_color, tick_bit: false, strength: 0 }
             }).collect(),
         };
