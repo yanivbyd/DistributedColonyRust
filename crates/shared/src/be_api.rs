@@ -22,7 +22,7 @@ impl Color {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Shard {
     pub x: i32,
     pub y: i32,
@@ -34,14 +34,14 @@ pub struct Shard {
 pub enum BackendRequest {
     Ping,
     InitColony(InitColonyRequest),
-    GetSubImage(GetSubImageRequest),
+    GetShardImage(GetShardImageRequest),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum BackendResponse {
     Ping,
     InitColony,
-    GetSubImage(GetSubImageResponse),
+    GetShardImage(GetShardImageResponse),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -51,14 +51,12 @@ pub struct InitColonyRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GetSubImageRequest {
-    pub x: i32,
-    pub y: i32,
-    pub width: i32,
-    pub height: i32,
+pub struct GetShardImageRequest {
+    pub shard: Shard,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GetSubImageResponse {
-    pub image: Vec<Color>,
+pub enum GetShardImageResponse {
+    Image { image: Vec<Color> },
+    ShardNotAvailable,
 }

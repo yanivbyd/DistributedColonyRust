@@ -1,4 +1,4 @@
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT, GetSubImageRequest};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT, GetShardImageRequest, GetShardImageResponse, Shard};
 use bincode;
 use std::net::TcpStream;
 use std::io::{Read, Write};
@@ -12,6 +12,8 @@ use image_save::{save_colony_as_png, generate_video_from_frames};
 
 const WIDTH: i32 = 500;
 const HEIGHT: i32 = 500;
+
+const SINGLE_SHARD: Shard = Shard { x: 0, y: 0, width: WIDTH, height: HEIGHT };
 
 fn main() {
     init_logging("output/logs/fo.log");
@@ -34,8 +36,8 @@ fn main() {
             .progress_chars("#>-")
         );
         std::fs::create_dir_all("output").expect("Failed to create output directory");
-        for i in 0..num_frames {
-            send_get_sub_image_with_name(&mut stream, 0, 0, WIDTH, HEIGHT, &format!("output/frame_{:02}.png", i), true);
+        for _i in 0..num_frames {
+            send_get_shard_image(&mut stream, &SINGLE_SHARD);
             pb.inc(1);
             std::thread::sleep(Duration::from_millis(500));
         }
@@ -51,7 +53,7 @@ fn main() {
             eprintln!("[FO] ffmpeg failed");
         }
     } else {
-        send_get_sub_image(&mut stream, 0, 0, WIDTH, HEIGHT);
+        send_get_shard_image(&mut stream, &SINGLE_SHARD);
     }
 }
 
@@ -76,42 +78,26 @@ fn send_init_colony(stream: &mut TcpStream) {
     }
 }
 
-fn send_get_sub_image(stream: &mut TcpStream, x: i32, y: i32, width: i32, height: i32) {
-    log!("[FO] GetSubImage request: x={}, y={}, w={}, h={}", x, y, width, height);
-    let req = BackendRequest::GetSubImage(GetSubImageRequest { x, y, width, height });
+fn send_get_shard_image(stream: &mut TcpStream, shard: &Shard) {
+    log!("[FO] GetShardImage request: shard=({},{},{},{})", shard.x, shard.y, shard.width, shard.height);
+    let req = BackendRequest::GetShardImage(GetShardImageRequest { shard: shard.clone() });
     send_message(stream, &req);
 
     if let Some(response) = receive_message::<BackendResponse>(stream) {
         match response {
-            BackendResponse::GetSubImage(resp) => {
-                println!("[FO] Received GetSubImage response with {} pixels", resp.image.len());
-                std::fs::create_dir_all("output").expect("Failed to create output directory");
-                save_colony_as_png(&resp.image, width as u32, height as u32, "output/colony.png");
-                println!("[FO] Saved sub-image as output/colony.png");
-            }
+            BackendResponse::GetShardImage(resp) => match resp {
+                GetShardImageResponse::Image { image } => {
+                    println!("[FO] Received GetShardImage response with {} pixels", image.len());
+                    std::fs::create_dir_all("output").expect("Failed to create output directory");
+                    save_colony_as_png(&image, shard.width as u32, shard.height as u32, "output/colony.png");
+                    println!("[FO] Saved shard image as output/colony.png");
+                },
+                GetShardImageResponse::ShardNotAvailable => {
+                    println!("[FO] Shard not available");
+                }
+            },
             _ => println!("[FO] Unexpected response"),
         }
-    }
-}
-
-fn send_get_sub_image_with_name(stream: &mut TcpStream, x: i32, y: i32, width: i32, height: i32, filename: &str, quiet: bool) {
-    log!("[FO] GetSubImage request: x={}, y={}, w={}, h={}, file={}", x, y, width, height, filename);
-    let req = BackendRequest::GetSubImage(GetSubImageRequest { x, y, width, height });
-    send_message(stream, &req);
-
-    if let Some(response) = receive_message::<BackendResponse>(stream) {
-        match response {
-            BackendResponse::GetSubImage(resp) => {
-                save_colony_as_png(&resp.image, width as u32, height as u32, filename);
-                if !quiet {
-                    println!("[FO] Received GetSubImage response with {} pixels", resp.image.len());
-                    println!("[FO] Saved sub-image as {}", filename);
-                }
-            }
-            _ => if !quiet { println!("[FO] Unexpected response"); },
-        }
-    } else if !quiet {
-        println!("[FO] Failed to receive GetSubImage response");
     }
 }
 

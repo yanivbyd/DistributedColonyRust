@@ -2,7 +2,7 @@ use tokio::net::TcpListener;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetSubImageResponse};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log, log_error};
@@ -38,15 +38,24 @@ async fn handle_client(socket: tokio::net::TcpStream) {
                     log_error!("[BE] Failed to send InitColony response: {}", e);
                 }
             }
-            Ok(BackendRequest::GetSubImage(req)) => {
-                log!("[BE] GetSubImage request: x={}, y={}, w={}, h={}", req.x, req.y, req.width, req.height);
-                let image = ShardUtils::get_sub_image(Colony::instance().shard.as_ref().unwrap(), &req);
-                let response = BackendResponse::GetSubImage(GetSubImageResponse { image });
+            Ok(BackendRequest::GetShardImage(req)) => {
+                log!("[BE] GetShardImage request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
+                let response = {
+                    let colony = Colony::instance();
+                    if let Some(shard) = &colony.shard {
+                        match ShardUtils::get_shard_image(shard, &req.shard) {
+                            Some(image) => BackendResponse::GetShardImage(GetShardImageResponse::Image { image }),
+                            None => BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable),
+                        }
+                    } else {
+                        BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable)
+                    }
+                };
                 let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
                 if let Err(e) = framed.send(encoded.into()).await {
-                    log_error!("[BE] Failed to send GetSubImage response: {}", e);
+                    log_error!("[BE] Failed to send GetShardImage response: {}", e);
                 } else {
-                    log!("[BE] Sent GetSubImage response");
+                    log!("[BE] Sent GetShardImage response");
                 }
             }
             Err(e) => {

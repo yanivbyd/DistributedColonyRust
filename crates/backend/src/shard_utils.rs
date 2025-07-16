@@ -1,6 +1,6 @@
 use crate::colony_shard::ColonyShard;
 use crate::colony_shard::{Cell};
-use shared::be_api::{Color, GetSubImageRequest, InitColonyRequest, Shard};
+use shared::be_api::{Color, InitColonyRequest, Shard};
 
 pub struct ShardUtils;
 
@@ -17,21 +17,11 @@ impl ShardUtils {
         shard
     }
 
-    pub fn get_sub_image(shard: &ColonyShard, req: &GetSubImageRequest) -> Vec<Color> {
-        if !(0 <= req.x && 0 <= req.y && req.width > 0 && req.height > 0 && 
-            req.x + req.width <= shard.shard.width && req.y + req.height <= shard.shard.height) {
-            return Vec::new();
+    pub fn get_shard_image(shard: &ColonyShard, req_shard: &Shard) -> Option<Vec<Color>> {
+        if shard.shard.x == req_shard.x && shard.shard.y == req_shard.y && shard.shard.width == req_shard.width && shard.shard.height == req_shard.height {
+            Some(shard.grid.iter().map(|cell| cell.color).collect())
+        } else {
+            None
         }
-
-        let expected_len = (req.width * req.height) as usize;
-        let mut result = Vec::with_capacity(expected_len);
-
-        for y in req.y..(req.y + req.height) {
-            for x in req.x..(req.x + req.width) {
-                let idx = y as usize * shard.shard.width as usize + x as usize;
-                result.push(shard.grid[idx].color);
-            }
-        }
-        result
     }
 } 
