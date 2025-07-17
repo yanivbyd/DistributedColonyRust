@@ -8,6 +8,21 @@ use bincode;
 
 pub fn get_colony_retained_image() -> Option<RetainedImage> {
     let shard = Shard { x: 0, y: 0, width: 250, height: 250 };
+    get_shard_retained_image(shard)
+}
+
+pub fn get_all_shard_retained_images() -> Vec<Option<RetainedImage>> {
+    let half = 250;
+    let shards = [
+        Shard { x: 0, y: 0, width: half, height: half }, // top-left
+        Shard { x: half, y: 0, width: half, height: half }, // top-right
+        Shard { x: 0, y: half, width: half, height: half }, // bottom-left
+        Shard { x: half, y: half, width: half, height: half }, // bottom-right
+    ];
+    shards.iter().map(|&shard| get_shard_retained_image(shard)).collect()
+}
+
+fn get_shard_retained_image(shard: Shard) -> Option<RetainedImage> {
     let addr = format!("127.0.0.1:{}", BACKEND_PORT);
     let mut stream = TcpStream::connect(&addr).ok()?;
     let req = BackendRequest::GetShardImage(GetShardImageRequest { shard });
