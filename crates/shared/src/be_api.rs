@@ -36,6 +36,7 @@ pub enum BackendRequest {
     InitColony(InitColonyRequest),
     GetShardImage(GetShardImageRequest),
     InitColonyShard(InitColonyShardRequest),
+    GetColonyInfo(GetColonyInfoRequest),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -44,6 +45,7 @@ pub enum BackendResponse {
     InitColony(InitColonyResponse),
     GetShardImage(GetShardImageResponse),
     InitColonyShard(InitColonyShardResponse),
+    GetColonyInfo(GetColonyInfoResponse),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -80,4 +82,17 @@ pub struct GetShardImageRequest {
 pub enum GetShardImageResponse {
     Image { image: Vec<Color> },
     ShardNotAvailable,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetColonyInfoRequest;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum GetColonyInfoResponse {
+    Ok {
+        width: i32,
+        height: i32,
+        shards: Vec<Shard>,
+    },
+    ColonyNotInitialized,
 }

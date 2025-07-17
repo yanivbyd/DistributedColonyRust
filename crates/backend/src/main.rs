@@ -3,7 +3,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log, log_error};
@@ -24,6 +24,7 @@ fn call_label(response: &BackendResponse) -> &'static str {
         BackendResponse::InitColony(_) => "InitColony",
         BackendResponse::GetShardImage(_) => "GetShardImage",
         BackendResponse::InitColonyShard(_) => "InitColonyShard",
+        BackendResponse::GetColonyInfo(_) => "GetColonyInfo",
     }
 }
 
@@ -47,6 +48,7 @@ async fn handle_client(socket: TcpStream) {
             Ok(BackendRequest::InitColony(req)) => handle_init_colony(req).await,
             Ok(BackendRequest::GetShardImage(req)) => handle_get_shard_image(req).await,
             Ok(BackendRequest::InitColonyShard(req)) => handle_init_colony_shard(req).await,
+            Ok(BackendRequest::GetColonyInfo(req)) => handle_get_colony_info(req).await,
             Err(e) => {
                 log_error!("[BE] Failed to deserialize BackendRequest: {}", e);
                 continue;
@@ -93,6 +95,19 @@ async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {
         }
     } else {
         BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable)
+    }
+}
+
+async fn handle_get_colony_info(_req: GetColonyInfoRequest) -> BackendResponse {
+    if !Colony::is_initialized() {
+        BackendResponse::GetColonyInfo(GetColonyInfoResponse::ColonyNotInitialized)
+    } else {
+        let colony = Colony::instance();
+        BackendResponse::GetColonyInfo(GetColonyInfoResponse::Ok {
+            width: colony._width,
+            height: colony._height,
+            shards: colony.shards.iter().map(|cs| cs.shard).collect(),
+        })
     }
 }
 

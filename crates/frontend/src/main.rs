@@ -1,4 +1,4 @@
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT, GetShardImageRequest, GetShardImageResponse, Shard, InitColonyShardRequest, InitColonyShardResponse, InitColonyResponse};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT, GetShardImageRequest, GetShardImageResponse, Shard, InitColonyShardRequest, InitColonyShardResponse, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse};
 use bincode;
 use std::net::TcpStream;
 use std::io::{Read, Write};
@@ -30,9 +30,26 @@ fn main() {
     let video_mode = args.iter().any(|a| a == "--video");
     let mut stream = connect_to_backend();
 
-    send_init_colony(&mut stream);
+    // Call GetColonyInfo first
+    let colony_info = get_colony_info(&mut stream);
+    let mut initialized_shards: Vec<Shard> = vec![];
+    match colony_info {
+        Some(GetColonyInfoResponse::Ok { width, height, shards }) => {
+            initialized_shards = shards;
+            log!("[FO] Colony already initialized: {}x{}, {} shards", width, height, initialized_shards.len());
+        },
+        Some(GetColonyInfoResponse::ColonyNotInitialized) | None => {
+            send_init_colony(&mut stream);
+        }
+    }
+
+    // Only init shards that are not already initialized
     for shard in SHARDS.iter() {
-        send_init_colony_shard(&mut stream, *shard);
+        if !initialized_shards.contains(shard) {
+            send_init_colony_shard(&mut stream, *shard);
+        } else {
+            log!("[FO] Shard already initialized: ({},{},{},{})", shard.x, shard.y, shard.width, shard.height);
+        }
     }
 
     std::thread::sleep(std::time::Duration::from_secs(1));
@@ -154,6 +171,19 @@ fn get_combined_colony_image(stream: &mut TcpStream) -> Option<Vec<shared::be_ap
         }
     }
     Some(combine_shards(&images, &SHARDS, WIDTH as u32, HEIGHT as u32))
+}
+
+fn get_colony_info(stream: &mut TcpStream) -> Option<GetColonyInfoResponse> {
+    let req = BackendRequest::GetColonyInfo(GetColonyInfoRequest);
+    send_message(stream, &req);
+    if let Some(response) = receive_message::<BackendResponse>(stream) {
+        match response {
+            BackendResponse::GetColonyInfo(info) => Some(info),
+            _ => None,
+        }
+    } else {
+        None
+    }
 }
 
 // Helper to send a length-prefixed message
