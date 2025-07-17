@@ -10,3 +10,5 @@ sleep 1
 cargo run -p frontend
 
 curl http://localhost:9898/metrics
+
+cargo run -p gui

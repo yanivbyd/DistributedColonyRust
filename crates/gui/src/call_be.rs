@@ -6,11 +6,6 @@ use std::net::TcpStream;
 use std::io::{Read, Write};
 use bincode;
 
-pub fn get_colony_retained_image() -> Option<RetainedImage> {
-    let shard = Shard { x: 0, y: 0, width: 250, height: 250 };
-    get_shard_retained_image(shard)
-}
-
 pub fn get_all_shard_retained_images() -> Vec<Option<RetainedImage>> {
     let half = 250;
     let shards = [
