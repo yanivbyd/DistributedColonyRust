@@ -11,7 +11,7 @@ pub struct Cell {
     pub strength: u8    
 }
 
-pub const NUM_RANDOM_COLORS: usize = 50;
+pub const NUM_RANDOM_COLORS: usize = 4;
 
 pub const NEIGHBOR_OFFSETS: [(isize, isize); 8] = [
     (-1, -1), (0, -1), (1, -1),
@@ -52,9 +52,9 @@ impl ColonyShard {
             .collect();
 
         for id in 0..self.grid.len() {
-            self.grid[id].strength = rng.gen_range(20..255);
             if rng.gen_bool(0.99) {
                 self.grid[id].color = random_colors[rng.gen_range(0..random_colors.len())];
+                self.grid[id].strength = rng.gen_range(1..255);
             }
         }    
     }
@@ -68,7 +68,6 @@ impl ColonyShard {
         let next_bit = !tick_bit;
         let neighbor_perms = get_neighbor_permutations();
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
-        let mut color_changes = 0;
         for y in 0..height {
             for x in 0..width {
                 if rng.gen_bool(0.6) {
@@ -104,21 +103,18 @@ impl ColonyShard {
                     if in_grid_range(width, height, nx, ny) {
                         let neighbour = ny as usize * width + nx as usize;
                         if self.grid[my_cell].strength > self.grid[neighbour].strength {
-                            if self.grid[my_cell].color.is_different(&self.grid[neighbour].color) {
-                                self.grid[neighbour].color = self.grid[my_cell].color;
-                                self.grid[neighbour].strength = self.grid[my_cell].strength;
-                                self.grid[neighbour].tick_bit = next_bit;
-                                is_done = true;
-                                color_changes += 1;
-                                break;
-                            }
+                            self.grid[neighbour].color = self.grid[my_cell].color;
+                            self.grid[neighbour].strength = self.grid[my_cell].strength-1;
+                            self.grid[neighbour].tick_bit = next_bit;
+                            is_done = true;
+                            break;
                         }
                     }
                 }
                 if is_done { continue; }
             }
         }
-        if color_changes <= 0 {
+        if rng.gen_bool(0.01) {
             self.meta_changes();
         }
     }
@@ -126,8 +122,8 @@ impl ColonyShard {
     pub fn meta_changes(&mut self) {
         let mut rng = SmallRng::from_entropy();
         for cell in self.grid.iter_mut() {
-            if rng.gen_bool(0.5) {
-                cell.strength = rng.gen_range(20..255);
+            if rng.gen_bool(0.9) {
+                cell.strength = rng.gen_range(1..255);
             }
         }
     }
