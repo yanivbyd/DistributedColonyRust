@@ -2,6 +2,7 @@
 members = [
     "crates/backend",
     "crates/frontend",
-    "crates/shared"
+    "crates/shared",
+    "crates/gui"
 ]
 resolver = "2" 
