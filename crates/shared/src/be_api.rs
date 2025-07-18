@@ -95,7 +95,7 @@ pub struct Cell {
     pub strength: u8,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UpdatedShardContentsRequest {
     pub shard: Shard,
     pub updated_shard: Shard,
