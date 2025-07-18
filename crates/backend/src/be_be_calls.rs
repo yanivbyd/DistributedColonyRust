@@ -1,8 +1,7 @@
 // Responsible for calling other backend servers (BEs) for shard synchronization and communication.
 
 use tokio::net::TcpStream;
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, UpdatedShardContentsRequest, Shard};
-use crate::colony::Colony;
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, UpdatedShardContentsRequest};
 use bincode;
 use shared::{log, log_error};
 use tokio::sync::Mutex;
@@ -36,37 +35,24 @@ async fn ensure_self_stream() -> Option<TcpStream> {
     guard.take()
 }
 
-/// Broadcasts the exported shard border contents to all shards in the colony, sending to ourselves for each.
-pub async fn broadcast_shard_contents_exported(stream: &mut TcpStream, exported: UpdatedShardContentsRequest) {
-    // Collect all target shards first, then drop the guard before any await
-    let target_shards: Vec<Shard> = {
-        let colony = Colony::instance();
-        colony.shards.iter().map(|cs| cs.shard).collect()
-    };
-    for target_shard in target_shards {
-        let mut req_for_target = exported.clone();
-        req_for_target.shard = target_shard;
-        let x = req_for_target.shard.x;
-        let y = req_for_target.shard.y;
-        let w = req_for_target.shard.width;
-        let h = req_for_target.shard.height;
-        let backend_req = BackendRequest::UpdatedShardContents(req_for_target);
-        match bincode::serialize(&backend_req) {
-            Ok(encoded) => {
-                use tokio::io::AsyncWriteExt;
-                let len = (encoded.len() as u32).to_be_bytes();
-                if let Err(e) = stream.write_all(&len).await {
-                    log_error!("[BE-BE] Failed to send length: {}", e);
-                    continue;
-                }
-                if let Err(e) = stream.write_all(&encoded).await {
-                    log_error!("[BE-BE] Failed to send message: {}", e);
-                    continue;
-                }
-                log!("[BE-BE] Broadcasted shard contents to shard ({},{},{},{})", x, y, w, h);
+pub async fn broadcast_shard_contents_exported(exported: UpdatedShardContentsRequest) {
+    let mut stream_opt = ensure_self_stream().await;
+    if let Some(mut stream) = stream_opt.as_mut() {
+        let backend_req = BackendRequest::UpdatedShardContents(exported);
+        match send_be_request(&mut stream, &backend_req).await {
+            Ok(_) => {
+                let x = backend_req.get_shard_x();
+                let y = backend_req.get_shard_y();
+                let w = backend_req.get_shard_width();
+                let h = backend_req.get_shard_height();
+                log!("[BE-BE] Sent shard contents to self ({},{},{},{})", x, y, w, h);
             }
-            Err(e) => log_error!("[BE-BE] Failed to serialize request: {}", e),
+            Err(e) => {
+                log_error!("[BE-BE] Failed to send to self: {}", e);
+            }
         }
+    } else {
+        log_error!("[BE-BE] Could not get or connect self stream for broadcast");
     }
 }
 
@@ -108,5 +94,40 @@ pub async fn ping_be() {
     if remove_stream {
         let mut guard = stream_mutex.lock().await;
         *guard = None;
+    }
+} 
+
+// Helper methods for logging (add below):
+trait BackendRequestShardInfo {
+    fn get_shard_x(&self) -> i32;
+    fn get_shard_y(&self) -> i32;
+    fn get_shard_width(&self) -> i32;
+    fn get_shard_height(&self) -> i32;
+}
+
+impl BackendRequestShardInfo for BackendRequest {
+    fn get_shard_x(&self) -> i32 {
+        match self {
+            BackendRequest::UpdatedShardContents(req) => req.updated_shard.x,
+            _ => 0,
+        }
+    }
+    fn get_shard_y(&self) -> i32 {
+        match self {
+            BackendRequest::UpdatedShardContents(req) => req.updated_shard.y,
+            _ => 0,
+        }
+    }
+    fn get_shard_width(&self) -> i32 {
+        match self {
+            BackendRequest::UpdatedShardContents(req) => req.updated_shard.width,
+            _ => 0,
+        }
+    }
+    fn get_shard_height(&self) -> i32 {
+        match self {
+            BackendRequest::UpdatedShardContents(req) => req.updated_shard.height,
+            _ => 0,
+        }
     }
 } 

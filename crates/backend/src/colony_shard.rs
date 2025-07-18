@@ -4,7 +4,7 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use std::sync::OnceLock;
 
-pub const NUM_RANDOM_COLORS: usize = 4;
+pub const NUM_RANDOM_COLORS: usize = 3;
 
 pub const NEIGHBOR_OFFSETS: [(isize, isize); 8] = [
     (-1, -1), (0, -1), (1, -1),
@@ -57,7 +57,7 @@ impl ColonyShard {
         let mut rng = SmallRng::from_entropy();
         let width = (self.shard.width + 2) as usize;
         let height = (self.shard.height + 2) as usize;
-        let tick_bit = self.grid[0].tick_bit;
+        let tick_bit = self.grid[width+4].tick_bit;
         let next_bit = !tick_bit;
         let neighbor_perms = get_neighbor_permutations();
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];

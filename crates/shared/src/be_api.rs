@@ -97,7 +97,6 @@ pub struct Cell {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UpdatedShardContentsRequest {
-    pub shard: Shard,
     pub updated_shard: Shard,
     pub top: Vec<Cell>,
     pub bottom: Vec<Cell>,
