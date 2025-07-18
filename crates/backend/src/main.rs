@@ -12,11 +12,9 @@ mod colony;
 mod ticker;
 mod colony_shard;
 mod shard_utils;
-mod be_be_calls;
 
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
-use crate::be_be_calls::ping_be;
 
 type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
 
@@ -133,13 +131,6 @@ async fn main() {
     set_panic_hook();
     shared::metrics::start_metrics_endpoint();
     ticker::start_ticker();
-    // Spawn a background task to ping self every 1 second
-    tokio::spawn(async {
-        loop {
-            ping_be().await;
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-        }
-    });
     let addr = format!("127.0.0.1:{}", BACKEND_PORT);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
     log!("[BE] Listening on {}", addr);

@@ -1,4 +1,3 @@
-use crate::be_be_calls::broadcast_shard_contents_exported;
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
 use shared::log;
@@ -8,7 +7,6 @@ use rayon::prelude::*;
 pub fn start_ticker() {
     std::thread::spawn(move || {
         let mut tick_count: u64 = 1;
-        let rt = tokio::runtime::Runtime::new().unwrap();
         loop {
             if Colony::is_initialized() {
                 if tick_count == 1 || tick_count % 10 == 0 {
