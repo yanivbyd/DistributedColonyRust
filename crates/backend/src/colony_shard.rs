@@ -62,57 +62,56 @@ impl ColonyShard {
     pub fn tick(&mut self) {
         if self.grid.is_empty() { return; }
         let mut rng = SmallRng::from_entropy();
-        let width = self.shard.width as usize;
-        let height = self.shard.height as usize;
+        let width = (self.shard.width + 2) as usize;
+        let height = (self.shard.height + 2) as usize;
         let tick_bit = self.grid[0].tick_bit;
         let next_bit = !tick_bit;
         let neighbor_perms = get_neighbor_permutations();
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
-        for y in 0..height {
-            for x in 0..width {
-                if rng.gen_bool(0.6) {
-                    continue;
-                }
-                let my_cell = y * width + x;
-                if self.grid[my_cell].tick_bit != tick_bit {
-                    continue;
-                }
-                self.grid[my_cell].tick_bit = next_bit;
-                if my_cell % 50 == 0 {
-                    offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
-                }
-                let mut is_done = false;
-                for (dx, dy) in offsets.iter() {
-                    let nx = x as isize + dx;
-                    let ny = y as isize + dy;
-                    if in_grid_range(width, height, nx, ny) {
-                        let neighbour = ny as usize * width + nx as usize;
-                        if self.grid[neighbour].color.is_white() && self.grid[neighbour].tick_bit == tick_bit {
-                            self.grid[neighbour].color = self.grid[my_cell].color;
-                            self.grid[neighbour].strength = self.grid[my_cell].strength;
-                            self.grid[neighbour].tick_bit = next_bit;
-                            is_done = true;
-                            break;
-                        }
-                    }
-                }
-                if is_done { continue; }
-                for (dx, dy) in offsets.iter() {
-                    let nx = x as isize + dx;
-                    let ny = y as isize + dy;
-                    if in_grid_range(width, height, nx, ny) {
-                        let neighbour = ny as usize * width + nx as usize;
-                        if self.grid[my_cell].strength > self.grid[neighbour].strength {
-                            self.grid[neighbour].color = self.grid[my_cell].color;
-                            self.grid[neighbour].strength = self.grid[my_cell].strength-1;
-                            self.grid[neighbour].tick_bit = next_bit;
-                            is_done = true;
-                            break;
-                        }
-                    }
-                }
-                if is_done { continue; }
+        for my_cell in 0..self.grid.len() {
+            if rng.gen_bool(0.6) {
+                continue;
             }
+            if self.grid[my_cell].tick_bit != tick_bit {
+                continue;
+            }
+            let x = my_cell % width;
+            let y = my_cell / width;
+            self.grid[my_cell].tick_bit = next_bit;
+            if my_cell % 50 == 0 {
+                offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
+            }
+            let mut is_done = false;
+            for (dx, dy) in offsets.iter() {
+                let nx = x as isize + dx;
+                let ny = y as isize + dy;
+                if in_grid_range(width, height, nx, ny) {
+                    let neighbour = ny as usize * width + nx as usize;
+                    if self.grid[neighbour].color.is_white() && self.grid[neighbour].tick_bit == tick_bit {
+                        self.grid[neighbour].color = self.grid[my_cell].color;
+                        self.grid[neighbour].strength = self.grid[my_cell].strength;
+                        self.grid[neighbour].tick_bit = next_bit;
+                        is_done = true;
+                        break;
+                    }
+                }
+            }
+            if is_done { continue; }
+            for (dx, dy) in offsets.iter() {
+                let nx = x as isize + dx;
+                let ny = y as isize + dy;
+                if in_grid_range(width, height, nx, ny) {
+                    let neighbour = ny as usize * width + nx as usize;
+                    if self.grid[my_cell].strength > self.grid[neighbour].strength {
+                        self.grid[neighbour].color = self.grid[my_cell].color;
+                        self.grid[neighbour].strength = self.grid[my_cell].strength-1;
+                        self.grid[neighbour].tick_bit = next_bit;
+                        is_done = true;
+                        break;
+                    }
+                }
+            }
+            if is_done { continue; }
         }
         if rng.gen_bool(0.01) {
             self.meta_changes();
