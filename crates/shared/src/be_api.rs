@@ -98,6 +98,7 @@ pub struct Cell {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UpdatedShardContentsRequest {
     pub shard: Shard,
+    pub updated_shard: Shard,
     pub top: Vec<Cell>,
     pub bottom: Vec<Cell>,
     pub left: Vec<Cell>,
@@ -106,5 +107,4 @@ pub struct UpdatedShardContentsRequest {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UpdatedShardContentsResponse {
-    pub success: bool,
 }

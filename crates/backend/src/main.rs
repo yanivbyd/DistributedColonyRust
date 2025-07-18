@@ -3,7 +3,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log, log_error};
@@ -50,7 +50,7 @@ async fn handle_client(socket: TcpStream) {
             Ok(BackendRequest::GetShardImage(req)) => handle_get_shard_image(req).await,
             Ok(BackendRequest::InitColonyShard(req)) => handle_init_colony_shard(req).await,
             Ok(BackendRequest::GetColonyInfo(req)) => handle_get_colony_info(req).await,
-            Ok(BackendRequest::UpdatedShardContents(_)) => todo!(),
+            Ok(BackendRequest::UpdatedShardContents(req)) => handle_updated_shard_contents(req).await,
             Err(e) => {
                 log_error!("[BE] Failed to deserialize BackendRequest: {}", e);
                 continue;
@@ -111,6 +111,17 @@ async fn handle_get_colony_info(_req: GetColonyInfoRequest) -> BackendResponse {
             shards: colony.shards.iter().map(|cs| cs.shard).collect(),
         })
     }
+}
+
+async fn handle_updated_shard_contents(req: UpdatedShardContentsRequest) -> BackendResponse {
+    if !Colony::is_initialized() {
+        return BackendResponse::UpdatedShardContents(UpdatedShardContentsResponse {});
+    }
+    let mut colony = Colony::instance();
+    for shard in colony.shards.iter_mut() {
+        ShardUtils::updated_shard_contents(shard, &req);
+    }
+    BackendResponse::UpdatedShardContents(UpdatedShardContentsResponse {})
 }
 
 #[tokio::main]
