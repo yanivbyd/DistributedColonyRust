@@ -1,6 +1,5 @@
 use crate::colony_shard::ColonyShard;
-use crate::colony_shard::{Cell};
-use shared::be_api::{Color, Shard};
+use shared::be_api::{Color, Shard, Cell};
 
 pub struct ShardUtils;
 

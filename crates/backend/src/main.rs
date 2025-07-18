@@ -25,6 +25,7 @@ fn call_label(response: &BackendResponse) -> &'static str {
         BackendResponse::GetShardImage(_) => "GetShardImage",
         BackendResponse::InitColonyShard(_) => "InitColonyShard",
         BackendResponse::GetColonyInfo(_) => "GetColonyInfo",
+        BackendResponse::UpdatedShardContents(_) => todo!(),
     }
 }
 
@@ -49,6 +50,7 @@ async fn handle_client(socket: TcpStream) {
             Ok(BackendRequest::GetShardImage(req)) => handle_get_shard_image(req).await,
             Ok(BackendRequest::InitColonyShard(req)) => handle_init_colony_shard(req).await,
             Ok(BackendRequest::GetColonyInfo(req)) => handle_get_colony_info(req).await,
+            Ok(BackendRequest::UpdatedShardContents(_)) => todo!(),
             Err(e) => {
                 log_error!("[BE] Failed to deserialize BackendRequest: {}", e);
                 continue;

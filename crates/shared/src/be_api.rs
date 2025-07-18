@@ -11,17 +11,6 @@ pub struct Color {
     pub blue: u8,
 }
 
-impl Color {
-    /// Returns true if the color is white (all RGB components are 255)
-    pub fn is_white(&self) -> bool {
-        self.red == 255 && self.green == 255 && self.blue == 255
-    }
-    /// Returns true if the color is different from another color
-    pub fn is_different(&self, other: &Color) -> bool {
-        self.red != other.red || self.green != other.green || self.blue != other.blue
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Shard {
     pub x: i32,
@@ -37,6 +26,7 @@ pub enum BackendRequest {
     GetShardImage(GetShardImageRequest),
     InitColonyShard(InitColonyShardRequest),
     GetColonyInfo(GetColonyInfoRequest),
+    UpdatedShardContents(UpdatedShardContentsRequest),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -46,6 +36,7 @@ pub enum BackendResponse {
     GetShardImage(GetShardImageResponse),
     InitColonyShard(InitColonyShardResponse),
     GetColonyInfo(GetColonyInfoResponse),
+    UpdatedShardContents(UpdatedShardContentsResponse),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -95,4 +86,25 @@ pub enum GetColonyInfoResponse {
         shards: Vec<Shard>,
     },
     ColonyNotInitialized,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct Cell {
+    pub color: Color,
+    pub tick_bit: bool,
+    pub strength: u8,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UpdatedShardContentsRequest {
+    pub shard: Shard,
+    pub top: Vec<Cell>,
+    pub bottom: Vec<Cell>,
+    pub left: Vec<Cell>,
+    pub right: Vec<Cell>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UpdatedShardContentsResponse {
+    pub success: bool,
 }

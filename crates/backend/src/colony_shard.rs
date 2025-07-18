@@ -4,13 +4,6 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use std::sync::OnceLock;
 
-#[derive(Debug, Clone)]
-pub struct Cell {
-    pub color: Color,
-    pub tick_bit: bool,
-    pub strength: u8    
-}
-
 pub const NUM_RANDOM_COLORS: usize = 4;
 
 pub const NEIGHBOR_OFFSETS: [(isize, isize); 8] = [
@@ -37,7 +30,7 @@ pub fn get_neighbor_permutations() -> &'static Vec<[ (isize, isize); 8 ]> {
 #[derive(Debug)]
 pub struct ColonyShard {
     pub shard: Shard,
-    pub grid: Vec<Cell>,
+    pub grid: Vec<shared::be_api::Cell>,
 }
 
 impl ColonyShard {
@@ -87,7 +80,7 @@ impl ColonyShard {
                 let ny = y as isize + dy;
                 if in_grid_range(width, height, nx, ny) {
                     let neighbour = ny as usize * width + nx as usize;
-                    if self.grid[neighbour].color.is_white() && self.grid[neighbour].tick_bit == tick_bit {
+                    if is_white(&self.grid[neighbour].color) && self.grid[neighbour].tick_bit == tick_bit {
                         self.grid[neighbour].color = self.grid[my_cell].color;
                         self.grid[neighbour].strength = self.grid[my_cell].strength;
                         self.grid[neighbour].tick_bit = next_bit;
@@ -126,6 +119,10 @@ impl ColonyShard {
             }
         }
     }
+}
+
+fn is_white(color: &Color) -> bool {
+    color.red == 255 && color.green == 255 && color.blue == 255
 }
 
 pub fn in_grid_range(width: usize, height: usize, x: isize, y: isize) -> bool {
