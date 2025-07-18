@@ -51,32 +51,22 @@ impl App for BEImageApp {
             let locked = self.retained.lock().unwrap();
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    for i in 0..2 {
-                        if let Some(img) = &locked[i] {
-                            img.show_max_size(ui, egui::vec2(SHARD_SIZE, SHARD_SIZE));
-                        } else {
-                            ui.allocate_ui(egui::vec2(SHARD_SIZE, SHARD_SIZE), |ui| {
-                                ui.centered_and_justified(|ui| {
-                                    ui.colored_label(egui::Color32::RED, "Failed");
+                for row in 0..3 {
+                    ui.horizontal(|ui| {
+                        for col in 0..3 {
+                            let idx = row * 3 + col;
+                            if let Some(img) = locked.get(idx).and_then(|o| o.as_ref()) {
+                                img.show_max_size(ui, egui::vec2(SHARD_SIZE, SHARD_SIZE));
+                            } else {
+                                ui.allocate_ui(egui::vec2(SHARD_SIZE, SHARD_SIZE), |ui| {
+                                    ui.centered_and_justified(|ui| {
+                                        ui.colored_label(egui::Color32::RED, "Failed");
+                                    });
                                 });
-                            });
+                            }
                         }
-                    }
-                });
-                ui.horizontal(|ui| {
-                    for i in 2..4 {
-                        if let Some(img) = &locked[i] {
-                            img.show_max_size(ui, egui::vec2(SHARD_SIZE, SHARD_SIZE));
-                        } else {
-                            ui.allocate_ui(egui::vec2(SHARD_SIZE, SHARD_SIZE), |ui| {
-                                ui.centered_and_justified(|ui| {
-                                    ui.colored_label(egui::Color32::RED, "Failed");
-                                });
-                            });
-                        }
-                    }
-                });
+                    });
+                }
             });
         });
     }

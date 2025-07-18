@@ -8,17 +8,22 @@ mod image_save;
 use image_save::{save_colony_as_png, combine_shards};
 use indicatif::{ProgressBar, ProgressStyle};
 
-const WIDTH: i32 = 500;
-const HEIGHT: i32 = 500;
+const WIDTH: i32 = 750;
+const HEIGHT: i32 = 750;
 
-const HALF_WIDTH: i32 = WIDTH / 2;
-const HALF_HEIGHT: i32 = HEIGHT / 2;
+const THIRD_WIDTH: i32 = WIDTH / 3;
+const THIRD_HEIGHT: i32 = HEIGHT / 3;
 
-const SHARDS: [Shard; 4] = [
-    Shard { x: 0, y: 0, width: HALF_WIDTH, height: HALF_HEIGHT }, // top-left
-    Shard { x: HALF_WIDTH, y: 0, width: HALF_WIDTH, height: HALF_HEIGHT }, // top-right
-    Shard { x: 0, y: HALF_HEIGHT, width: HALF_WIDTH, height: HALF_HEIGHT }, // bottom-left
-    Shard { x: HALF_WIDTH, y: HALF_HEIGHT, width: HALF_WIDTH, height: HALF_HEIGHT }, // bottom-right
+const SHARDS: [Shard; 9] = [
+    Shard { x: 0, y: 0, width: THIRD_WIDTH, height: THIRD_HEIGHT }, // top-left
+    Shard { x: THIRD_WIDTH, y: 0, width: THIRD_WIDTH, height: THIRD_HEIGHT }, // top-middle
+    Shard { x: 2 * THIRD_WIDTH, y: 0, width: WIDTH - 2 * THIRD_WIDTH, height: THIRD_HEIGHT }, // top-right
+    Shard { x: 0, y: THIRD_HEIGHT, width: THIRD_WIDTH, height: THIRD_HEIGHT }, // mid-left
+    Shard { x: THIRD_WIDTH, y: THIRD_HEIGHT, width: THIRD_WIDTH, height: THIRD_HEIGHT }, // center
+    Shard { x: 2 * THIRD_WIDTH, y: THIRD_HEIGHT, width: WIDTH - 2 * THIRD_WIDTH, height: THIRD_HEIGHT }, // mid-right
+    Shard { x: 0, y: 2 * THIRD_HEIGHT, width: THIRD_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-left
+    Shard { x: THIRD_WIDTH, y: 2 * THIRD_HEIGHT, width: THIRD_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-middle
+    Shard { x: 2 * THIRD_WIDTH, y: 2 * THIRD_HEIGHT, width: WIDTH - 2 * THIRD_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-right
 ];
 
 fn main() {
