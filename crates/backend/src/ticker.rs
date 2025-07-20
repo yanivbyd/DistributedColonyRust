@@ -1,5 +1,6 @@
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
+use crate::colony_events::{apply_event, log_event, randomize_event};
 use shared::log;
 use shared::metrics::LatencyMonitor;
 use rayon::prelude::*;
@@ -32,6 +33,11 @@ pub fn start_ticker() {
                     }
                 }
 
+                // Randomize event and apply it (locally)
+                if let Some(event) = randomize_event(&colony) {
+                    log_event(&event);
+                    apply_event(&mut colony, &event);
+                }
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }

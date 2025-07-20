@@ -12,6 +12,7 @@ mod colony;
 mod ticker;
 mod colony_shard;
 mod shard_utils;
+mod colony_events;
 
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;

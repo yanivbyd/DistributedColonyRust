@@ -106,19 +106,8 @@ impl ColonyShard {
             }
             if is_done { continue; }
         }
-        if rng.gen_bool(0.01) {
-            self.meta_changes();
-        }
     }
         
-    pub fn meta_changes(&mut self) {
-        let mut rng = SmallRng::from_entropy();
-        for cell in self.grid.iter_mut() {
-            if rng.gen_bool(0.9) {
-                cell.strength = rng.gen_range(1..255);
-            }
-        }
-    }
 }
 
 fn is_white(color: &Color) -> bool {
