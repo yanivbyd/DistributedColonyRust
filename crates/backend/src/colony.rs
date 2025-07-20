@@ -1,4 +1,4 @@
-use shared::be_api::{InitColonyRequest, Shard};
+use shared::be_api::{InitColonyRequest, Shard, ColonyLifeInfo};
 use shared::log;
 use std::{sync::{Mutex, OnceLock}};
 use crate::colony_shard::ColonyShard;
@@ -8,6 +8,8 @@ pub struct Colony {
     pub _width: i32,
     pub _height: i32,
     pub shards: Vec<ColonyShard>,
+    #[allow(dead_code)]
+    pub colony_life_info: ColonyLifeInfo,
 }
 
 static COLONY: OnceLock<Mutex<Colony>> = OnceLock::new();
@@ -30,6 +32,7 @@ impl Colony {
             _width: req.width,
             _height: req.height,
             shards: Vec::new(),
+            colony_life_info: req.colony_life_info.clone(),
         })).expect("Failed to initialize ColonySubGrid");
     }
 

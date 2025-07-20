@@ -88,7 +88,7 @@ async fn handle_init_colony_shard(req: InitColonyShardRequest) -> BackendRespons
     } else if !Colony::instance().is_valid_shard_dimensions(&req.shard) {
         BackendResponse::InitColonyShard(InitColonyShardResponse::InvalidShardDimensions)
     } else {
-        Colony::instance().add_shard(ShardUtils::new_colony_shard(&req.shard));
+        Colony::instance().add_shard(ShardUtils::new_colony_shard(&req.shard, &req.colony_life_info));
         BackendResponse::InitColonyShard(InitColonyShardResponse::Ok)
     }
 }

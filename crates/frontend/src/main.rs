@@ -1,4 +1,4 @@
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT, GetShardImageRequest, GetShardImageResponse, Shard, InitColonyShardRequest, InitColonyShardResponse, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, InitColonyRequest, CLIENT_TIMEOUT, GetShardImageRequest, GetShardImageResponse, Shard, InitColonyShardRequest, InitColonyShardResponse, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, ColonyLifeInfo};
 use bincode;
 use std::net::TcpStream;
 use std::io::{Read, Write};
@@ -113,7 +113,7 @@ fn connect_to_backend() -> TcpStream {
 }
 
 fn send_init_colony(stream: &mut TcpStream) {
-    let init = BackendRequest::InitColony(InitColonyRequest { width: WIDTH, height: HEIGHT });
+    let init = BackendRequest::InitColony(InitColonyRequest { width: WIDTH, height: HEIGHT, colony_life_info: ColonyLifeInfo {}});
     send_message(stream, &init);
 
     if let Some(response) = receive_message::<BackendResponse>(stream) {
@@ -126,7 +126,7 @@ fn send_init_colony(stream: &mut TcpStream) {
 }
 
 fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
-    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard });
+    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard, colony_life_info: ColonyLifeInfo {}});
     send_message(stream, &req);
     if let Some(response) = receive_message::<BackendResponse>(stream) {
         match response {

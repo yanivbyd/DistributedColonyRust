@@ -1,13 +1,14 @@
 use crate::colony_shard::ColonyShard;
-use shared::be_api::{Cell, Color, Shard, UpdatedShardContentsRequest};
+use shared::be_api::{Cell, Color, Shard, UpdatedShardContentsRequest, ColonyLifeInfo};
 
 pub struct ShardUtils;
 
 impl ShardUtils {
-pub fn new_colony_shard(shard: &Shard) -> ColonyShard {
+pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> ColonyShard {
         let white_color = Color { red: 255, green: 255, blue: 255 };
         let mut shard = ColonyShard {
             shard: shard.clone(),
+            colony_life_info: colony_life_info.clone(),
             grid: (0..((shard.width+2) * (shard.height+2))).map(|_| {
                 Cell { color: white_color, tick_bit: false, strength: 0 }
             }).collect(),

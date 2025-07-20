@@ -11,6 +11,18 @@ pub struct Color {
     pub blue: u8,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct Cell {
+    pub color: Color,
+    pub tick_bit: bool,
+    pub strength: u8,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct ColonyLifeInfo {
+}
+
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Shard {
     pub x: i32,
@@ -43,11 +55,13 @@ pub enum BackendResponse {
 pub struct InitColonyRequest {
     pub width: i32,
     pub height: i32,
+    pub colony_life_info: ColonyLifeInfo,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InitColonyShardRequest {
     pub shard: Shard,
+    pub colony_life_info: ColonyLifeInfo,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -86,13 +100,6 @@ pub enum GetColonyInfoResponse {
         shards: Vec<Shard>,
     },
     ColonyNotInitialized,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct Cell {
-    pub color: Color,
-    pub tick_bit: bool,
-    pub strength: u8,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -1,4 +1,4 @@
-use shared::be_api::{Color, Shard, Cell};
+use shared::be_api::{Color, Shard, Cell, ColonyLifeInfo};
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
@@ -30,6 +30,8 @@ pub fn get_neighbor_permutations() -> &'static Vec<[ (isize, isize); 8 ]> {
 #[derive(Debug)]
 pub struct ColonyShard {
     pub shard: Shard,
+    #[allow(dead_code)]
+    pub colony_life_info: ColonyLifeInfo,    
     pub grid: Vec<Cell>,
 }
 
