@@ -30,13 +30,13 @@ pub fn log_event(event: &ColonyEvent) {
 }
 
 pub fn randomize_event(colony: &Colony) -> Option<ColonyEvent> {
-    if rand::random::<f32>() > 0.05 {
+    if rand::random::<f32>() > 0.06 {
         return None;
     }
     let circle = Circle {
-        x: rand::random::<f32>() * colony._width as f32,
-        y: rand::random::<f32>() * colony._height as f32,
-        radius: rand::random::<f32>() * 100.0, 
+        x: (rand::random::<i32>().abs() % (colony._width + 200) - 100) as f32,
+        y: (rand::random::<i32>().abs() % (colony._height + 200) - 100) as f32,
+        radius: (rand::random::<i32>().abs() % 100) as f32, 
     };
     Some(ColonyEvent::LocalDeath(circle))
 }
@@ -52,8 +52,8 @@ pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
                     let width = shard.shard.width as usize;
                     let height = shard.shard.height as usize;
                     let row_size = width + 2;
-                    for y in 0..height {
-                        for x in 0..width {
+                    for y in 0..height+2 {
+                        for x in 0..width+2 {
                             let global_x = shard.shard.x as f32 + x as f32;
                             let global_y = shard.shard.y as f32 + y as f32;
                             let dx = global_x - circle.x;

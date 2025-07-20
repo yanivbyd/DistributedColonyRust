@@ -6,7 +6,7 @@ use futures_util::SinkExt;
 use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
-use shared::{log, log_error};
+use shared::{log_error};
 
 mod colony;
 mod ticker;
@@ -16,6 +16,11 @@ mod colony_events;
 
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
+
+// Debug logging macro that does nothing by default
+macro_rules! log_debug {
+    ($($arg:tt)*) => {};
+}
 
 type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
 
@@ -36,15 +41,15 @@ async fn send_response(framed: &mut FramedStream, response: BackendResponse) {
     if let Err(e) = framed.send(encoded.into()).await {
         log_error!("[BE] Failed to send {} response: {}", label, e);
     } else {
-        log!("[BE] Sent {} response", label);
+        log_debug!("[BE] Sent {} response", label);
     }
 }
 
 async fn handle_client(socket: TcpStream) {
-    log!("[BE] handle_client: new connection");
+    log_debug!("[BE] handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
     while let Some(Ok(bytes)) = framed.next().await {
-        log!("[BE] handle_client: received bytes");
+        log_debug!("[BE] handle_client: received bytes");
         let response = match bincode::deserialize::<BackendRequest>(&bytes) {
             Ok(BackendRequest::Ping) => handle_ping().await,
             Ok(BackendRequest::InitColony(req)) => handle_init_colony(req).await,
@@ -59,7 +64,7 @@ async fn handle_client(socket: TcpStream) {
         };
         send_response(&mut framed, response).await;
     }
-    log!("[BE] handle_client: connection closed");
+    log_debug!("[BE] handle_client: connection closed");
 }
 
 async fn handle_ping() -> BackendResponse {
@@ -89,7 +94,7 @@ async fn handle_init_colony_shard(req: InitColonyShardRequest) -> BackendRespons
 }
 
 async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {
-    log!("[BE] GetShardImage request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
+    log_debug!("[BE] GetShardImage request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
     let colony = Colony::instance();
     if let Some(shard) = &colony.get_colony_shard(&req.shard) {
         match ShardUtils::get_shard_image(shard, &req.shard) {
@@ -134,13 +139,13 @@ async fn main() {
     ticker::start_ticker();
     let addr = format!("127.0.0.1:{}", BACKEND_PORT);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
-    log!("[BE] Listening on {}", addr);
+    log_debug!("[BE] Listening on {}", addr);
 
     loop {
-        log!("[BE] Waiting for connection...");
+        log_debug!("[BE] Waiting for connection...");
         match listener.accept().await {
             Ok((socket, _)) => {
-                log!("[BE] Accepted connection");
+                log_debug!("[BE] Accepted connection");
                 tokio::spawn(handle_client(socket));
             }
             Err(e) => log_error!("[BE] Connection failed: {}", e),
