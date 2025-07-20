@@ -9,6 +9,7 @@ pub struct Circle {
 
 pub enum ColonyEvent {
     LocalDeath(Circle),
+    ReshuffleStrength(Circle),
 }
 
 fn circle_overlaps_shard(circle: &Circle, shard: &shared::be_api::Shard) -> bool {
@@ -20,10 +21,34 @@ fn circle_overlaps_shard(circle: &Circle, shard: &shared::be_api::Shard) -> bool
     (dx * dx + dy * dy) <= (circle.radius * circle.radius)
 }
 
+fn apply_circle_to_shard(shard: &mut crate::colony_shard::ColonyShard, circle: &Circle, cell_fn: fn(&mut shared::be_api::Cell)) {
+    let width = shard.shard.width as usize;
+    let height = shard.shard.height as usize;
+    let row_size = width + 2;
+    for y in 0..height+2 {
+        for x in 0..width+2 {
+            let global_x = shard.shard.x as f32 + x as f32;
+            let global_y = shard.shard.y as f32 + y as f32;
+            let dx = global_x - circle.x;
+            let dy = global_y - circle.y;
+            if dx * dx + dy * dy <= circle.radius * circle.radius {
+                let idx = (y + 1) * row_size + (x + 1);
+                if let Some(cell) = shard.grid.get_mut(idx) {
+                    cell_fn(cell);
+                }
+            }
+        }
+    }
+}
+
 pub fn log_event(event: &ColonyEvent) {
     match event {
         ColonyEvent::LocalDeath(circle) => {
             log!("[BE] Event: LocalDeath at ({:.1}, {:.1}) with radius {:.1}", 
+                 circle.x, circle.y, circle.radius);
+        },
+        ColonyEvent::ReshuffleStrength(circle) => {
+            log!("[BE] Event: ReshuffleStrength at ({:.1}, {:.1}) with radius {:.1}", 
                  circle.x, circle.y, circle.radius);
         }
     }
@@ -38,34 +63,32 @@ pub fn randomize_event(colony: &Colony) -> Option<ColonyEvent> {
         y: (rand::random::<i32>().abs() % (colony._height + 200) - 100) as f32,
         radius: (rand::random::<i32>().abs() % 100) as f32, 
     };
-    Some(ColonyEvent::LocalDeath(circle))
+    
+    // Randomize event type
+    if rand::random::<bool>() {
+        Some(ColonyEvent::LocalDeath(circle))
+    } else {
+        Some(ColonyEvent::ReshuffleStrength(circle))
+    }
 }
 
 pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
     for shard in &mut colony.shards {
         let circle = match event {
             ColonyEvent::LocalDeath(c) => c,
+            ColonyEvent::ReshuffleStrength(c) => c,
         };
         if circle_overlaps_shard(circle, &shard.shard) {
             match event {
-                ColonyEvent::LocalDeath(circle) => {
-                    let width = shard.shard.width as usize;
-                    let height = shard.shard.height as usize;
-                    let row_size = width + 2;
-                    for y in 0..height+2 {
-                        for x in 0..width+2 {
-                            let global_x = shard.shard.x as f32 + x as f32;
-                            let global_y = shard.shard.y as f32 + y as f32;
-                            let dx = global_x - circle.x;
-                            let dy = global_y - circle.y;
-                            if dx * dx + dy * dy <= circle.radius * circle.radius {
-                                let idx = (y + 1) * row_size + (x + 1);
-                                if let Some(cell) = shard.grid.get_mut(idx) {
-                                    cell.strength = rand::random::<u8>() % (cell.strength / 2 + 1); 
-                                }
-                            }
-                        }
-                    }
+                ColonyEvent::LocalDeath(_) => {
+                    apply_circle_to_shard(shard, circle, |cell| {
+                        cell.strength = rand::random::<u8>() % (cell.strength / 2 + 1);
+                    });
+                },
+                ColonyEvent::ReshuffleStrength(_) => {
+                    apply_circle_to_shard(shard, circle, |cell| {
+                        cell.strength = rand::random::<u8>();
+                    });
                 }
             }
         }
