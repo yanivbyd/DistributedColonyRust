@@ -8,22 +8,28 @@ mod image_save;
 use image_save::{save_colony_as_png, combine_shards};
 use indicatif::{ProgressBar, ProgressStyle};
 
-const WIDTH: i32 = 750;
+const WIDTH: i32 = 1250;
 const HEIGHT: i32 = 750;
 
-const THIRD_WIDTH: i32 = WIDTH / 3;
+const FIFTH_WIDTH: i32 = WIDTH / 5;
 const THIRD_HEIGHT: i32 = HEIGHT / 3;
 
-const SHARDS: [Shard; 9] = [
-    Shard { x: 0, y: 0, width: THIRD_WIDTH, height: THIRD_HEIGHT }, // top-left
-    Shard { x: THIRD_WIDTH, y: 0, width: THIRD_WIDTH, height: THIRD_HEIGHT }, // top-middle
-    Shard { x: 2 * THIRD_WIDTH, y: 0, width: WIDTH - 2 * THIRD_WIDTH, height: THIRD_HEIGHT }, // top-right
-    Shard { x: 0, y: THIRD_HEIGHT, width: THIRD_WIDTH, height: THIRD_HEIGHT }, // mid-left
-    Shard { x: THIRD_WIDTH, y: THIRD_HEIGHT, width: THIRD_WIDTH, height: THIRD_HEIGHT }, // center
-    Shard { x: 2 * THIRD_WIDTH, y: THIRD_HEIGHT, width: WIDTH - 2 * THIRD_WIDTH, height: THIRD_HEIGHT }, // mid-right
-    Shard { x: 0, y: 2 * THIRD_HEIGHT, width: THIRD_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-left
-    Shard { x: THIRD_WIDTH, y: 2 * THIRD_HEIGHT, width: THIRD_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-middle
-    Shard { x: 2 * THIRD_WIDTH, y: 2 * THIRD_HEIGHT, width: WIDTH - 2 * THIRD_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-right
+const SHARDS: [Shard; 15] = [
+    Shard { x: 0, y: 0, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-left
+    Shard { x: FIFTH_WIDTH, y: 0, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-middle-left
+    Shard { x: 2 * FIFTH_WIDTH, y: 0, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-middle
+    Shard { x: 3 * FIFTH_WIDTH, y: 0, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-middle-right
+    Shard { x: 4 * FIFTH_WIDTH, y: 0, width: WIDTH - 4 * FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-right
+    Shard { x: 0, y: THIRD_HEIGHT, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // mid-left
+    Shard { x: FIFTH_WIDTH, y: THIRD_HEIGHT, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // mid-middle-left
+    Shard { x: 2 * FIFTH_WIDTH, y: THIRD_HEIGHT, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // mid-middle
+    Shard { x: 3 * FIFTH_WIDTH, y: THIRD_HEIGHT, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // mid-middle-right
+    Shard { x: 4 * FIFTH_WIDTH, y: THIRD_HEIGHT, width: WIDTH - 4 * FIFTH_WIDTH, height: THIRD_HEIGHT }, // mid-right
+    Shard { x: 0, y: 2 * THIRD_HEIGHT, width: FIFTH_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-left
+    Shard { x: FIFTH_WIDTH, y: 2 * THIRD_HEIGHT, width: FIFTH_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-middle-left
+    Shard { x: 2 * FIFTH_WIDTH, y: 2 * THIRD_HEIGHT, width: FIFTH_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-middle
+    Shard { x: 3 * FIFTH_WIDTH, y: 2 * THIRD_HEIGHT, width: FIFTH_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-middle-right
+    Shard { x: 4 * FIFTH_WIDTH, y: 2 * THIRD_HEIGHT, width: WIDTH - 4 * FIFTH_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-right
 ];
 
 fn main() {

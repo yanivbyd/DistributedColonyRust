@@ -53,8 +53,8 @@ impl App for BEImageApp {
             ui.vertical(|ui| {
                 for row in 0..3 {
                     ui.horizontal(|ui| {
-                        for col in 0..3 {
-                            let idx = row * 3 + col;
+                        for col in 0..5 {
+                            let idx = row * 5 + col;
                             if let Some(img) = locked.get(idx).and_then(|o| o.as_ref()) {
                                 img.show_max_size(ui, egui::vec2(SHARD_SIZE, SHARD_SIZE));
                             } else {

@@ -7,17 +7,24 @@ use std::io::{Read, Write};
 use bincode;
 
 pub fn get_all_shard_retained_images() -> Vec<Option<RetainedImage>> {
+    let fifth = 1250 / 5;
     let third = 750 / 3;
     let shards = [
-        Shard { x: 0, y: 0, width: third, height: third }, // top-left
-        Shard { x: third, y: 0, width: third, height: third }, // top-middle
-        Shard { x: 2 * third, y: 0, width: 750 - 2 * third, height: third }, // top-right
-        Shard { x: 0, y: third, width: third, height: third }, // mid-left
-        Shard { x: third, y: third, width: third, height: third }, // center
-        Shard { x: 2 * third, y: third, width: 750 - 2 * third, height: third }, // mid-right
-        Shard { x: 0, y: 2 * third, width: third, height: 750 - 2 * third }, // bottom-left
-        Shard { x: third, y: 2 * third, width: third, height: 750 - 2 * third }, // bottom-middle
-        Shard { x: 2 * third, y: 2 * third, width: 750 - 2 * third, height: 750 - 2 * third }, // bottom-right
+        Shard { x: 0, y: 0, width: fifth, height: third }, // top-left
+        Shard { x: fifth, y: 0, width: fifth, height: third }, // top-middle-left
+        Shard { x: 2 * fifth, y: 0, width: fifth, height: third }, // top-middle
+        Shard { x: 3 * fifth, y: 0, width: fifth, height: third }, // top-middle-right
+        Shard { x: 4 * fifth, y: 0, width: 1250 - 4 * fifth, height: third }, // top-right
+        Shard { x: 0, y: third, width: fifth, height: third }, // mid-left
+        Shard { x: fifth, y: third, width: fifth, height: third }, // mid-middle-left
+        Shard { x: 2 * fifth, y: third, width: fifth, height: third }, // mid-middle
+        Shard { x: 3 * fifth, y: third, width: fifth, height: third }, // mid-middle-right
+        Shard { x: 4 * fifth, y: third, width: 1250 - 4 * fifth, height: third }, // mid-right
+        Shard { x: 0, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-left
+        Shard { x: fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle-left
+        Shard { x: 2 * fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle
+        Shard { x: 3 * fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle-right
+        Shard { x: 4 * fifth, y: 2 * third, width: 1250 - 4 * fifth, height: 750 - 2 * third }, // bottom-right
     ];
     shards.iter().map(|&shard| get_shard_retained_image(shard)).collect()
 }
