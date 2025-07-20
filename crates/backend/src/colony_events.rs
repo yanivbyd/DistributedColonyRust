@@ -14,9 +14,17 @@ pub struct Ellipse {
     pub radius_y: f32,
 }
 
+pub struct Rectangle {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
 pub enum Region {
     Circle(Circle),
     Ellipse(Ellipse),
+    Rectangle(Rectangle),
 }
 
 pub enum ColonyEvent {
@@ -39,6 +47,16 @@ fn region_overlaps_shard(region: &Region, shard: &shared::be_api::Shard) -> bool
             let dx = ellipse.x - closest_x;
             let dy = ellipse.y - closest_y;
             (dx * dx) / (ellipse.radius_x * ellipse.radius_x) + (dy * dy) / (ellipse.radius_y * ellipse.radius_y) <= 1.0
+        },
+        Region::Rectangle(rect) => {
+            // Check if rectangle overlaps with shard
+            let shard_right = shard.x + shard.width;
+            let shard_bottom = shard.y + shard.height;
+            let rect_right = rect.x + rect.width;
+            let rect_bottom = rect.y + rect.height;
+            
+            rect.x < shard_right as f32 && rect_right > shard.x as f32 &&
+            rect.y < shard_bottom as f32 && rect_bottom > shard.y as f32
         }
     }
 }
@@ -61,6 +79,10 @@ fn apply_region_to_shard(shard: &mut crate::colony_shard::ColonyShard, region: &
                     let dx = global_x - ellipse.x;
                     let dy = global_y - ellipse.y;
                     (dx * dx) / (ellipse.radius_x * ellipse.radius_x) + (dy * dy) / (ellipse.radius_y * ellipse.radius_y) <= 1.0
+                },
+                Region::Rectangle(rect) => {
+                    global_x >= rect.x && global_x < rect.x + rect.width &&
+                    global_y >= rect.y && global_y < rect.y + rect.height
                 }
             };
             if inside {
@@ -84,6 +106,10 @@ pub fn log_event(event: &ColonyEvent) {
                 Region::Ellipse(ellipse) => {
                     log!("[BE] Event: LocalDeath (Ellipse) at ({:.1}, {:.1}) with radius ({:.1}, {:.1})", 
                          ellipse.x, ellipse.y, ellipse.radius_x, ellipse.radius_y);
+                },
+                Region::Rectangle(rect) => {
+                    log!("[BE] Event: LocalDeath (Rectangle) at ({:.1}, {:.1}) with size ({:.1}, {:.1})", 
+                         rect.x, rect.y, rect.width, rect.height);
                 }
             }
         },
@@ -96,6 +122,10 @@ pub fn log_event(event: &ColonyEvent) {
                 Region::Ellipse(ellipse) => {
                     log!("[BE] Event: ReshuffleStrength (Ellipse) at ({:.1}, {:.1}) with radius ({:.1}, {:.1})", 
                          ellipse.x, ellipse.y, ellipse.radius_x, ellipse.radius_y);
+                },
+                Region::Rectangle(rect) => {
+                    log!("[BE] Event: ReshuffleStrength (Rectangle) at ({:.1}, {:.1}) with size ({:.1}, {:.1})", 
+                         rect.x, rect.y, rect.width, rect.height);
                 }
             }
         }
@@ -103,28 +133,41 @@ pub fn log_event(event: &ColonyEvent) {
 }
 
 pub fn randomize_event(colony: &Colony) -> Option<ColonyEvent> {
-    if rand::random::<f32>() > 0.06 {
+    if rand::random::<f32>() > 0.1 {
         return None;
     }
     
-    // Randomize region type (Circle or Ellipse)
-    let region = if rand::random::<bool>() {
-        // Circle
-        let circle = Circle {
-            x: (rand::random::<i32>().abs() % (colony._width + 200) - 100) as f32,
-            y: (rand::random::<i32>().abs() % (colony._height + 200) - 100) as f32,
-            radius: (rand::random::<i32>().abs() % 20) as f32,
-        };
-        Region::Circle(circle)
-    } else {
-        // Ellipse
-        let ellipse = Ellipse {
-            x: (rand::random::<i32>().abs() % (colony._width + 200) - 100) as f32,
-            y: (rand::random::<i32>().abs() % (colony._height + 200) - 100) as f32,
-            radius_x: (rand::random::<i32>().abs() % 100) as f32,
-            radius_y: (rand::random::<i32>().abs() % 100) as f32,
-        };
-        Region::Ellipse(ellipse)
+    // Randomize region type (Circle, Ellipse, or Rectangle)
+    let region = match rand::random::<u8>() % 3 {
+        0 => {
+            // Circle
+            let circle = Circle {
+                x: (rand::random::<i32>().abs() % (colony._width + 200) - 100) as f32,
+                y: (rand::random::<i32>().abs() % (colony._height + 200) - 100) as f32,
+                radius: (rand::random::<i32>().abs() % 20) as f32,
+            };
+            Region::Circle(circle)
+        },
+        1 => {
+            // Ellipse
+            let ellipse = Ellipse {
+                x: (rand::random::<i32>().abs() % (colony._width + 200) - 100) as f32,
+                y: (rand::random::<i32>().abs() % (colony._height + 200) - 100) as f32,
+                radius_x: (rand::random::<i32>().abs() % 100) as f32,
+                radius_y: (rand::random::<i32>().abs() % 100) as f32,
+            };
+            Region::Ellipse(ellipse)
+        },
+        _ => {
+            // Rectangle
+            let rect = Rectangle {
+                x: (rand::random::<i32>().abs() % (colony._width + 200) - 100) as f32,
+                y: (rand::random::<i32>().abs() % (colony._height + 200) - 100) as f32,
+                width: (rand::random::<i32>().abs() % 50 + 10) as f32,
+                height: (rand::random::<i32>().abs() % 50 + 10) as f32,
+            };
+            Region::Rectangle(rect)
+        }
     };
     
     // Randomize event type
