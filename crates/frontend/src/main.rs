@@ -14,6 +14,11 @@ const HEIGHT: i32 = 750;
 const FIFTH_WIDTH: i32 = WIDTH / 5;
 const THIRD_HEIGHT: i32 = HEIGHT / 3;
 
+const COLONY_LIFE_INFO: ColonyLifeInfo = ColonyLifeInfo { 
+    health_cost_per_size_unit: 3,
+    eat_capacity_per_size_unit: 5
+};
+
 const SHARDS: [Shard; 15] = [
     Shard { x: 0, y: 0, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-left
     Shard { x: FIFTH_WIDTH, y: 0, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-middle-left
@@ -113,7 +118,7 @@ fn connect_to_backend() -> TcpStream {
 }
 
 fn send_init_colony(stream: &mut TcpStream) {
-    let init = BackendRequest::InitColony(InitColonyRequest { width: WIDTH, height: HEIGHT, colony_life_info: ColonyLifeInfo {}});
+    let init = BackendRequest::InitColony(InitColonyRequest { width: WIDTH, height: HEIGHT, colony_life_info: COLONY_LIFE_INFO });
     send_message(stream, &init);
 
     if let Some(response) = receive_message::<BackendResponse>(stream) {
@@ -126,7 +131,7 @@ fn send_init_colony(stream: &mut TcpStream) {
 }
 
 fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
-    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard, colony_life_info: ColonyLifeInfo {}});
+    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard, colony_life_info: COLONY_LIFE_INFO });
     send_message(stream, &req);
     if let Some(response) = receive_message::<BackendResponse>(stream) {
         match response {

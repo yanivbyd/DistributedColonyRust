@@ -2,6 +2,7 @@ use shared::be_api::{Color, Shard, Cell, ColonyLifeInfo};
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
+use std::cmp::min;
 use std::sync::OnceLock;
 use crate::topography::Topography;
 
@@ -68,18 +69,30 @@ impl ColonyShard {
         let neighbor_perms = get_neighbor_permutations();
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
         for my_cell in 0..self.grid.len() {
-            if rng.gen_bool(0.6) {
-                continue;
-            }
-            if self.grid[my_cell].tick_bit != tick_bit {
-                continue;
-            }
-            let x = my_cell % width;
-            let y = my_cell / width;
-            self.grid[my_cell].tick_bit = next_bit;
             if my_cell % 50 == 0 {
                 offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
             }
+
+            self.grid[my_cell].food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick);
+
+            if self.grid[my_cell].tick_bit != tick_bit {
+                continue;
+            }
+            if rng.gen_bool(0.6) {
+                continue;
+            }
+            
+            let x = my_cell % width;
+            let y = my_cell / width;
+            self.grid[my_cell].tick_bit = next_bit;
+
+            if !is_white(&self.grid[my_cell].color) {
+                let food_eaten = min(self.grid[my_cell].food, self.grid[my_cell].size * self.colony_life_info.health_cost_per_size_unit);
+                let health_cost = self.grid[my_cell].size * self.colony_life_info.health_cost_per_size_unit;
+                self.grid[my_cell].health = self.grid[my_cell].health.saturating_add(food_eaten).saturating_sub(health_cost);
+                self.grid[my_cell].food = self.grid[my_cell].food.saturating_sub(food_eaten);
+            }
+
             let mut is_done = false;
             for (dx, dy) in offsets.iter() {
                 let nx = x as isize + dx;

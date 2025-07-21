@@ -24,7 +24,7 @@ impl Topography {
                 let mut norm = ((raw_noise + 1.0) / 2.0).powf(1.5);
                 norm = norm.clamp(0.0, 1.0);
 
-                let extra = (1.0 + norm * 9.0).round() as u8;
+                let extra = (1.0 + norm * 40.0).round() as u8;
                 shard.grid[idx].extra_food_per_tick = extra;
                 shard.grid[idx].food = extra;
                 // shard.grid[idx].color = Color { red: 0, green: extra * 25, blue: 0 };

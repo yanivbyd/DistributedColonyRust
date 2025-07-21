@@ -10,7 +10,15 @@ pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> Col
             shard: shard.clone(),
             colony_life_info: colony_life_info.clone(),
             grid: (0..((shard.width+2) * (shard.height+2))).map(|_| {
-                Cell { color: white_color, tick_bit: false, strength: 0, food: 0, extra_food_per_tick: 0 }
+                Cell { 
+                    color: white_color, 
+                    tick_bit: false, 
+                    strength: 0, 
+                    food: 0, 
+                    extra_food_per_tick: 0,
+                    health: 0,
+                    size: 0,
+                }
             }).collect(),
         };
         shard.randomize_at_start();

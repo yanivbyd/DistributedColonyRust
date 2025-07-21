@@ -15,19 +15,26 @@ pub struct Color {
 pub struct Cell {
     pub tick_bit: bool,
 
+    // To Be Deleted
+    pub strength: u8,  
+
     // Cell itself
     pub food: u8,
     pub extra_food_per_tick: u8,
 
     // Creature 
     pub color: Color,
-    pub strength: u8,
+    pub health: u8,
+
+    // Traits
+    pub size: u8,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct ColonyLifeInfo {
+    pub health_cost_per_size_unit: u8,
+    pub eat_capacity_per_size_unit: u8,
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Shard {
