@@ -17,7 +17,7 @@ pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> Col
                     food: 0, 
                     extra_food_per_tick: 0,
                     health: 0,
-                    size: 0,
+                    size: 1,
                 }
             }).collect(),
         };

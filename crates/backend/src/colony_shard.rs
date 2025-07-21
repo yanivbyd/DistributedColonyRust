@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 use crate::topography::Topography;
 
 pub const NUM_RANDOM_COLORS: usize = 3;
+const WHITE_COLOR: Color = Color { red: 255, green: 255, blue: 255 };
 
 pub const NEIGHBOR_OFFSETS: [(isize, isize); 8] = [
     (-1, -1), (0, -1), (1, -1),
@@ -53,6 +54,7 @@ impl ColonyShard {
                 // create creatures
                 self.grid[id].color = random_colors[rng.gen_range(0..random_colors.len())];
                 self.grid[id].strength = rng.gen_range(1..255);
+                self.grid[id].health = 20;
             }
         }
 
@@ -91,6 +93,11 @@ impl ColonyShard {
                 let health_cost = self.grid[my_cell].size * self.colony_life_info.health_cost_per_size_unit;
                 self.grid[my_cell].health = self.grid[my_cell].health.saturating_add(food_eaten).saturating_sub(health_cost);
                 self.grid[my_cell].food = self.grid[my_cell].food.saturating_sub(food_eaten);
+
+                if self.grid[my_cell].health == 0 {
+                    self.grid[my_cell].color = WHITE_COLOR;
+                    continue;
+                }
             }
 
             let mut is_done = false;
