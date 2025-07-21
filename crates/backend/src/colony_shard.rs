@@ -46,6 +46,21 @@ pub struct ColonyShard {
 }
 
 impl ColonyShard {
+    fn get_neighbors(x: usize, y: usize, width: usize, height: usize, offsets: &[(isize, isize)], my_cell: usize) -> Vec<usize> {
+        let mut neighbor_indices = Vec::new();
+        for (dx, dy) in offsets.iter() {
+            let nx = x as isize + dx;
+            let ny = y as isize + dy;
+            if in_grid_range(width, height, nx, ny) {
+                let neighbour = ny as usize * width + nx as usize;
+                if neighbour != my_cell {
+                    neighbor_indices.push(neighbour);
+                }
+            }
+        }
+        neighbor_indices
+    }
+
     pub fn randomize_at_start(&mut self) {
         let mut rng = SmallRng::from_entropy();
         const NUM_RANDOM_CREATURES: usize = 3;
@@ -85,63 +100,49 @@ impl ColonyShard {
         let neighbor_perms = get_neighbor_permutations();
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
         for my_cell in 0..self.grid.len() {
+            let neighbors = Self::get_neighbors(my_cell % width, my_cell / width, width, height, offsets, my_cell);
             if my_cell % 50 == 0 {
                 offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
             }
 
             self.grid[my_cell].food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick);
-
             if self.grid[my_cell].tick_bit != tick_bit {
                 continue;
             }
             if rng.gen_bool(0.6) {
                 continue;
             }
-            
-            let x = my_cell % width;
-            let y = my_cell / width;
             self.grid[my_cell].tick_bit = next_bit;
-
             if !is_white(&self.grid[my_cell].color) {
                 let food_eaten = min(self.grid[my_cell].food, self.grid[my_cell].traits.size * self.colony_life_info.health_cost_per_size_unit);
                 let health_cost = self.grid[my_cell].traits.size * self.colony_life_info.health_cost_per_size_unit;
                 self.grid[my_cell].health = self.grid[my_cell].health.saturating_add(food_eaten).saturating_sub(health_cost);
                 self.grid[my_cell].food = self.grid[my_cell].food.saturating_sub(food_eaten);
-
                 if self.grid[my_cell].health == 0 {
                     self.grid[my_cell].color = WHITE_COLOR;
                     continue;
                 }
             }
-
+            // BREED to empty neighbouring cell
             let mut is_done = false;
-            for (dx, dy) in offsets.iter() {
-                let nx = x as isize + dx;
-                let ny = y as isize + dy;
-                if in_grid_range(width, height, nx, ny) {
-                    let neighbour = ny as usize * width + nx as usize;
-                    if is_white(&self.grid[neighbour].color) && self.grid[neighbour].tick_bit == tick_bit {
-                        self.grid[neighbour].color = self.grid[my_cell].color;
-                        self.grid[neighbour].strength = self.grid[my_cell].strength;
-                        self.grid[neighbour].tick_bit = next_bit;
-                        is_done = true;
-                        break;
-                    }
+            for &neighbour in &neighbors {
+                if is_white(&self.grid[neighbour].color) && self.grid[neighbour].tick_bit == tick_bit {
+                    self.grid[neighbour].color = self.grid[my_cell].color;
+                    self.grid[neighbour].strength = self.grid[my_cell].strength;
+                    self.grid[neighbour].tick_bit = next_bit;
+                    is_done = true;
+                    break;
                 }
             }
             if is_done { continue; }
-            for (dx, dy) in offsets.iter() {
-                let nx = x as isize + dx;
-                let ny = y as isize + dy;
-                if in_grid_range(width, height, nx, ny) {
-                    let neighbour = ny as usize * width + nx as usize;
-                    if self.grid[my_cell].strength > self.grid[neighbour].strength {
-                        self.grid[neighbour].color = self.grid[my_cell].color;
-                        self.grid[neighbour].strength = self.grid[my_cell].strength-1;
-                        self.grid[neighbour].tick_bit = next_bit;
-                        is_done = true;
-                        break;
-                    }
+            // KILL a neighbouring cell with lower strength
+            for &neighbour in &neighbors {
+                if self.grid[my_cell].strength > self.grid[neighbour].strength {
+                    self.grid[neighbour].color = self.grid[my_cell].color;
+                    self.grid[neighbour].strength = self.grid[my_cell].strength-1;
+                    self.grid[neighbour].tick_bit = next_bit;
+                    is_done = true;
+                    break;
                 }
             }
             if is_done { continue; }
