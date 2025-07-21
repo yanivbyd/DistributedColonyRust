@@ -10,7 +10,7 @@ impl Topography {
         let height = (shard.shard.height + 2) as usize;
         let mut rng = rand::thread_rng();
         let perlin = Perlin::new(rng.gen());
-        let scale = 0.08; // Lower = larger features, higher = more detail
+        let scale = 0.05;
         let offset_x = rng.gen_range(0.0..1000.0);
         let offset_y = rng.gen_range(0.0..1000.0);
 
@@ -19,16 +19,32 @@ impl Topography {
                 let idx = y * width + x;
                 let nx = offset_x + x as f64 * scale;
                 let ny = offset_y + y as f64 * scale;
-                let noise_val = perlin.get([nx, ny]);
-                // Map noise_val (-1..1) to 0..1, then to 1..10 (invert for valleys/peaks)
-                let mut norm = 1.0 - ((noise_val + 1.0) / 2.0);
-                if norm < 0.0 { norm = 0.0; }
-                if norm > 1.0 { norm = 1.0; }
+
+                let raw_noise = fbm(&perlin, nx, ny, 5, 0.5, 2.0);
+                let mut norm = ((raw_noise + 1.0) / 2.0).powf(1.5);
+                norm = norm.clamp(0.0, 1.0);
+
                 let extra = (1.0 + norm * 9.0).round() as u8;
                 shard.grid[idx].extra_food_per_tick = extra;
-                shard.grid[idx].food = shard.grid[idx].extra_food_per_tick;
+                shard.grid[idx].food = extra;
                 // shard.grid[idx].color = Color { red: 0, green: extra * 25, blue: 0 };
             }
         }
     }
+}
+
+fn fbm(perlin: &Perlin, x: f64, y: f64, octaves: usize, persistence: f64, lacunarity: f64) -> f64 {
+    let mut total = 0.0;
+    let mut frequency = 1.0;
+    let mut amplitude = 1.0;
+    let mut max_value = 0.0;
+
+    for _ in 0..octaves {
+        total += perlin.get([x * frequency, y * frequency]) * amplitude;
+        max_value += amplitude;
+        amplitude *= persistence;
+        frequency *= lacunarity;
+    }
+
+    total / max_value
 }
