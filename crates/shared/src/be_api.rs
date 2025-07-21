@@ -26,7 +26,11 @@ pub struct Cell {
     pub color: Color,
     pub health: u8,
 
-    // Traits
+    pub traits: Traits,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct Traits {
     pub size: u8,
 }
 

@@ -1,5 +1,5 @@
 use crate::colony_shard::ColonyShard;
-use shared::be_api::{Cell, Color, Shard, UpdatedShardContentsRequest, ColonyLifeInfo};
+use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits, UpdatedShardContentsRequest};
 
 pub struct ShardUtils;
 
@@ -17,7 +17,7 @@ pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> Col
                     food: 0, 
                     extra_food_per_tick: 0,
                     health: 0,
-                    size: 1,
+                    traits: Traits { size: 1 },
                 }
             }).collect(),
         };

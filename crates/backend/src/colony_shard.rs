@@ -6,8 +6,15 @@ use std::cmp::min;
 use std::sync::OnceLock;
 use crate::topography::Topography;
 
-pub const NUM_RANDOM_COLORS: usize = 3;
+
 const WHITE_COLOR: Color = Color { red: 255, green: 255, blue: 255 };
+
+#[derive(Clone, Copy)]
+pub struct CreatureTemplate {
+    pub color: Color,
+    pub size: u8,
+    pub strength: u8,
+}
 
 pub const NEIGHBOR_OFFSETS: [(isize, isize); 8] = [
     (-1, -1), (0, -1), (1, -1),
@@ -41,20 +48,27 @@ pub struct ColonyShard {
 impl ColonyShard {
     pub fn randomize_at_start(&mut self) {
         let mut rng = SmallRng::from_entropy();
-        let random_colors: Vec<Color> = (0..NUM_RANDOM_COLORS)
-            .map(|_| Color {
-                red: rng.gen_range(0..=255),
-                green: rng.gen_range(0..=255),
-                blue: rng.gen_range(0..=255),
+        const NUM_RANDOM_CREATURES: usize = 3;
+        let creature_templates: Vec<CreatureTemplate> = (0..NUM_RANDOM_CREATURES)
+            .map(|_| CreatureTemplate {
+                color: Color {
+                    red: rng.gen_range(0..=255),
+                    green: rng.gen_range(0..=255),
+                    blue: rng.gen_range(0..=255),
+                },
+                size: rng.gen_range(15..=16),
+                strength: 100,
             })
             .collect();
 
         for id in 0..self.grid.len() {
             if rng.gen_bool(0.99) {
                 // create creatures
-                self.grid[id].color = random_colors[rng.gen_range(0..random_colors.len())];
-                self.grid[id].strength = rng.gen_range(1..255);
+                let template = creature_templates[rng.gen_range(0..creature_templates.len())];
+                self.grid[id].color = template.color;
+                self.grid[id].strength = template.strength;
                 self.grid[id].health = 20;
+                self.grid[id].traits.size = template.size;
             }
         }
 
@@ -89,8 +103,8 @@ impl ColonyShard {
             self.grid[my_cell].tick_bit = next_bit;
 
             if !is_white(&self.grid[my_cell].color) {
-                let food_eaten = min(self.grid[my_cell].food, self.grid[my_cell].size * self.colony_life_info.health_cost_per_size_unit);
-                let health_cost = self.grid[my_cell].size * self.colony_life_info.health_cost_per_size_unit;
+                let food_eaten = min(self.grid[my_cell].food, self.grid[my_cell].traits.size * self.colony_life_info.health_cost_per_size_unit);
+                let health_cost = self.grid[my_cell].traits.size * self.colony_life_info.health_cost_per_size_unit;
                 self.grid[my_cell].health = self.grid[my_cell].health.saturating_add(food_eaten).saturating_sub(health_cost);
                 self.grid[my_cell].food = self.grid[my_cell].food.saturating_sub(food_eaten);
 
