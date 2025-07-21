@@ -3,6 +3,7 @@ use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use std::sync::OnceLock;
+use crate::topography::Topography;
 
 pub const NUM_RANDOM_COLORS: usize = 3;
 
@@ -48,10 +49,13 @@ impl ColonyShard {
 
         for id in 0..self.grid.len() {
             if rng.gen_bool(0.99) {
+                // create creatures
                 self.grid[id].color = random_colors[rng.gen_range(0..random_colors.len())];
                 self.grid[id].strength = rng.gen_range(1..255);
             }
-        }    
+        }
+
+        Topography::init_topography(self);
     }
 
     pub fn tick(&mut self) {

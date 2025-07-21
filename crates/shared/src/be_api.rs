@@ -13,8 +13,14 @@ pub struct Color {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct Cell {
-    pub color: Color,
     pub tick_bit: bool,
+
+    // Cell itself
+    pub food: u8,
+    pub extra_food_per_tick: u8,
+
+    // Creature 
+    pub color: Color,
     pub strength: u8,
 }
 

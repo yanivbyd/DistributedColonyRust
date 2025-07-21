@@ -13,6 +13,7 @@ mod ticker;
 mod colony_shard;
 mod shard_utils;
 mod colony_events;
+mod topography;
 
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;

@@ -14,3 +14,4 @@ futures-util = { version = "0.3", features = ["sink"] }
 rand = { version = "0.8", features = ["small_rng"] }
 prometheus = "0.13"
 lazy_static = "1.4" 
+noise = "0.8" 
