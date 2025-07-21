@@ -61,6 +61,16 @@ impl ColonyShard {
         neighbor_indices
     }
 
+    fn eat_food(&mut self, cell_idx: usize) {
+        let food_eaten = min(
+            self.grid[cell_idx].food,
+            self.grid[cell_idx].traits.size * self.colony_life_info.health_cost_per_size_unit,
+        );
+        let health_cost = self.grid[cell_idx].traits.size * self.colony_life_info.health_cost_per_size_unit;
+        self.grid[cell_idx].health = self.grid[cell_idx].health.saturating_add(food_eaten).saturating_sub(health_cost);
+        self.grid[cell_idx].food = self.grid[cell_idx].food.saturating_sub(food_eaten);
+    }
+
     pub fn randomize_at_start(&mut self) {
         let mut rng = SmallRng::from_entropy();
         const NUM_RANDOM_CREATURES: usize = 3;
@@ -71,7 +81,7 @@ impl ColonyShard {
                     green: rng.gen_range(0..=255),
                     blue: rng.gen_range(0..=255),
                 },
-                size: rng.gen_range(15..=16),
+                size: 2,
                 strength: 100,
             })
             .collect();
@@ -100,33 +110,32 @@ impl ColonyShard {
         let neighbor_perms = get_neighbor_permutations();
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
         for my_cell in 0..self.grid.len() {
-            let neighbors = Self::get_neighbors(my_cell % width, my_cell / width, width, height, offsets, my_cell);
+            // Increment food
+            self.grid[my_cell].food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick);
+
+            // Handle tick bit
+            if self.grid[my_cell].tick_bit == next_bit || is_blank(&self.grid[my_cell]) {
+                continue;
+            } else {
+                self.grid[my_cell].tick_bit = next_bit;
+            }
+
             if my_cell % 50 == 0 {
                 offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
             }
+            let neighbors = Self::get_neighbors(my_cell % width, my_cell / width, width, height, offsets, my_cell);
 
-            self.grid[my_cell].food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick);
-            if self.grid[my_cell].tick_bit != tick_bit {
+            // EAT food
+            self.eat_food(my_cell);
+            if self.grid[my_cell].health == 0 {
+                self.grid[my_cell].color = WHITE_COLOR;
                 continue;
             }
-            if rng.gen_bool(0.6) {
-                continue;
-            }
-            self.grid[my_cell].tick_bit = next_bit;
-            if !is_white(&self.grid[my_cell].color) {
-                let food_eaten = min(self.grid[my_cell].food, self.grid[my_cell].traits.size * self.colony_life_info.health_cost_per_size_unit);
-                let health_cost = self.grid[my_cell].traits.size * self.colony_life_info.health_cost_per_size_unit;
-                self.grid[my_cell].health = self.grid[my_cell].health.saturating_add(food_eaten).saturating_sub(health_cost);
-                self.grid[my_cell].food = self.grid[my_cell].food.saturating_sub(food_eaten);
-                if self.grid[my_cell].health == 0 {
-                    self.grid[my_cell].color = WHITE_COLOR;
-                    continue;
-                }
-            }
+
             // BREED to empty neighbouring cell
             let mut is_done = false;
             for &neighbour in &neighbors {
-                if is_white(&self.grid[neighbour].color) && self.grid[neighbour].tick_bit == tick_bit {
+                if is_blank(&self.grid[neighbour]) && self.grid[neighbour].tick_bit == tick_bit {
                     self.grid[neighbour].color = self.grid[my_cell].color;
                     self.grid[neighbour].strength = self.grid[my_cell].strength;
                     self.grid[neighbour].tick_bit = next_bit;
@@ -135,6 +144,7 @@ impl ColonyShard {
                 }
             }
             if is_done { continue; }
+            
             // KILL a neighbouring cell with lower strength
             for &neighbour in &neighbors {
                 if self.grid[my_cell].strength > self.grid[neighbour].strength {
@@ -151,8 +161,8 @@ impl ColonyShard {
         
 }
 
-fn is_white(color: &Color) -> bool {
-    color.red == 255 && color.green == 255 && color.blue == 255
+fn is_blank(cell: &Cell) -> bool {
+    cell.color.red == 255 && cell.color.green == 255 && cell.color.blue == 255
 }
 
 pub fn in_grid_range(width: usize, height: usize, x: isize, y: isize) -> bool {
