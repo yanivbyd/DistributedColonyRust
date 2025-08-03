@@ -12,6 +12,7 @@ mod colony;
 mod ticker;
 mod colony_shard;
 mod shard_utils;
+mod shard_storage;
 mod colony_events;
 mod topography;
 

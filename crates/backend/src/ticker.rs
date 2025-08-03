@@ -38,6 +38,12 @@ pub fn start_ticker() {
                     log_event(&event);
                     apply_event(&mut colony, &event);
                 }
+
+                if tick_count % 100 == 0 {
+                    for shard in &colony.shards {
+                        ShardUtils::store_shard(&shard);
+                    }
+                }
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }

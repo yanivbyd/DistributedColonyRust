@@ -1,5 +1,7 @@
 use crate::colony_shard::ColonyShard;
-use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits, UpdatedShardContentsRequest};
+use shared::{be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits, UpdatedShardContentsRequest}, log_error};
+use crate::shard_storage::ShardStorage;
+use shared::log;
 
 pub struct ShardUtils;
 
@@ -23,6 +25,10 @@ pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> Col
         };
         shard.randomize_at_start();
         shard
+    }
+
+    pub fn shard_id(shard: &Shard) -> String {
+        format!("{}_{}_{}_{}", shard.x, shard.y, shard.width, shard.height)
     }
 
     pub fn get_shard_image(shard: &ColonyShard, req_shard: &Shard) -> Option<Vec<Color>> {
@@ -125,6 +131,25 @@ pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> Col
             bottom,
             left,
             right,
+        }
+    }
+    
+    pub fn store_shard(shard: &ColonyShard) {
+        let shard_id = ShardUtils::shard_id(&shard.shard);
+        let shard_filename = format!("output/storage/{}.bin", shard_id);
+        let backup_filename = format!("output/storage/{}.bin.bak", shard_id);
+
+        if std::path::Path::new(&shard_filename).exists() {
+            let _ = std::fs::remove_file(&backup_filename);
+            if let Err(e) = std::fs::rename(&shard_filename, &backup_filename) {
+                log_error!("Failed to backup shard file {}: {}", shard_filename, e);
+            }
+        }
+
+        if let Err(e) = ShardStorage::store_shard(shard, &shard_filename) {
+            log_error!("Failed to store shard {}: {}", shard_id, e);
+        } else {
+            log!("Stored shard in {}", shard_filename);
         }
     }
 } 

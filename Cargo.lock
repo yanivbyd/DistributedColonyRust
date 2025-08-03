@@ -524,6 +524,7 @@ dependencies = [
  "prometheus",
  "rand 0.8.5",
  "rayon",
+ "serde",
  "shared",
  "tokio",
  "tokio-stream",
