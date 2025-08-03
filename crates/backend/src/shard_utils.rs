@@ -26,17 +26,12 @@ impl ShardUtils {
         };
 
         let shard_filename = Self::get_shard_filename(shard);
-        let backup_filename = Self::get_shard_backup_filename(shard);
         
         if ShardStorage::retrieve_shard(&mut colony_shard, &shard_filename) {
             log!("Loaded shard from: {}", shard_filename);
         } else {
-            if ShardStorage::retrieve_shard(&mut colony_shard, &backup_filename) {
-                log_error!("Loaded shard from backup file: {}", backup_filename);
-            } else {
-                log!("Randomizing shard: {}", Self::shard_id(shard));
-                colony_shard.randomize_at_start();
-            }
+            log!("Randomizing shard: {}", Self::shard_id(shard));
+            colony_shard.randomize_at_start();
         }        
         colony_shard
     }
@@ -150,17 +145,19 @@ impl ShardUtils {
     
     pub fn store_shard(shard: &ColonyShard) {
         let shard_filename = Self::get_shard_filename(&shard.shard);
-        let backup_filename = Self::get_shard_backup_filename(&shard.shard);
+        let temp_filename = Self::get_shard_temp_filename(&shard.shard);
 
-        if std::path::Path::new(&shard_filename).exists() {
-            let _ = std::fs::remove_file(&backup_filename);
-            if let Err(e) = std::fs::rename(&shard_filename, &backup_filename) {
-                log_error!("Failed to backup shard file {}: {}", shard_filename, e);
-            }
+        // Write to temp file first
+        if let Err(e) = ShardStorage::store_shard(shard, &temp_filename) {
+            log_error!("Failed to store shard to temp file {}: {}", temp_filename, e);
+            return;
         }
 
-        if let Err(e) = ShardStorage::store_shard(shard, &shard_filename) {
-            log_error!("Failed to store shard {}: {}", Self::shard_id(&shard.shard), e);
+        // Atomically rename temp to final file
+        if let Err(e) = std::fs::rename(&temp_filename, &shard_filename) {
+            log_error!("Failed to rename temp file to final file: {}", e);
+            // Clean up temp file
+            let _ = std::fs::remove_file(&temp_filename);
         } else {
             log!("Stored shard in {}", shard_filename);
         }
@@ -170,8 +167,8 @@ impl ShardUtils {
         format!("output/storage/{}.bin", ShardUtils::shard_id(shard))
     }
 
-    fn get_shard_backup_filename(shard: &Shard) -> String {
-        format!("output/storage/{}.bin.bak", ShardUtils::shard_id(shard))
+    fn get_shard_temp_filename(shard: &Shard) -> String {
+        format!("{}.tmp", Self::get_shard_filename(shard))
     }
 
 } 
