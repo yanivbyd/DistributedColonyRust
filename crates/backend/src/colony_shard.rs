@@ -19,6 +19,26 @@ pub struct CreatureTemplate {
     pub strength: u8,
 }
 
+#[derive(Debug)]
+struct TickStats {
+    #[allow(dead_code)]
+    tick_bit: bool,
+    tick_true: usize,
+    tick_false: usize,
+    deaths: usize,
+}
+
+impl TickStats {
+    fn new(tick_bit: bool) -> Self {
+        Self {
+            tick_bit,
+            tick_true: 0,
+            tick_false: 0,
+            deaths: 0,
+        }
+    }
+}
+
 pub const NEIGHBOR_OFFSETS: [(isize, isize); 8] = [
     (-1, -1), (0, -1), (1, -1),
     (-1,  0),          (1,  0),
@@ -114,6 +134,7 @@ impl ColonyShard {
         let neighbor_perms = get_neighbor_permutations();
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
         let mut neighbors = [0; 8];
+        let mut stats = TickStats::new(tick_bit);
         
         ShardUtils::set_shadow_margin_tick_bits(self, tick_bit);
 
@@ -142,6 +163,7 @@ impl ColonyShard {
             self.eat_food(my_cell);
             if self.grid[my_cell].health == 0 {
                 set_blank(&mut self.grid[my_cell]);
+                stats.deaths += 1;
                 continue;
             }
 
@@ -174,10 +196,9 @@ impl ColonyShard {
         }
         
         if LOG_TICK_STATS {
-            let (tick_bit_true_count, tick_bit_false_count) = ShardUtils::count_tick_bits(self);        
-            log!("Shard_{}_{}_{}_{}: tick_bit: {}, tick_true: {}, tick_false: {}", 
-                self.shard.x, self.shard.y, self.shard.width, self.shard.height, 
-                tick_bit, tick_bit_true_count, tick_bit_false_count);
+            (stats.tick_true, stats.tick_false) = ShardUtils::count_tick_bits(self);
+            log!("Shard_{}_{}_{}_{}: {:?}", 
+                self.shard.x, self.shard.y, self.shard.width, self.shard.height, stats);
         }
     }
         
