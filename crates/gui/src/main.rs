@@ -7,6 +7,7 @@ use std::time::Duration;
 mod call_be;
 
 const SHARD_SIZE: f32 = 250.0;
+const REFRESH_INTERVAL_MS: u64 = 100;
 
 struct BEImageApp {
     retained: Arc<Mutex<Vec<Option<RetainedImage>>>>,
@@ -40,7 +41,7 @@ impl App for BEImageApp {
                         *locked = images;
                     }
                     ctx_clone.request_repaint();
-                    thread::sleep(Duration::from_millis(1000));
+                    thread::sleep(Duration::from_millis(REFRESH_INTERVAL_MS));
                 }
             });
             self.thread_started = true;
