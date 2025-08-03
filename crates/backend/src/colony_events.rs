@@ -188,12 +188,12 @@ pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
             match event {
                 ColonyEvent::LocalDeath(_) => {
                     apply_region_to_shard(shard, region, |cell| {
-                        cell.strength = rand::random::<u8>() % (cell.strength / 2 + 1);
+                        cell.health = 1;
                     });
                 },
                 ColonyEvent::ReshuffleStrength(_) => {
                     apply_region_to_shard(shard, region, |cell| {
-                        cell.strength = rand::random::<u8>();
+                        cell.health = 5;
                     });
                 }
             }

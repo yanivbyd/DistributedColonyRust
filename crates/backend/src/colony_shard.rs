@@ -26,7 +26,7 @@ struct TickStats {
     tick_true: usize,
     tick_false: usize,
     deaths: usize,
-    breeds: usize,
+    moves: usize,
 }
 
 impl TickStats {
@@ -36,7 +36,7 @@ impl TickStats {
             tick_true: 0,
             tick_false: 0,
             deaths: 0,
-            breeds: 0,
+            moves: 0,
         }
     }
 }
@@ -95,6 +95,32 @@ impl ColonyShard {
         let health_cost = self.grid[cell_idx].traits.size * self.colony_life_info.health_cost_per_size_unit;
         self.grid[cell_idx].health = self.grid[cell_idx].health.saturating_add(food_eaten).saturating_sub(health_cost);
         self.grid[cell_idx].food = self.grid[cell_idx].food.saturating_sub(food_eaten);
+    }
+
+    fn move_to_highest_food_neighbor(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool) -> bool {
+        let mut best_neighbor = None;
+        let mut highest_food = self.grid[my_cell].food;
+        
+        // Find the neighbor with the highest food
+        for i in 0..neighbor_count {
+            let neighbor = neighbors[i];
+            if is_blank(&self.grid[neighbor]) && self.grid[neighbor].food > highest_food {
+                highest_food = self.grid[neighbor].food;
+                best_neighbor = Some(neighbor);
+            }
+        }
+        
+        if let Some(best_neighbor) = best_neighbor {
+            self.grid[best_neighbor].color = self.grid[my_cell].color;
+            self.grid[best_neighbor].strength = self.grid[my_cell].strength;
+            self.grid[best_neighbor].health = self.grid[my_cell].health;
+            self.grid[best_neighbor].traits = self.grid[my_cell].traits;
+            self.grid[best_neighbor].tick_bit = next_bit;
+            set_blank(&mut self.grid[my_cell]);
+            return true;
+        }
+        
+        false
     }
 
     pub fn randomize_at_start(&mut self) {
@@ -169,33 +195,9 @@ impl ColonyShard {
                 continue;
             }
 
-            // BREED to empty neighbouring cell
-            let mut is_done = false;
-            for i in 0..neighbor_count {
-                let neighbour = neighbors[i];
-                if is_blank(&self.grid[neighbour]) {
-                    self.grid[neighbour].color = self.grid[my_cell].color;
-                    self.grid[neighbour].strength = self.grid[my_cell].strength;
-                    self.grid[neighbour].tick_bit = next_bit;
-                    is_done = true;
-                    stats.breeds += 1;
-                    break;
-                }
+            if self.move_to_highest_food_neighbor(my_cell, &neighbors, neighbor_count, next_bit) {
+                stats.moves += 1;
             }
-            if is_done { continue; }
-            
-            // KILL a neighbouring cell with lower strength
-            for i in 0..neighbor_count {
-                let neighbour = neighbors[i];
-                if self.grid[my_cell].strength > self.grid[neighbour].strength {
-                    self.grid[neighbour].color = self.grid[my_cell].color;
-                    self.grid[neighbour].strength = self.grid[my_cell].strength-1;
-                    self.grid[neighbour].tick_bit = next_bit;
-                    is_done = true;
-                    break;
-                }
-            }
-            if is_done { continue; }
         }
         
         if LOG_TICK_STATS {
