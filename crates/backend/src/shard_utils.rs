@@ -6,9 +6,10 @@ use shared::log;
 pub struct ShardUtils;
 
 impl ShardUtils {
-pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> ColonyShard {
+
+    pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> ColonyShard {
         let white_color = Color { red: 255, green: 255, blue: 255 };
-        let mut shard = ColonyShard {
+        let mut colony_shard = ColonyShard {
             shard: shard.clone(),
             colony_life_info: colony_life_info.clone(),
             grid: (0..((shard.width+2) * (shard.height+2))).map(|_| {
@@ -23,8 +24,21 @@ pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> Col
                 }
             }).collect(),
         };
-        shard.randomize_at_start();
-        shard
+
+        let shard_filename = Self::get_shard_filename(shard);
+        let backup_filename = Self::get_shard_backup_filename(shard);
+        
+        if ShardStorage::retrieve_shard(&mut colony_shard, &shard_filename) {
+            log!("Loaded shard from: {}", shard_filename);
+        } else {
+            if ShardStorage::retrieve_shard(&mut colony_shard, &backup_filename) {
+                log_error!("Loaded shard from backup file: {}", backup_filename);
+            } else {
+                log!("Randomizing shard: {}", Self::shard_id(shard));
+                colony_shard.randomize_at_start();
+            }
+        }        
+        colony_shard
     }
 
     pub fn shard_id(shard: &Shard) -> String {
@@ -135,9 +149,8 @@ pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> Col
     }
     
     pub fn store_shard(shard: &ColonyShard) {
-        let shard_id = ShardUtils::shard_id(&shard.shard);
-        let shard_filename = format!("output/storage/{}.bin", shard_id);
-        let backup_filename = format!("output/storage/{}.bin.bak", shard_id);
+        let shard_filename = Self::get_shard_filename(&shard.shard);
+        let backup_filename = Self::get_shard_backup_filename(&shard.shard);
 
         if std::path::Path::new(&shard_filename).exists() {
             let _ = std::fs::remove_file(&backup_filename);
@@ -147,9 +160,18 @@ pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> Col
         }
 
         if let Err(e) = ShardStorage::store_shard(shard, &shard_filename) {
-            log_error!("Failed to store shard {}: {}", shard_id, e);
+            log_error!("Failed to store shard {}: {}", Self::shard_id(&shard.shard), e);
         } else {
             log!("Stored shard in {}", shard_filename);
         }
     }
+
+    fn get_shard_filename(shard: &Shard) -> String {
+        format!("output/storage/{}.bin", ShardUtils::shard_id(shard))
+    }
+
+    fn get_shard_backup_filename(shard: &Shard) -> String {
+        format!("output/storage/{}.bin.bak", ShardUtils::shard_id(shard))
+    }
+
 } 
