@@ -46,19 +46,20 @@ pub struct ColonyShard {
 }
 
 impl ColonyShard {
-    fn get_neighbors(x: usize, y: usize, width: usize, height: usize, offsets: &[(isize, isize)], my_cell: usize) -> Vec<usize> {
-        let mut neighbor_indices = Vec::new();
+    fn get_neighbors(x: usize, y: usize, width: usize, height: usize, offsets: &[(isize, isize)], my_cell: usize, neighbors: &mut [usize]) -> usize {
+        let mut count = 0;
         for (dx, dy) in offsets.iter() {
             let nx = x as isize + dx;
             let ny = y as isize + dy;
             if in_grid_range(width, height, nx, ny) {
                 let neighbour = ny as usize * width + nx as usize;
                 if neighbour != my_cell {
-                    neighbor_indices.push(neighbour);
+                    neighbors[count] = neighbour;
+                    count += 1;
                 }
             }
         }
-        neighbor_indices
+        count
     }
 
     fn eat_food(&mut self, cell_idx: usize) {
@@ -109,6 +110,8 @@ impl ColonyShard {
         let next_bit = !tick_bit;
         let neighbor_perms = get_neighbor_permutations();
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
+        let mut neighbors = [0; 8];
+        
         for my_cell in 0..self.grid.len() {
             // Increment food
             self.grid[my_cell].food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick);
@@ -123,7 +126,7 @@ impl ColonyShard {
             if my_cell % 50 == 0 {
                 offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
             }
-            let neighbors = Self::get_neighbors(my_cell % width, my_cell / width, width, height, offsets, my_cell);
+            let neighbor_count = Self::get_neighbors(my_cell % width, my_cell / width, width, height, offsets, my_cell, &mut neighbors);
 
             // EAT food
             self.eat_food(my_cell);
@@ -134,7 +137,8 @@ impl ColonyShard {
 
             // BREED to empty neighbouring cell
             let mut is_done = false;
-            for &neighbour in &neighbors {
+            for i in 0..neighbor_count {
+                let neighbour = neighbors[i];
                 if is_blank(&self.grid[neighbour]) && self.grid[neighbour].tick_bit == tick_bit {
                     self.grid[neighbour].color = self.grid[my_cell].color;
                     self.grid[neighbour].strength = self.grid[my_cell].strength;
@@ -146,7 +150,8 @@ impl ColonyShard {
             if is_done { continue; }
             
             // KILL a neighbouring cell with lower strength
-            for &neighbour in &neighbors {
+            for i in 0..neighbor_count {
+                let neighbour = neighbors[i];
                 if self.grid[my_cell].strength > self.grid[neighbour].strength {
                     self.grid[neighbour].color = self.grid[my_cell].color;
                     self.grid[neighbour].strength = self.grid[my_cell].strength-1;
