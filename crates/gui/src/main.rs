@@ -51,8 +51,10 @@ impl App for BEImageApp {
             let locked = self.retained.lock().unwrap();
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 for row in 0..3 {
                     ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                         for col in 0..5 {
                             let idx = row * 5 + col;
                             if let Some(img) = locked.get(idx).and_then(|o| o.as_ref()) {
