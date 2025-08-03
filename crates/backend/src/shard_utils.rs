@@ -171,4 +171,35 @@ impl ShardUtils {
         format!("{}.tmp", Self::get_shard_filename(shard))
     }
 
+    pub fn set_shadow_margin_tick_bits(colony_shard: &mut ColonyShard, tick_bit: bool) {
+        let width = (colony_shard.shard.width + 2) as usize;
+        let height = (colony_shard.shard.height + 2) as usize;        
+        let bottom_start = (height - 1) * width;
+        
+        for x in 0..width {
+            colony_shard.grid[x].tick_bit = tick_bit;
+            colony_shard.grid[bottom_start + x].tick_bit = tick_bit;
+        }
+        
+        for y in 1..height-1 {
+            colony_shard.grid[y * width].tick_bit = tick_bit;
+            colony_shard.grid[y * width + (width - 1)].tick_bit = tick_bit;
+        }
+    }
+
+    pub fn count_tick_bits(colony_shard: &ColonyShard) -> (usize, usize) {
+        let mut tick_bit_true_count = 0;
+        let mut tick_bit_false_count = 0;
+        
+        for cell in &colony_shard.grid {
+            if cell.tick_bit {
+                tick_bit_true_count += 1;
+            } else {
+                tick_bit_false_count += 1;
+            }
+        }
+        
+        (tick_bit_true_count, tick_bit_false_count)
+    }
+
 } 

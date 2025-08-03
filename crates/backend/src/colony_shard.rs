@@ -1,13 +1,16 @@
 use shared::be_api::{Color, Shard, Cell, ColonyLifeInfo};
+use shared::log;
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use std::cmp::min;
 use std::sync::OnceLock;
 use crate::topography::Topography;
+use crate::shard_utils::ShardUtils;
 
 
 const WHITE_COLOR: Color = Color { red: 255, green: 255, blue: 255 };
+const LOG_TICK_STATS: bool = true;
 
 #[derive(Clone, Copy)]
 pub struct CreatureTemplate {
@@ -112,15 +115,21 @@ impl ColonyShard {
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
         let mut neighbors = [0; 8];
         
+        ShardUtils::set_shadow_margin_tick_bits(self, tick_bit);
+
         for my_cell in 0..self.grid.len() {
             // Increment food
             self.grid[my_cell].food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick);
 
             // Handle tick bit
-            if self.grid[my_cell].tick_bit == next_bit || is_blank(&self.grid[my_cell]) {
+            if self.grid[my_cell].tick_bit == next_bit {
                 continue;
             } else {
                 self.grid[my_cell].tick_bit = next_bit;
+            }
+            
+            if is_blank(&self.grid[my_cell]) {
+                continue;
             }
 
             // Randomize neightbor offsets
@@ -162,6 +171,13 @@ impl ColonyShard {
                 }
             }
             if is_done { continue; }
+        }
+        
+        if LOG_TICK_STATS {
+            let (tick_bit_true_count, tick_bit_false_count) = ShardUtils::count_tick_bits(self);        
+            log!("Shard_{}_{}_{}_{}: tick_bit: {}, tick_true: {}, tick_false: {}", 
+                self.shard.x, self.shard.y, self.shard.width, self.shard.height, 
+                tick_bit, tick_bit_true_count, tick_bit_false_count);
         }
     }
         
