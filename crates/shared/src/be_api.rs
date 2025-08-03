@@ -15,9 +15,6 @@ pub struct Color {
 pub struct Cell {
     pub tick_bit: bool,
 
-    // To Be Deleted
-    pub strength: u8,  
-
     // Cell itself
     pub food: u8,
     pub extra_food_per_tick: u8,

@@ -16,7 +16,6 @@ const LOG_TICK_STATS: bool = false;
 pub struct CreatureTemplate {
     pub color: Color,
     pub size: u8,
-    pub strength: u8,
 }
 
 #[derive(Debug)]
@@ -112,7 +111,6 @@ impl ColonyShard {
         
         if let Some(best_neighbor) = best_neighbor {
             self.grid[best_neighbor].color = self.grid[my_cell].color;
-            self.grid[best_neighbor].strength = self.grid[my_cell].strength;
             self.grid[best_neighbor].health = self.grid[my_cell].health;
             self.grid[best_neighbor].traits = self.grid[my_cell].traits;
             self.grid[best_neighbor].tick_bit = next_bit;
@@ -134,7 +132,6 @@ impl ColonyShard {
                     blue: rng.gen_range(0..=255),
                 },
                 size: 2,
-                strength: 100,
             })
             .collect();
 
@@ -143,7 +140,6 @@ impl ColonyShard {
                 // create creatures
                 let template = creature_templates[rng.gen_range(0..creature_templates.len())];
                 self.grid[id].color = template.color;
-                self.grid[id].strength = template.strength;
                 self.grid[id].health = 20;
                 self.grid[id].traits.size = template.size;
             }
@@ -215,7 +211,6 @@ fn is_blank(cell: &Cell) -> bool {
 
 fn set_blank(cell: &mut Cell) {
     cell.color = WHITE_COLOR;
-    cell.strength = 0;
     cell.health = 0;
 }
 

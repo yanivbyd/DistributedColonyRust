@@ -16,7 +16,6 @@ impl ShardUtils {
                 Cell { 
                     color: white_color, 
                     tick_bit: false, 
-                    strength: 0, 
                     food: 0, 
                     extra_food_per_tick: 0,
                     health: 0,
