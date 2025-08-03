@@ -11,6 +11,12 @@ pub struct Color {
     pub blue: u8,
 }
 
+impl Color {
+    pub fn equals(&self, other: &Color) -> bool {
+        self.red == other.red && self.green == other.green && self.blue == other.blue
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct Cell {
     pub tick_bit: bool,

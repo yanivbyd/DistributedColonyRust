@@ -27,6 +27,7 @@ struct TickStats {
     deaths: usize,
     moves: usize,
     breeds: usize,
+    kills: usize,
 }
 
 impl TickStats {
@@ -38,6 +39,7 @@ impl TickStats {
             deaths: 0,
             moves: 0,
             breeds: 0,
+            kills: 0,
         }
     }
 }
@@ -197,6 +199,10 @@ impl ColonyShard {
                 stats.breeds += 1;
             }
 
+            if self.kill_neighbour(my_cell, &neighbors, neighbor_count, next_bit) {
+                stats.kills += 1;
+            }
+
             if self.move_to_highest_food_neighbor(my_cell, &neighbors, neighbor_count, next_bit) {
                 stats.moves += 1;
             }
@@ -247,6 +253,26 @@ impl ColonyShard {
         } else {
             *parent_traits
         }
+    }
+    
+    fn kill_neighbour(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool) -> bool {
+        let my_color = self.grid[my_cell].color;
+        
+        for i in 0..neighbor_count {
+            let neighbor = neighbors[i];
+            if !is_blank(&self.grid[neighbor]) && 
+               !self.grid[neighbor].color.equals(&my_color) && 
+               self.grid[neighbor].tick_bit != next_bit &&
+               self.grid[neighbor].traits.size < self.grid[my_cell].traits.size {
+                set_blank(&mut self.grid[neighbor]);
+                
+                let health_reduction = self.grid[my_cell].health / 10;
+                self.grid[my_cell].health = self.grid[my_cell].health.saturating_sub(health_reduction);
+                
+                return true;
+            }
+        }        
+        false
     }
         
 }
