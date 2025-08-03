@@ -123,6 +123,7 @@ impl ColonyShard {
                 self.grid[my_cell].tick_bit = next_bit;
             }
 
+            // Randomize neightbor offsets
             if my_cell % 50 == 0 {
                 offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
             }
@@ -131,7 +132,7 @@ impl ColonyShard {
             // EAT food
             self.eat_food(my_cell);
             if self.grid[my_cell].health == 0 {
-                self.grid[my_cell].color = WHITE_COLOR;
+                set_blank(&mut self.grid[my_cell]);
                 continue;
             }
 
@@ -168,6 +169,12 @@ impl ColonyShard {
 
 fn is_blank(cell: &Cell) -> bool {
     cell.color.red == 255 && cell.color.green == 255 && cell.color.blue == 255
+}
+
+fn set_blank(cell: &mut Cell) {
+    cell.color = WHITE_COLOR;
+    cell.strength = 0;
+    cell.health = 0;
 }
 
 pub fn in_grid_range(width: usize, height: usize, x: isize, y: isize) -> bool {
