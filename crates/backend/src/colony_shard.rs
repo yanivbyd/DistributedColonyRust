@@ -10,7 +10,7 @@ use crate::shard_utils::ShardUtils;
 
 
 const WHITE_COLOR: Color = Color { red: 255, green: 255, blue: 255 };
-const LOG_TICK_STATS: bool = true;
+const LOG_TICK_STATS: bool = false;
 
 #[derive(Clone, Copy)]
 pub struct CreatureTemplate {
@@ -26,6 +26,7 @@ struct TickStats {
     tick_true: usize,
     tick_false: usize,
     deaths: usize,
+    breeds: usize,
 }
 
 impl TickStats {
@@ -35,6 +36,7 @@ impl TickStats {
             tick_true: 0,
             tick_false: 0,
             deaths: 0,
+            breeds: 0,
         }
     }
 }
@@ -88,7 +90,7 @@ impl ColonyShard {
     fn eat_food(&mut self, cell_idx: usize) {
         let food_eaten = min(
             self.grid[cell_idx].food,
-            self.grid[cell_idx].traits.size * self.colony_life_info.health_cost_per_size_unit,
+            self.grid[cell_idx].traits.size * self.colony_life_info.eat_capacity_per_size_unit,
         );
         let health_cost = self.grid[cell_idx].traits.size * self.colony_life_info.health_cost_per_size_unit;
         self.grid[cell_idx].health = self.grid[cell_idx].health.saturating_add(food_eaten).saturating_sub(health_cost);
@@ -111,7 +113,7 @@ impl ColonyShard {
             .collect();
 
         for id in 0..self.grid.len() {
-            if rng.gen_bool(0.99) {
+            if rng.gen_bool(0.1) {
                 // create creatures
                 let template = creature_templates[rng.gen_range(0..creature_templates.len())];
                 self.grid[id].color = template.color;
@@ -171,11 +173,12 @@ impl ColonyShard {
             let mut is_done = false;
             for i in 0..neighbor_count {
                 let neighbour = neighbors[i];
-                if is_blank(&self.grid[neighbour]) && self.grid[neighbour].tick_bit == tick_bit {
+                if is_blank(&self.grid[neighbour]) {
                     self.grid[neighbour].color = self.grid[my_cell].color;
                     self.grid[neighbour].strength = self.grid[my_cell].strength;
                     self.grid[neighbour].tick_bit = next_bit;
                     is_done = true;
+                    stats.breeds += 1;
                     break;
                 }
             }
