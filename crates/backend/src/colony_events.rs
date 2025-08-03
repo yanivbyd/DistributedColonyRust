@@ -1,4 +1,4 @@
-use crate::colony::Colony;
+use crate::{colony::Colony, colony_shard::WHITE_COLOR};
 use shared::log;
 
 pub struct Circle {
@@ -188,7 +188,7 @@ pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
             match event {
                 ColonyEvent::LocalDeath(_) => {
                     apply_region_to_shard(shard, region, |cell| {
-                        cell.health = 1;
+                        cell.color = WHITE_COLOR;
                     });
                 },
                 ColonyEvent::ReshuffleStrength(_) => {

@@ -9,7 +9,7 @@ use crate::topography::Topography;
 use crate::shard_utils::ShardUtils;
 
 
-const WHITE_COLOR: Color = Color { red: 255, green: 255, blue: 255 };
+pub const WHITE_COLOR: Color = Color { red: 255, green: 255, blue: 255 };
 const LOG_TICK_STATS: bool = false;
 
 #[derive(Clone, Copy)]
