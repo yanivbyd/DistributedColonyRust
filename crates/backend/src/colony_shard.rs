@@ -1,4 +1,4 @@
-use shared::be_api::{Color, Shard, Cell, ColonyLifeInfo};
+use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits};
 use shared::log;
 use rand::{Rng, SeedableRng};
 use rand::rngs::SmallRng;
@@ -26,6 +26,7 @@ struct TickStats {
     tick_false: usize,
     deaths: usize,
     moves: usize,
+    breeds: usize,
 }
 
 impl TickStats {
@@ -36,6 +37,7 @@ impl TickStats {
             tick_false: 0,
             deaths: 0,
             moves: 0,
+            breeds: 0,
         }
     }
 }
@@ -131,7 +133,7 @@ impl ColonyShard {
                     green: rng.gen_range(0..=255),
                     blue: rng.gen_range(0..=255),
                 },
-                size: 2,
+                size: 18,
             })
             .collect();
 
@@ -191,6 +193,10 @@ impl ColonyShard {
                 continue;
             }
 
+            if self.breed(my_cell, &neighbors, neighbor_count, next_bit) {
+                stats.breeds += 1;
+            }
+
             if self.move_to_highest_food_neighbor(my_cell, &neighbors, neighbor_count, next_bit) {
                 stats.moves += 1;
             }
@@ -200,6 +206,46 @@ impl ColonyShard {
             (stats.tick_true, stats.tick_false) = ShardUtils::count_tick_bits(self);
             log!("Shard_{}_{}_{}_{}: {:?}", 
                 self.shard.x, self.shard.y, self.shard.width, self.shard.height, stats);
+        }
+    }
+    
+    fn breed(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool) -> bool {
+        if self.grid[my_cell].health < 200 {
+            return false;
+        }
+        
+        for i in 0..neighbor_count {
+            let neighbor = neighbors[i];
+            if is_blank(&self.grid[neighbor]) {
+                // Calculate half health for the new creature
+                let half_health = self.grid[my_cell].health / 2;
+                
+                // Create new creature with half health
+                self.grid[neighbor].color = self.grid[my_cell].color;
+                self.grid[neighbor].health = half_health;
+                self.grid[neighbor].traits = self.copy_traits_with_mutation(&self.grid[my_cell].traits);
+                self.grid[neighbor].tick_bit = next_bit;
+                
+                // Reduce parent's health by half
+                self.grid[my_cell].health = self.grid[my_cell].health.saturating_sub(half_health);
+                
+                return true;
+            }
+        }
+        
+        false
+    }
+    
+    fn copy_traits_with_mutation(&self, parent_traits: &Traits) -> Traits {
+        let mut rng = SmallRng::from_entropy();
+        
+        // 1% chance to mutate size
+        if rng.gen_bool(0.01) {
+            let size_change = if rng.gen_bool(0.5) { 1 } else { -1 };
+            let new_size = parent_traits.size.saturating_add_signed(size_change);
+            Traits { size: new_size }
+        } else {
+            *parent_traits
         }
     }
         
