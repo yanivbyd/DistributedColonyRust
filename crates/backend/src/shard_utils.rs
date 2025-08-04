@@ -1,5 +1,5 @@
-use crate::colony_shard::ColonyShard;
-use shared::{be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits, UpdatedShardContentsRequest}, log_error};
+use crate::colony_shard::{ColonyShard, is_blank};
+use shared::{be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits, UpdatedShardContentsRequest, ShardLayer}, log_error};
 use crate::shard_storage::ShardStorage;
 use shared::log;
 
@@ -51,6 +51,30 @@ impl ShardUtils {
                 image.extend(shard.grid[start..end].iter().map(|cell| cell.color));
             }
             Some(image)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_shard_layer(shard: &ColonyShard, req_shard: &Shard, layer: &ShardLayer) -> Option<Vec<i32>> {
+        if shard.shard.x == req_shard.x && shard.shard.y == req_shard.y && shard.shard.width == req_shard.width && shard.shard.height == req_shard.height {
+            let width = shard.shard.width as usize;
+            let height = shard.shard.height as usize;
+            let row_size = width + 2;
+            let mut data = Vec::with_capacity(width * height);
+            for row_iter in 1..=height {
+                let start = row_iter * row_size + 1;
+                let end = start + width;
+                match layer {
+                    ShardLayer::CreatureSize => {
+                        data.extend(shard.grid[start..end].iter().map(|cell| if is_blank(cell) { 0 } else { cell.traits.size as i32 }));
+                    }
+                    ShardLayer::ExtraFood => {
+                        data.extend(shard.grid[start..end].iter().map(|cell| cell.extra_food_per_tick as i32));
+                    }
+                }
+            }
+            Some(data)
         } else {
             None
         }

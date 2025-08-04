@@ -56,6 +56,7 @@ pub enum BackendRequest {
     Ping,
     InitColony(InitColonyRequest),
     GetShardImage(GetShardImageRequest),
+    GetShardLayer(GetShardLayerRequest),
     InitColonyShard(InitColonyShardRequest),
     GetColonyInfo(GetColonyInfoRequest),
     UpdatedShardContents(UpdatedShardContentsRequest),
@@ -66,6 +67,7 @@ pub enum BackendResponse {
     Ping,
     InitColony(InitColonyResponse),
     GetShardImage(GetShardImageResponse),
+    GetShardLayer(GetShardLayerResponse),
     InitColonyShard(InitColonyShardResponse),
     GetColonyInfo(GetColonyInfoResponse),
     UpdatedShardContents(UpdatedShardContentsResponse),
@@ -106,6 +108,24 @@ pub struct GetShardImageRequest {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum GetShardImageResponse {
     Image { image: Vec<Color> },
+    ShardNotAvailable,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum ShardLayer {
+    CreatureSize,
+    ExtraFood,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetShardLayerRequest {
+    pub shard: Shard,
+    pub layer: ShardLayer,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum GetShardLayerResponse {
+    Ok { data: Vec<i32> },
     ShardNotAvailable,
 }
 

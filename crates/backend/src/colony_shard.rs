@@ -277,7 +277,7 @@ impl ColonyShard {
         
 }
 
-fn is_blank(cell: &Cell) -> bool {
+pub fn is_blank(cell: &Cell) -> bool {
     cell.color.red == 255 && cell.color.green == 255 && cell.color.blue == 255
 }
 
