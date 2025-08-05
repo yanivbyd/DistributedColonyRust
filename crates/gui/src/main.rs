@@ -7,7 +7,7 @@ use std::time::Duration;
 use shared::be_api::ShardLayer;
 mod call_be;
 
-const SHARD_SIZE: f32 = 250.0;
+
 const REFRESH_INTERVAL_MS: u64 = 100;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -19,6 +19,7 @@ enum Tab {
 
 struct BEImageApp {
     creatures: Arc<Mutex<Vec<Option<RetainedImage>>>>,
+    creatures_color_data: Arc<Mutex<Vec<Option<Vec<shared::be_api::Color>>>>>,
     extra_food: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     sizes: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     ctx: Option<egui::Context>,
@@ -30,11 +31,13 @@ struct BEImageApp {
 impl Default for BEImageApp {
     fn default() -> Self {
         let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images()));
+        let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data()));
         let extra_food = Arc::new(Mutex::new(vec![None; 10])); // Placeholder for extra food
         let sizes = Arc::new(Mutex::new(vec![None; 10])); // Placeholder for sizes
         let current_tab = Tab::Creatures;
         Self {
             creatures,
+            creatures_color_data,
             extra_food,
             sizes,
             ctx: None,
@@ -51,6 +54,7 @@ impl App for BEImageApp {
         if !self.thread_started {
             self.ctx = Some(ctx.clone());
             let creatures = self.creatures.clone();
+            let creatures_color_data = self.creatures_color_data.clone();
             let extra_food = self.extra_food.clone();
             let sizes = self.sizes.clone();
             let ctx_clone = ctx.clone();
@@ -62,9 +66,14 @@ impl App for BEImageApp {
                     match tab {
                         Tab::Creatures => {
                             let images = call_be::get_all_shard_retained_images();
+                            let color_data = call_be::get_all_shard_color_data();
                             {
                                 let mut locked = creatures.lock().unwrap();
                                 *locked = images;
+                            }
+                            {
+                                let mut locked = creatures_color_data.lock().unwrap();
+                                *locked = color_data;
                             }
                         }
                         Tab::ExtraFood => {
@@ -159,25 +168,10 @@ impl BEImageApp {
     }
     
     fn show_creatures_tab(&self, ui: &mut egui::Ui) {
-        let locked = self.creatures.lock().unwrap();
-        ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-        ui.vertical(|ui| {
-            for row in 0..3 {
-                ui.horizontal(|ui| {
-                    for col in 0..5 {
-                        let idx = row * 5 + col;
-                        if let Some(img) = locked.get(idx).and_then(|o| o.as_ref()) {
-                            img.show_max_size(ui, egui::vec2(SHARD_SIZE, SHARD_SIZE));
-                        } else {
-                            ui.allocate_ui(egui::vec2(SHARD_SIZE, SHARD_SIZE), |ui| {
-                                ui.centered_and_justified(|ui| {
-                                    ui.colored_label(egui::Color32::RED, "Failed");
-                                });
-                            });
-                        }
-                    }
-                });
-            }
+        let locked = self.creatures_color_data.lock().unwrap();
+        
+        self.show_combined_image(ui, &locked, |shard_data| {
+            shard_data.clone()
         });
     }
 
