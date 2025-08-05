@@ -328,6 +328,41 @@ impl BEImageApp {
                 None
             }
         });
+        
+        // Add legend below the image
+        if global_max > 0 {
+            ui.add_space(20.0);
+            
+            let legend_width = 800.0;
+            let legend_height = 5.0;
+            let legend_rect = egui::Rect::from_min_size(
+                ui.cursor().min,
+                egui::vec2(legend_width, legend_height)
+            );
+            
+            let painter = ui.painter();
+            
+            // Draw color gradient
+            for i in 0..legend_width as usize {
+                let normalized = i as f32 / legend_width;
+                let color = Self::terrain_color(normalized);
+                let x = legend_rect.min.x + i as f32;
+                painter.line_segment(
+                    [egui::pos2(x, legend_rect.min.y), egui::pos2(x, legend_rect.max.y)],
+                    egui::Stroke::new(1.0, color)
+                );
+            }
+            
+            // Add labels
+            ui.add_space(legend_height + 5.0);
+            ui.horizontal(|ui| {
+                ui.label(format!("0"));
+                ui.add_space(legend_width / 2.0 - 30.0);
+                ui.label(format!("{}", global_max / 2));
+                ui.add_space(legend_width / 2.0 - 30.0);
+                ui.label(format!("{}", global_max));
+            });
+        }
     }
 
     fn show_extra_food_tab(&self, ui: &mut egui::Ui) {
