@@ -82,7 +82,6 @@ struct BEImageApp {
     current_tab: Tab,
     shared_current_tab: Arc<Mutex<Tab>>,
     shard_config: Arc<Mutex<ShardConfig>>,
-    show_config: bool,
 }
 
 impl Default for BEImageApp {
@@ -107,7 +106,6 @@ impl Default for BEImageApp {
             current_tab,
             shared_current_tab: Arc::new(Mutex::new(current_tab)),
             shard_config,
-            show_config: false,
         }
     }
 }
@@ -165,81 +163,6 @@ impl App for BEImageApp {
         }
         egui::CentralPanel::default().show(ctx, |ui| {
             
-            // Configuration button
-            {
-                let config = self.shard_config.lock().unwrap();
-                ui.horizontal(|ui| {
-                    if ui.button("⚙️ Config").clicked() {
-                        self.show_config = !self.show_config;
-                    }
-                    ui.label(format!("Shards: {}x{} = {}", config.cols, config.rows, config.total_shards()));
-                });
-            }
-            
-            // Configuration panel
-            if self.show_config {
-                ui.collapsing("Shard Configuration", |ui| {
-                    let mut config_changed = false;
-                    let mut new_config = self.shard_config.lock().unwrap().clone();
-                    
-                    ui.horizontal(|ui| {
-                        ui.label("Columns:");
-                        let mut cols = new_config.cols as i32;
-                        if ui.add(egui::DragValue::new(&mut cols).clamp_range(1..=10)).changed() {
-                            new_config.cols = cols as usize;
-                            config_changed = true;
-                        }
-                    });
-                    
-                    ui.horizontal(|ui| {
-                        ui.label("Rows:");
-                        let mut rows = new_config.rows as i32;
-                        if ui.add(egui::DragValue::new(&mut rows).clamp_range(1..=10)).changed() {
-                            new_config.rows = rows as usize;
-                            config_changed = true;
-                        }
-                    });
-                    
-                    ui.horizontal(|ui| {
-                        ui.label("Total Width:");
-                        let mut width = new_config.total_width;
-                        if ui.add(egui::DragValue::new(&mut width).clamp_range(100..=2000)).changed() {
-                            new_config.total_width = width;
-                            config_changed = true;
-                        }
-                    });
-                    
-                    ui.horizontal(|ui| {
-                        ui.label("Total Height:");
-                        let mut height = new_config.total_height;
-                        if ui.add(egui::DragValue::new(&mut height).clamp_range(100..=2000)).changed() {
-                            new_config.total_height = height;
-                            config_changed = true;
-                        }
-                    });
-                    
-                    if config_changed {
-                        // Update the shared config
-                        {
-                            let mut config_guard = self.shard_config.lock().unwrap();
-                            *config_guard = new_config;
-                        }
-                        
-                        // Update data structures with new shard count
-                        let total_shards = self.shard_config.lock().unwrap().total_shards();
-                        self.creatures = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
-                        self.creatures_color_data = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
-                        self.extra_food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
-                        self.sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
-                        
-                        // Note: The background thread will pick up the new config on the next iteration
-                        // since we pass the config by reference
-                    }
-                });
-            }
-            
-            ui.separator();
-            
             // Tab control
             ui.horizontal(|ui| {
                 let old_tab = self.current_tab;
@@ -266,45 +189,41 @@ impl App for BEImageApp {
 }
 
 impl BEImageApp {
+    fn lerp(a: u8, b: u8, t: f32) -> u8 {
+        ((1.0 - t) * (a as f32) + t * (b as f32)).round() as u8
+    }
+
+    fn lerp_rgb(a: (u8, u8, u8), b: (u8, u8, u8), t: f32) -> (u8, u8, u8) {
+        (
+            Self::lerp(a.0, b.0, t),
+            Self::lerp(a.1, b.1, t),
+            Self::lerp(a.2, b.2, t),
+        )
+    }
+
     fn terrain_color(normalized: f32) -> egui::Color32 {
-        fn lerp(a: u8, b: u8, t: f32) -> u8 {
-            ((1.0 - t) * (a as f32) + t * (b as f32)).round() as u8
-        }
-    
-        let (r, g, b) = if normalized <= 0.25 {
-            // Dark green → Light green
-            let t = normalized / 0.25;
-            (
-                lerp(0x00, 0x7C, t),
-                lerp(0x64, 0xAD, t),
-                lerp(0x00, 0x18, t),
-            )
-        } else if normalized <= 0.5 {
-            // Light green → Tan
-            let t = (normalized - 0.25) / 0.25;
-            (
-                lerp(0x7C, 0xD2, t),
-                lerp(0xAD, 0xB4, t),
-                lerp(0x18, 0x8C, t),
-            )
-        } else if normalized <= 0.75 {
-            // Tan → Brown
-            let t = (normalized - 0.5) / 0.25;
-            (
-                lerp(0xD2, 0x8B, t),
-                lerp(0xB4, 0x45, t),
-                lerp(0x8C, 0x13, t),
-            )
+        // From top to bottom in the image
+        let palette = [
+            (0, 102, 0),      // Dark Green
+            (0, 204, 0),      // Green
+            (153, 255, 102),  // Light Green
+            (255, 255, 128),  // Yellow
+            (222, 184, 135),  // Tan
+            (204, 51, 0),     // Red
+            (102, 51, 0),     // Dark Brown
+        ];
+
+        let clamped = normalized.clamp(0.0, 1.0);
+        let scaled = clamped * (palette.len() - 1) as f32;
+        let idx = scaled.floor() as usize;
+        let t = scaled.fract();
+
+        let (r, g, b) = if idx >= palette.len() - 1 {
+            palette[palette.len() - 1]
         } else {
-            // Brown → Gray 
-            let t = (normalized - 0.75) / 0.25;
-            (
-                lerp(0x8B, 0xA9, t),
-                lerp(0x45, 0xA9, t),
-                lerp(0x13, 0xA9, t),
-            )
+            Self::lerp_rgb(palette[idx], palette[idx + 1], t)
         };
-    
+
         egui::Color32::from_rgb(r, g, b)
     }
     
