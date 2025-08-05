@@ -7,7 +7,6 @@ use std::time::Duration;
 use shared::be_api::ShardLayer;
 mod call_be;
 
-
 const REFRESH_INTERVAL_MS: u64 = 100;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -15,6 +14,62 @@ enum Tab {
     Creatures,
     ExtraFood,
     Sizes,
+}
+
+#[derive(Clone)]
+pub struct ShardConfig {
+    pub total_width: i32,
+    pub total_height: i32,
+    pub cols: usize,
+    pub rows: usize,
+}
+
+impl Default for ShardConfig {
+    fn default() -> Self {
+        Self {
+            total_width: 1250,
+            total_height: 750,
+            cols: 5,
+            rows: 3,
+        }
+    }
+}
+
+impl ShardConfig {
+    fn shard_width(&self) -> i32 {
+        self.total_width / self.cols as i32
+    }
+    
+    fn shard_height(&self) -> i32 {
+        self.total_height / self.rows as i32
+    }
+    
+    fn total_shards(&self) -> usize {
+        self.cols * self.rows
+    }
+    
+    fn get_shard(&self, index: usize) -> shared::be_api::Shard {
+        let row = index / self.cols;
+        let col = index % self.cols;
+        
+        let x = col as i32 * self.shard_width();
+        let y = row as i32 * self.shard_height();
+        
+        // Handle the last column and row to account for rounding
+        let width = if col == self.cols - 1 {
+            self.total_width - (self.cols - 1) as i32 * self.shard_width()
+        } else {
+            self.shard_width()
+        };
+        
+        let height = if row == self.rows - 1 {
+            self.total_height - (self.rows - 1) as i32 * self.shard_height()
+        } else {
+            self.shard_height()
+        };
+        
+        shared::be_api::Shard { x, y, width, height }
+    }
 }
 
 struct BEImageApp {
@@ -26,14 +81,21 @@ struct BEImageApp {
     thread_started: bool,
     current_tab: Tab,
     shared_current_tab: Arc<Mutex<Tab>>,
+    shard_config: Arc<Mutex<ShardConfig>>,
+    show_config: bool,
 }
 
 impl Default for BEImageApp {
     fn default() -> Self {
-        let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images()));
-        let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data()));
-        let extra_food = Arc::new(Mutex::new(vec![None; 10])); // Placeholder for extra food
-        let sizes = Arc::new(Mutex::new(vec![None; 10])); // Placeholder for sizes
+        let shard_config = Arc::new(Mutex::new(ShardConfig::default()));
+        let total_shards = {
+            let config_guard = shard_config.lock().unwrap();
+            config_guard.total_shards()
+        };
+        let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images(&shard_config.lock().unwrap())));
+        let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap())));
+        let extra_food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
+        let sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let current_tab = Tab::Creatures;
         Self {
             creatures,
@@ -44,6 +106,8 @@ impl Default for BEImageApp {
             thread_started: false,
             current_tab,
             shared_current_tab: Arc::new(Mutex::new(current_tab)),
+            shard_config,
+            show_config: false,
         }
     }
 }
@@ -59,14 +123,16 @@ impl App for BEImageApp {
             let sizes = self.sizes.clone();
             let ctx_clone = ctx.clone();
             let shared_current_tab = self.shared_current_tab.clone();
+            let shard_config = self.shard_config.clone();
             thread::spawn(move || {
                 loop {
                     // Look at the selected tab and get only the info required for the current Tab
                     let tab = *shared_current_tab.lock().unwrap();
+                    let config = shard_config.lock().unwrap().clone();
                     match tab {
                         Tab::Creatures => {
-                            let images = call_be::get_all_shard_retained_images();
-                            let color_data = call_be::get_all_shard_color_data();
+                            let images = call_be::get_all_shard_retained_images(&config);
+                            let color_data = call_be::get_all_shard_color_data(&config);
                             {
                                 let mut locked = creatures.lock().unwrap();
                                 *locked = images;
@@ -77,14 +143,14 @@ impl App for BEImageApp {
                             }
                         }
                         Tab::ExtraFood => {
-                            let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood);
+                            let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config);
                             {
                                 let mut locked = extra_food.lock().unwrap();
                                 *locked = extra_food_data;
                             }
                         }
                         Tab::Sizes => {
-                            let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize);
+                            let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config);
                             {
                                 let mut locked = sizes.lock().unwrap();
                                 *locked = sizes_data;
@@ -98,6 +164,81 @@ impl App for BEImageApp {
             self.thread_started = true;
         }
         egui::CentralPanel::default().show(ctx, |ui| {
+            
+            // Configuration button
+            {
+                let config = self.shard_config.lock().unwrap();
+                ui.horizontal(|ui| {
+                    if ui.button("⚙️ Config").clicked() {
+                        self.show_config = !self.show_config;
+                    }
+                    ui.label(format!("Shards: {}x{} = {}", config.cols, config.rows, config.total_shards()));
+                });
+            }
+            
+            // Configuration panel
+            if self.show_config {
+                ui.collapsing("Shard Configuration", |ui| {
+                    let mut config_changed = false;
+                    let mut new_config = self.shard_config.lock().unwrap().clone();
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Columns:");
+                        let mut cols = new_config.cols as i32;
+                        if ui.add(egui::DragValue::new(&mut cols).clamp_range(1..=10)).changed() {
+                            new_config.cols = cols as usize;
+                            config_changed = true;
+                        }
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Rows:");
+                        let mut rows = new_config.rows as i32;
+                        if ui.add(egui::DragValue::new(&mut rows).clamp_range(1..=10)).changed() {
+                            new_config.rows = rows as usize;
+                            config_changed = true;
+                        }
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Total Width:");
+                        let mut width = new_config.total_width;
+                        if ui.add(egui::DragValue::new(&mut width).clamp_range(100..=2000)).changed() {
+                            new_config.total_width = width;
+                            config_changed = true;
+                        }
+                    });
+                    
+                    ui.horizontal(|ui| {
+                        ui.label("Total Height:");
+                        let mut height = new_config.total_height;
+                        if ui.add(egui::DragValue::new(&mut height).clamp_range(100..=2000)).changed() {
+                            new_config.total_height = height;
+                            config_changed = true;
+                        }
+                    });
+                    
+                    if config_changed {
+                        // Update the shared config
+                        {
+                            let mut config_guard = self.shard_config.lock().unwrap();
+                            *config_guard = new_config;
+                        }
+                        
+                        // Update data structures with new shard count
+                        let total_shards = self.shard_config.lock().unwrap().total_shards();
+                        self.creatures = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
+                        self.creatures_color_data = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
+                        self.extra_food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
+                        self.sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
+                        
+                        // Note: The background thread will pick up the new config on the next iteration
+                        // since we pass the config by reference
+                    }
+                });
+            }
+            
+            ui.separator();
             
             // Tab control
             ui.horizontal(|ui| {
@@ -179,26 +320,31 @@ impl BEImageApp {
     where
         F: Fn(&Option<T>) -> Option<Vec<shared::be_api::Color>>,
     {
-        // Create a combined image of 1250x750 pixels (total size)
-        let total_width = 1250;
-        let total_height = 750;
+        // Create a combined image using the shard configuration
+        let config = self.shard_config.lock().unwrap();
+        let total_width = config.total_width as usize;
+        let total_height = config.total_height as usize;
         let mut combined_img = egui::ColorImage::new([total_width, total_height], egui::Color32::BLACK);
-        
-        // Shard dimensions
-        let fifth = total_width / 5;
-        let third = total_height / 3;
         
         // Process each shard
         for (idx, shard_data) in data.iter().enumerate() {
-            let row = idx / 5;
-            let col = idx % 5;
+            let row = idx / config.cols;
+            let col = idx % config.cols;
             
             if let Some(colors) = converter(shard_data) {
                 // Calculate shard position and size
-                let shard_x = col * fifth;
-                let shard_y = row * third;
-                let shard_width = if col == 4 { total_width - 4 * fifth } else { fifth };
-                let _shard_height = if row == 2 { total_height - 2 * third } else { third };
+                let shard_x = col * config.shard_width() as usize;
+                let shard_y = row * config.shard_height() as usize;
+                let shard_width = if col == config.cols - 1 {
+                    total_width - (config.cols - 1) * config.shard_width() as usize
+                } else {
+                    config.shard_width() as usize
+                };
+                let _shard_height = if row == config.rows - 1 {
+                    total_height - (config.rows - 1) * config.shard_height() as usize
+                } else {
+                    config.shard_height() as usize
+                };
                 
                 // Copy shard data to combined image
                 for (i, color) in colors.iter().enumerate() {

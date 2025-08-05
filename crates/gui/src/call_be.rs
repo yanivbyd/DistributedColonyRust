@@ -6,26 +6,10 @@ use std::net::TcpStream;
 use std::io::{Read, Write};
 use bincode;
 
-pub fn get_all_shard_retained_images() -> Vec<Option<RetainedImage>> {
-    let fifth = 1250 / 5;
-    let third = 750 / 3;
-    let shards = [
-        Shard { x: 0, y: 0, width: fifth, height: third }, // top-left
-        Shard { x: fifth, y: 0, width: fifth, height: third }, // top-middle-left
-        Shard { x: 2 * fifth, y: 0, width: fifth, height: third }, // top-middle
-        Shard { x: 3 * fifth, y: 0, width: fifth, height: third }, // top-middle-right
-        Shard { x: 4 * fifth, y: 0, width: 1250 - 4 * fifth, height: third }, // top-right
-        Shard { x: 0, y: third, width: fifth, height: third }, // mid-left
-        Shard { x: fifth, y: third, width: fifth, height: third }, // mid-middle-left
-        Shard { x: 2 * fifth, y: third, width: fifth, height: third }, // mid-middle
-        Shard { x: 3 * fifth, y: third, width: fifth, height: third }, // mid-middle-right
-        Shard { x: 4 * fifth, y: third, width: 1250 - 4 * fifth, height: third }, // mid-right
-        Shard { x: 0, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-left
-        Shard { x: fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle-left
-        Shard { x: 2 * fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle
-        Shard { x: 3 * fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle-right
-        Shard { x: 4 * fifth, y: 2 * third, width: 1250 - 4 * fifth, height: 750 - 2 * third }, // bottom-right
-    ];
+pub fn get_all_shard_retained_images(config: &crate::ShardConfig) -> Vec<Option<RetainedImage>> {
+    let shards: Vec<Shard> = (0..config.total_shards())
+        .map(|i| config.get_shard(i))
+        .collect();
     shards.iter().map(|&shard| get_shard_retained_image(shard)).collect()
 }
 
@@ -63,26 +47,10 @@ fn color_vec_to_image(colors: &[Color], width: usize, height: usize) -> egui::Co
     img
 }
 
-pub fn get_all_shard_layer_data(layer: ShardLayer) -> Vec<Option<Vec<i32>>> {
-    let fifth = 1250 / 5;
-    let third = 750 / 3;
-    let shards = [
-        Shard { x: 0, y: 0, width: fifth, height: third }, // top-left
-        Shard { x: fifth, y: 0, width: fifth, height: third }, // top-middle-left
-        Shard { x: 2 * fifth, y: 0, width: fifth, height: third }, // top-middle
-        Shard { x: 3 * fifth, y: 0, width: fifth, height: third }, // top-middle-right
-        Shard { x: 4 * fifth, y: 0, width: 1250 - 4 * fifth, height: third }, // top-right
-        Shard { x: 0, y: third, width: fifth, height: third }, // mid-left
-        Shard { x: fifth, y: third, width: fifth, height: third }, // mid-middle-left
-        Shard { x: 2 * fifth, y: third, width: fifth, height: third }, // mid-middle
-        Shard { x: 3 * fifth, y: third, width: fifth, height: third }, // mid-middle-right
-        Shard { x: 4 * fifth, y: third, width: 1250 - 4 * fifth, height: third }, // mid-right
-        Shard { x: 0, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-left
-        Shard { x: fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle-left
-        Shard { x: 2 * fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle
-        Shard { x: 3 * fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle-right
-        Shard { x: 4 * fifth, y: 2 * third, width: 1250 - 4 * fifth, height: 750 - 2 * third }, // bottom-right
-    ];
+pub fn get_all_shard_layer_data(layer: ShardLayer, config: &crate::ShardConfig) -> Vec<Option<Vec<i32>>> {
+    let shards: Vec<Shard> = (0..config.total_shards())
+        .map(|i| config.get_shard(i))
+        .collect();
     shards.iter().map(|&shard| get_shard_layer_data(shard, layer)).collect()
 }
 
@@ -107,26 +75,10 @@ fn get_shard_layer_data(shard: Shard, layer: ShardLayer) -> Option<Vec<i32>> {
     }
 }
 
-pub fn get_all_shard_color_data() -> Vec<Option<Vec<Color>>> {
-    let fifth = 1250 / 5;
-    let third = 750 / 3;
-    let shards = [
-        Shard { x: 0, y: 0, width: fifth, height: third }, // top-left
-        Shard { x: fifth, y: 0, width: fifth, height: third }, // top-middle-left
-        Shard { x: 2 * fifth, y: 0, width: fifth, height: third }, // top-middle
-        Shard { x: 3 * fifth, y: 0, width: fifth, height: third }, // top-middle-right
-        Shard { x: 4 * fifth, y: 0, width: 1250 - 4 * fifth, height: third }, // top-right
-        Shard { x: 0, y: third, width: fifth, height: third }, // mid-left
-        Shard { x: fifth, y: third, width: fifth, height: third }, // mid-middle-left
-        Shard { x: 2 * fifth, y: third, width: fifth, height: third }, // mid-middle
-        Shard { x: 3 * fifth, y: third, width: fifth, height: third }, // mid-middle-right
-        Shard { x: 4 * fifth, y: third, width: 1250 - 4 * fifth, height: third }, // mid-right
-        Shard { x: 0, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-left
-        Shard { x: fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle-left
-        Shard { x: 2 * fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle
-        Shard { x: 3 * fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle-right
-        Shard { x: 4 * fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-right
-    ];
+pub fn get_all_shard_color_data(config: &crate::ShardConfig) -> Vec<Option<Vec<Color>>> {
+    let shards: Vec<Shard> = (0..config.total_shards())
+        .map(|i| config.get_shard(i))
+        .collect();
     shards.iter().map(|&shard| get_shard_color_data(shard)).collect()
 }
 
