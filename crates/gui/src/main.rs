@@ -89,8 +89,6 @@ impl App for BEImageApp {
             self.thread_started = true;
         }
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Distributed Colony");
-            ui.separator();
             
             // Tab control
             ui.horizontal(|ui| {
@@ -123,45 +121,37 @@ impl BEImageApp {
             ((1.0 - t) * (a as f32) + t * (b as f32)).round() as u8
         }
     
-        let (r, g, b) = if normalized <= 0.2 {
+        let (r, g, b) = if normalized <= 0.25 {
             // Dark green → Light green
-            let t = normalized / 0.2;
+            let t = normalized / 0.25;
             (
                 lerp(0x00, 0x7C, t),
                 lerp(0x64, 0xAD, t),
                 lerp(0x00, 0x18, t),
             )
-        } else if normalized <= 0.4 {
+        } else if normalized <= 0.5 {
             // Light green → Tan
-            let t = (normalized - 0.2) / 0.2;
+            let t = (normalized - 0.25) / 0.25;
             (
                 lerp(0x7C, 0xD2, t),
                 lerp(0xAD, 0xB4, t),
                 lerp(0x18, 0x8C, t),
             )
-        } else if normalized <= 0.6 {
+        } else if normalized <= 0.75 {
             // Tan → Brown
-            let t = (normalized - 0.4) / 0.2;
+            let t = (normalized - 0.5) / 0.25;
             (
                 lerp(0xD2, 0x8B, t),
                 lerp(0xB4, 0x45, t),
                 lerp(0x8C, 0x13, t),
             )
-        } else if normalized <= 0.8 {
-            // Brown → Gray
-            let t = (normalized - 0.6) / 0.2;
+        } else {
+            // Brown → Gray 
+            let t = (normalized - 0.75) / 0.25;
             (
                 lerp(0x8B, 0xA9, t),
                 lerp(0x45, 0xA9, t),
                 lerp(0x13, 0xA9, t),
-            )
-        } else {
-            // Gray → White
-            let t = (normalized - 0.8) / 0.2;
-            (
-                lerp(0xA9, 0xFF, t),
-                lerp(0xA9, 0xFF, t),
-                lerp(0xA9, 0xFF, t),
             )
         };
     
@@ -253,13 +243,14 @@ impl BEImageApp {
                     // Convert i32 data to colors using global normalization
                     let mut colors = Vec::new();
                     for &val in data {
-                        let normalized = val as f32 / global_max as f32;
-                        let color = Self::terrain_color(normalized);
-                        colors.push(shared::be_api::Color {
-                            red: color.r(),
-                            green: color.g(),
-                            blue: color.b(),
-                        });
+                        if val == 0 {
+                            // Show white for zero values
+                            colors.push(shared::be_api::Color { red: 255, green: 255, blue: 255, });
+                        } else {
+                            let normalized = val as f32 / global_max as f32;
+                            let color = Self::terrain_color(normalized);
+                            colors.push(shared::be_api::Color { red: color.r(), green: color.g(), blue: color.b(), });
+                        }
                     }
                     Some(colors)
                 } else {
@@ -292,7 +283,7 @@ impl BEImageApp {
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions::default();
     eframe::run_native(
-        "Distributed Colony",
+        "Colony Viewer",
         options,
         Box::new(|_cc| Box::new(BEImageApp::default())),
     )
