@@ -1,7 +1,7 @@
 #![allow(deprecated)]
 use eframe::egui;
 use egui_extras::RetainedImage;
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageRequest, GetShardImageResponse, Shard, Color};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageRequest, GetShardImageResponse, GetShardLayerRequest, GetShardLayerResponse, ShardLayer, Shard, Color};
 use std::net::TcpStream;
 use std::io::{Read, Write};
 use bincode;
@@ -61,4 +61,48 @@ fn color_vec_to_image(colors: &[Color], width: usize, height: usize) -> egui::Co
         }
     }
     img
+}
+
+pub fn get_all_shard_layer_data(layer: ShardLayer) -> Vec<Option<Vec<i32>>> {
+    let fifth = 1250 / 5;
+    let third = 750 / 3;
+    let shards = [
+        Shard { x: 0, y: 0, width: fifth, height: third }, // top-left
+        Shard { x: fifth, y: 0, width: fifth, height: third }, // top-middle-left
+        Shard { x: 2 * fifth, y: 0, width: fifth, height: third }, // top-middle
+        Shard { x: 3 * fifth, y: 0, width: fifth, height: third }, // top-middle-right
+        Shard { x: 4 * fifth, y: 0, width: 1250 - 4 * fifth, height: third }, // top-right
+        Shard { x: 0, y: third, width: fifth, height: third }, // mid-left
+        Shard { x: fifth, y: third, width: fifth, height: third }, // mid-middle-left
+        Shard { x: 2 * fifth, y: third, width: fifth, height: third }, // mid-middle
+        Shard { x: 3 * fifth, y: third, width: fifth, height: third }, // mid-middle-right
+        Shard { x: 4 * fifth, y: third, width: 1250 - 4 * fifth, height: third }, // mid-right
+        Shard { x: 0, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-left
+        Shard { x: fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle-left
+        Shard { x: 2 * fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle
+        Shard { x: 3 * fifth, y: 2 * third, width: fifth, height: 750 - 2 * third }, // bottom-middle-right
+        Shard { x: 4 * fifth, y: 2 * third, width: 1250 - 4 * fifth, height: 750 - 2 * third }, // bottom-right
+    ];
+    shards.iter().map(|&shard| get_shard_layer_data(shard, layer)).collect()
+}
+
+fn get_shard_layer_data(shard: Shard, layer: ShardLayer) -> Option<Vec<i32>> {
+    let addr = format!("127.0.0.1:{}", BACKEND_PORT);
+    let mut stream = TcpStream::connect(&addr).ok()?;
+    let req = BackendRequest::GetShardLayer(GetShardLayerRequest { shard, layer });
+    let encoded = bincode::serialize(&req).ok()?;
+    let len = (encoded.len() as u32).to_be_bytes();
+    stream.write_all(&len).ok()?;
+    stream.write_all(&encoded).ok()?;
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).ok()?;
+    let resp_len = u32::from_be_bytes(len_buf) as usize;
+    let mut buf = vec![0u8; resp_len];
+    stream.read_exact(&mut buf).ok()?;
+    let response: BackendResponse = bincode::deserialize(&buf).ok()?;
+    if let BackendResponse::GetShardLayer(GetShardLayerResponse::Ok { data }) = response {
+        Some(data)
+    } else {
+        None
+    }
 } 

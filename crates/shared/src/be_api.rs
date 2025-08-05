@@ -111,7 +111,7 @@ pub enum GetShardImageResponse {
     ShardNotAvailable,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum ShardLayer {
     CreatureSize,
     ExtraFood,
