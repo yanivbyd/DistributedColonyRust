@@ -1,5 +1,6 @@
 mod init_colony;
 mod global_topography;
+mod coordinator_storage;
 
 use shared::coordinator_api::CoordinatorRequest;
 use tokio::net::TcpListener;
@@ -15,24 +16,24 @@ use tokio::task;
 use crate::init_colony::initialize_colony;
 
 async fn handle_client(socket: TcpStream) {
-    log!("[COORD] handle_client: new connection");
+    log!("handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
     while let Some(Ok(bytes)) = framed.next().await {
-        log!("[COORD] handle_client: received bytes");
+        log!("handle_client: received bytes");
         match bincode::deserialize::<CoordinatorRequest>(&bytes) {
             Ok(_request) => {
                 // TODO: Handle different request types
                 // CoordinatorResponse is an empty enum, so we can't create an instance
                 // For now, we'll just log the request and continue
-                log!("[COORD] Received request: {:?}", _request);
+                log!("Received request: {:?}", _request);
             },
             Err(e) => {
-                log_error!("[COORD] Failed to deserialize CoordinatorRequest: {}", e);
+                log_error!("Failed to deserialize CoordinatorRequest: {}", e);
                 continue;
             }
         }
     }
-    log!("[COORD] handle_client: connection closed");
+    log!("handle_client: connection closed");
 }
 
 #[tokio::main]
@@ -49,16 +50,16 @@ async fn main() {
 
     let addr = format!("127.0.0.1:{}", COORDINATOR_PORT);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
-    log!("[COORD] Listening on {}", addr);
+    log!("Listening on {}", addr);
 
     loop {
-        log!("[COORD] Waiting for connection...");
+        log!("Waiting for connection...");
         match listener.accept().await {
             Ok((socket, _)) => {
-                log!("[COORD] Accepted connection");
+                log!("Accepted connection");
                 tokio::spawn(handle_client(socket));
             }
-            Err(e) => log_error!("[COORD] Connection failed: {}", e),
+            Err(e) => log_error!("Connection failed: {}", e),
         }
     }
 } 
