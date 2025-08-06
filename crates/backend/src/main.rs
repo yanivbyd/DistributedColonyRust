@@ -154,8 +154,10 @@ async fn handle_init_shard_topography(req: InitShardTopographyRequest) -> Backen
     
     let mut colony = Colony::instance();
     if let Some(shard) = colony.get_colony_shard_mut(&req.shard) {
-        ShardTopography::init_shard_topography_from_info(shard, &req.topography_info);
-        BackendResponse::InitShardTopography(InitShardTopographyResponse::Ok)
+        match ShardTopography::init_shard_topography_from_data(shard, &req.topography_data) {
+            Ok(()) => BackendResponse::InitShardTopography(InitShardTopographyResponse::Ok),
+            Err(_) => BackendResponse::InitShardTopography(InitShardTopographyResponse::InvalidTopographyData),
+        }
     } else {
         BackendResponse::InitShardTopography(InitShardTopographyResponse::ShardNotInitialized)
     }

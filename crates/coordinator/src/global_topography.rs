@@ -3,9 +3,6 @@
 
 use shared::be_api::{Shard, BackendRequest, BackendResponse, InitShardTopographyRequest, InitShardTopographyResponse, BACKEND_PORT};
 use shared::{log, log_error};
-use shared::colony_model::ShardTopographyInfo;
-use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bincode;
@@ -15,9 +12,6 @@ pub struct GlobalTopographyInfo {
     pub total_height: usize,
     pub shard_width: usize,
     pub shard_height: usize,
-    pub default_value: u8,
-    pub points_per_subgrid: u8,
-    pub points_min_max_value: (u8, u8),
 }
 
 pub struct GlobalTopography {
@@ -29,15 +23,15 @@ impl GlobalTopography {
         Self { info }
     }
 
-    async fn send_topography_to_local_shard(&self, shard: Shard, info: ShardTopographyInfo) {
+    async fn send_topography_to_local_shard(&self, shard: Shard, topography_data: Vec<u8>) {
         let request = BackendRequest::InitShardTopography(InitShardTopographyRequest {
             shard,
-            topography_info: info,
+            topography_data,
         });
 
         if let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{}", BACKEND_PORT)).await {
             if let Err(e) = Self::send_message(&mut stream, &request).await {
-                log_error!("[COORD] Failed to send topography to shard ({},{},{},{}): {}", 
+                log_error!("Failed to send topography to shard ({},{},{},{}): {}", 
                     shard.x, shard.y, shard.width, shard.height, e);
                 return;
             }
@@ -45,26 +39,26 @@ impl GlobalTopography {
             if let Some(response) = Self::receive_message::<BackendResponse>(&mut stream).await {
                 match response {
                     BackendResponse::InitShardTopography(InitShardTopographyResponse::Ok) => {
-                        log!("[COORD] Topography sent to shard ({},{},{},{})", 
+                        log!("Topography sent to shard ({},{},{},{})", 
                             shard.x, shard.y, shard.width, shard.height);
                     },
                     BackendResponse::InitShardTopography(InitShardTopographyResponse::ShardNotInitialized) => {
-                        log_error!("[COORD] Shard not initialized for topography: ({},{},{},{})", 
+                        log_error!("Shard not initialized for topography: ({},{},{},{})", 
                             shard.x, shard.y, shard.width, shard.height);
                     },
                     BackendResponse::InitShardTopography(InitShardTopographyResponse::InvalidTopographyData) => {
-                        log_error!("[COORD] Invalid topography data for shard: ({},{},{},{})", 
+                        log_error!("Invalid topography data for shard: ({},{},{},{})", 
                             shard.x, shard.y, shard.width, shard.height);
                     },
                     _ => {
-                        log_error!("[COORD] Unexpected response for topography request");
+                        log_error!("Unexpected response for topography request");
                     }
                 }
             } else {
-                log_error!("[COORD] Failed to receive response for topography request");
+                log_error!("Failed to receive response for topography request");
             }
         } else {
-            log_error!("[COORD] Failed to connect to backend for topography request");
+            log_error!("Failed to connect to backend for topography request");
         }
     }
 
@@ -92,136 +86,91 @@ impl GlobalTopography {
     }
 
     pub async fn generate_topography(&self) {
+        log!("Generating global topography for colony {}x{}", self.info.total_width, self.info.total_height);
+        
+        // Create a full colony image with a global gradient
+        let global_image = self.create_global_topography_image();
+        
+        // Calculate shard grid dimensions
         let horizontal_count = self.info.total_width / self.info.shard_width;
         let vertical_count = self.info.total_height / self.info.shard_height;
-        let shard_w = self.info.shard_width;
-        let shard_h = self.info.shard_height;
-        let default_value = self.info.default_value;
-        let points_per_subgrid = self.info.points_per_subgrid;
-        let (min_value, max_value) = self.info.points_min_max_value;
+        
+        log!("Distributing topography to {} shards ({}x{})", 
+            horizontal_count * vertical_count, horizontal_count, vertical_count);
 
-        // Border caches to ensure adjacent shards share borders
-        let mut top_borders: Vec<Vec<u8>> = vec![vec![0; shard_w]; horizontal_count];
-        let mut left_borders: Vec<Vec<u8>> = vec![vec![0; shard_h]; vertical_count];
-
-        // Generate all horizontal borders (top for each row)
-        for x in 0..horizontal_count {
-            top_borders[x] = Self::generate_border(shard_w, default_value);
-        }
-        // Generate all vertical borders (left for each column)
-        for y in 0..vertical_count {
-            left_borders[y] = Self::generate_border(shard_h, default_value);
-        }
-
+        // Send topography data to each shard
         for y in 0..vertical_count {
             for x in 0..horizontal_count {
                 let shard = Shard {
-                    x: (x * shard_w) as i32,
-                    y: (y * shard_h) as i32,
-                    width: shard_w as i32,
-                    height: shard_h as i32,
+                    x: (x * self.info.shard_width) as i32,
+                    y: (y * self.info.shard_height) as i32,
+                    width: self.info.shard_width as i32,
+                    height: self.info.shard_height as i32,
                 };
 
-                // Top border: from cache or generate
-                let top_border = if y == 0 {
-                    Self::generate_border(shard_w, default_value)
-                } else {
-                    // Bottom border of the shard above
-                    Self::clone_border(&top_borders[x])
-                };
-                // Left border: from cache or generate
-                let left_border = if x == 0 {
-                    Self::generate_border(shard_h, default_value)
-                } else {
-                    // Right border of the shard to the left
-                    Self::clone_border(&left_borders[y])
-                };
-
-                // Right border: generate and cache for next shard
-                let right_border = if x + 1 < horizontal_count {
-                    let border = Self::generate_border(shard_h, default_value);
-                    left_borders[y] = border.clone();
-                    border
-                } else {
-                    Self::generate_border(shard_h, default_value)
-                };
-                // Bottom border: generate and cache for next row
-                let bottom_border = if y + 1 < vertical_count {
-                    let border = Self::generate_border(shard_w, default_value);
-                    top_borders[x] = border.clone();
-                    border
-                } else {
-                    Self::generate_border(shard_w, default_value)
-                };
-
-                // Generate random points inside the shard (excluding borders)
-                let points = Self::generate_points(
-                    x,
-                    y,
-                    shard_w,
-                    shard_h,
-                    points_per_subgrid,
-                    min_value,
-                    max_value,
-                );
-
-                let topography = ShardTopographyInfo {
-                    default_value,
-                    top_border,
-                    bottom_border,
-                    left_border,
-                    right_border,
-                    points,
-                };
-
-                self.send_topography_to_local_shard(shard, topography).await;
+                // Extract shard-specific data from the global image
+                let shard_data = self.extract_shard_data(&global_image, x, y);
+                
+                self.send_topography_to_local_shard(shard, shard_data).await;
             }
         }
+        
+        log!("Global topography generation completed");
     }
 
-    // Helper: Generate a border with linear interpolation and ±1 step
-    fn generate_border(len: usize, default_value: u8) -> Vec<u8> {
-        if len == 0 { return vec![]; }
-        let mut rng = rand::thread_rng();
-        let start = default_value;
-        let end = default_value;
-        let mut border = vec![0u8; len];
-        border[0] = start;
-        border[len - 1] = end;
-        for i in 1..len - 1 {
-            let prev = border[i - 1] as i16;
-            let step = rng.gen_range(-1..=1);
-            let mut val = prev + step;
-            if val < 0 { val = 0; }
-            if val > 255 { val = 255; }
-            border[i] = val as u8;
+    fn create_global_topography_image(&self) -> Vec<u8> {
+        let mut image = vec![0u8; self.info.total_width * self.info.total_height];
+        
+        // Create a radial gradient from the center of the colony
+        let center_x = self.info.total_width as f32 / 2.0;
+        let center_y = self.info.total_height as f32 / 2.0;
+        let max_distance = ((center_x * center_x + center_y * center_y) as f32).sqrt();
+        
+        for y in 0..self.info.total_height {
+            for x in 0..self.info.total_width {
+                let idx = y * self.info.total_width + x;
+                
+                // Calculate distance from center
+                let dx = x as f32 - center_x;
+                let dy = y as f32 - center_y;
+                let distance = (dx * dx + dy * dy).sqrt();
+                
+                // Create a radial gradient: higher values near center, lower at edges
+                let normalized_distance = distance / max_distance;
+                let gradient_value = ((1.0 - normalized_distance) * 255.0) as u8;
+                
+                // Add some variation with a simple noise pattern
+                let noise = ((x as u64 * 73856093) ^ (y as u64 * 19349663)) % 50;
+                let final_value = (gradient_value as u32 + noise as u32) as u8;
+                
+                image[idx] = final_value;
+            }
         }
-        border
+        
+        image
     }
 
-    // Helper: Clone a border
-    fn clone_border(border: &Vec<u8>) -> Vec<u8> {
-        border.clone()
-    }
-
-    // Helper: Generate random points inside the shard (excluding borders)
-    fn generate_points(
-        shard_x: usize,
-        shard_y: usize,
-        shard_w: usize,
-        shard_h: usize,
-        points_per_subgrid: u8,
-        min_value: u8,
-        max_value: u8,
-    ) -> Vec<(u16, u16, u8)> {
-        let mut points = Vec::new();
-        let mut rng = StdRng::seed_from_u64((shard_x as u64) << 32 | (shard_y as u64));
-        for _ in 0..points_per_subgrid {
-            let x = rng.gen_range(1..(shard_w as u16 - 1));
-            let y = rng.gen_range(1..(shard_h as u16 - 1));
-            let value = rng.gen_range(min_value..=max_value);
-            points.push((x, y, value));
+    fn extract_shard_data(&self, global_image: &[u8], shard_x: usize, shard_y: usize) -> Vec<u8> {
+        let mut shard_data = Vec::with_capacity(self.info.shard_width * self.info.shard_height);
+        
+        let start_x = shard_x * self.info.shard_width;
+        let start_y = shard_y * self.info.shard_height;
+        
+        for y in 0..self.info.shard_height {
+            for x in 0..self.info.shard_width {
+                let global_x = start_x + x;
+                let global_y = start_y + y;
+                let global_idx = global_y * self.info.total_width + global_x;
+                
+                if global_idx < global_image.len() {
+                    let value = global_image[global_idx];
+                    shard_data.push(value);
+                } else {
+                    shard_data.push(0); // Fallback value
+                }
+            }
         }
-        points
+        
+        shard_data
     }
 }  
