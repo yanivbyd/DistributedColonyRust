@@ -4,52 +4,8 @@ use std::time::Duration;
 pub const BACKEND_PORT: u16 = 8082;
 pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct Color {
-    pub red: u8,
-    pub green: u8,
-    pub blue: u8,
-}
-
-impl Color {
-    pub fn equals(&self, other: &Color) -> bool {
-        self.red == other.red && self.green == other.green && self.blue == other.blue
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct Cell {
-    pub tick_bit: bool,
-
-    // Cell itself
-    pub food: u8,
-    pub extra_food_per_tick: u8,
-
-    // Creature 
-    pub color: Color,
-    pub health: u8,
-
-    pub traits: Traits,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct Traits {
-    pub size: u8,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct ColonyLifeInfo {
-    pub health_cost_per_size_unit: u8,
-    pub eat_capacity_per_size_unit: u8,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Shard {
-    pub x: i32,
-    pub y: i32,
-    pub width: i32,
-    pub height: i32,
-}
+// Re-export colony model types for backward compatibility
+pub use crate::colony_model::{Color, Cell, ColonyLifeInfo, Shard, ShardLayer, Traits};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum BackendRequest {
@@ -109,12 +65,6 @@ pub struct GetShardImageRequest {
 pub enum GetShardImageResponse {
     Image { image: Vec<Color> },
     ShardNotAvailable,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub enum ShardLayer {
-    CreatureSize,
-    ExtraFood,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

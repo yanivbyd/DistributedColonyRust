@@ -1,5 +1,5 @@
 use crate::{colony::Colony, colony_shard::WHITE_COLOR};
-use shared::log;
+use shared::{be_api::Shard, log};
 
 pub struct Circle {
     pub x: f32,
@@ -32,7 +32,7 @@ pub enum ColonyEvent {
     ReshuffleStrength(Region),
 }
 
-fn region_overlaps_shard(region: &Region, shard: &shared::be_api::Shard) -> bool {
+fn region_overlaps_shard(region: &Region, shard: &Shard) -> bool {
     match region {
         Region::Circle(circle) => {
             let closest_x = circle.x.max(shard.x as f32).min((shard.x + shard.width) as f32);
