@@ -4,14 +4,24 @@ use shared::storage::StorageUtils;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ColonyStatus {
     NotInitialized,
-    ColonyInitialized,
-    ShardInitialized,
     TopographyInitialized,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CoordinatorInfo {
-    pub status: ColonyStatus
+    pub status: ColonyStatus,
+    pub colony_width: Option<i32>,
+    pub colony_height: Option<i32>,
+}
+
+impl CoordinatorInfo {
+    pub fn new() -> Self {
+        Self {
+            status: ColonyStatus::NotInitialized,
+            colony_width: None,
+            colony_height: None,
+        }
+    }
 }
 
 pub struct CoordinatorStorage;

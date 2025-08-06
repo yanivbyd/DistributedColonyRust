@@ -7,6 +7,7 @@ use shared::{log, log_error};
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bincode;
+use crate::coordinator_storage::{CoordinatorStorage, CoordinatorInfo, ColonyStatus};
 
 const COLONY_LIFE_INFO: ColonyLifeInfo = ColonyLifeInfo { 
     health_cost_per_size_unit: 3,
@@ -17,6 +18,8 @@ const HEIGHT_IN_SHARDS: i32 = 3;
 
 const SHARD_WIDTH: i32 = 250;
 const SHARD_HEIGHT: i32 = 250;
+
+const COORDINATION_FILE: &str = "output/storage/colony.dat";
 
 fn generate_shards() -> Vec<Shard> {
     let mut shards = Vec::new();
@@ -81,9 +84,9 @@ async fn send_init_colony(stream: &mut TcpStream) {
 
     if let Some(response) = receive_message::<BackendResponse>(stream).await {
         match response {
-            BackendResponse::InitColony(InitColonyResponse::Ok) => log!("[COORD] Colony initialized"),
-            BackendResponse::InitColony(InitColonyResponse::ColonyAlreadyInitialized) => log!("[COORD] Colony already initialized"),
-            _ => log_error!("[COORD] Unexpected response"),
+            BackendResponse::InitColony(InitColonyResponse::Ok) => log!("Colony initialized"),
+            BackendResponse::InitColony(InitColonyResponse::ColonyAlreadyInitialized) => log!("Colony already initialized"),
+            _ => log_error!("Unexpected response"),
         }
     }
 }
@@ -94,56 +97,81 @@ async fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
     if let Some(response) = receive_message::<BackendResponse>(stream).await {
         match response {
             BackendResponse::InitColonyShard(InitColonyShardResponse::Ok) => {
-                log!("[COORD] Shard initialized");
+                log!("Shard initialized");
             },
             BackendResponse::InitColonyShard(InitColonyShardResponse::ShardAlreadyInitialized) => {
-                log!("[COORD] Shard already initialized");
+                log!("Shard already initialized");
             },
             BackendResponse::InitColonyShard(InitColonyShardResponse::ColonyNotInitialized) => {
-                log_error!("[COORD] Colony not initialized");
+                log_error!("Colony not initialized");
             },
-            _ => log_error!("[COORD] Unexpected response to InitColonyShard"),
+            _ => log_error!("Unexpected response to InitColonyShard"),
         }
     }
 }
 
 pub async fn initialize_colony() {
+    // Step 1: Retrieve coordination info
+    let mut coord_info = CoordinatorStorage::retrieve(COORDINATION_FILE)
+        .unwrap_or_else(|| {
+            log!("No existing coordination info found, starting fresh");
+            CoordinatorInfo::new()
+        });
+    
+    log!("Starting colony initialization with status: {:?}", coord_info.status);
+    
     let mut stream = connect_to_backend().await;
 
-    // Call GetColonyInfo first
+    // Step 1: Initialize colony if not already done - should ALWAYS be done
+    log!("Step 1: Initializing colony");
+    
     let colony_info = get_colony_info(&mut stream).await;
-    log!("[COORD] Colony info: {:?}", colony_info);
-    let mut initialized_shards: Vec<Shard> = vec![];
+    log!("Colony info: {:?}", colony_info);
+    
     match colony_info {
-        Some(GetColonyInfoResponse::Ok { width, height, shards }) => {
-            initialized_shards = shards;
-            log!("[COORD] Colony already initialized: {}x{}, {} shards", width, height, initialized_shards.len());
+        Some(GetColonyInfoResponse::Ok { width, height, shards: _ }) => {
+            coord_info.colony_width = Some(width);
+            coord_info.colony_height = Some(height);
         },
         Some(GetColonyInfoResponse::ColonyNotInitialized) | None => {
             send_init_colony(&mut stream).await;
+            coord_info.colony_width = Some(WIDTH_IN_SHARDS * SHARD_WIDTH);
+            coord_info.colony_height = Some(HEIGHT_IN_SHARDS * SHARD_HEIGHT);
         }
     }
+    
+    // Step 2: Initialize shards - should ALWAYS be done
+    log!("Step 2: Initializing shards");
+    
+    let all_shards = generate_shards();
+    
+    for shard in all_shards.iter() {
+        send_init_colony_shard(&mut stream, *shard).await;
+    }    
 
-    // Only init shards that are not already initialized
-    let shards = generate_shards();
-    for shard in shards.iter() {
-        if !initialized_shards.contains(shard) {
-            send_init_colony_shard(&mut stream, *shard).await;
-        } else {
-            log!("[COORD] Shard already initialized: ({},{},{},{})", shard.x, shard.y, shard.width, shard.height);
+    // Step 3: Initialize topography
+    if matches!(coord_info.status, ColonyStatus::NotInitialized) {
+        log!("Step 3: Initializing topography");
+        
+        use crate::global_topography::{GlobalTopography, GlobalTopographyInfo};
+        let topography_info = GlobalTopographyInfo {
+            total_width: (WIDTH_IN_SHARDS * SHARD_WIDTH) as usize,
+            total_height: (HEIGHT_IN_SHARDS * SHARD_HEIGHT) as usize,
+            shard_width: SHARD_WIDTH as usize,
+            shard_height: SHARD_HEIGHT as usize,
+            default_value: 10, 
+            points_per_subgrid: 5, 
+            points_min_max_value: (100, 250), 
+        };
+        GlobalTopography::new(topography_info).generate_topography().await;
+        
+        coord_info.status = ColonyStatus::TopographyInitialized;
+        
+        // Save coordination info after topography initialization
+        if let Err(e) = CoordinatorStorage::store(&coord_info, COORDINATION_FILE) {
+            log_error!("Failed to save coordination info: {}", e);
         }
     }
-
-    // Init Topography, initialize and call global topography, use constants at the top of the file when needed
-    use crate::global_topography::{GlobalTopography, GlobalTopographyInfo};
-    let topography_info = GlobalTopographyInfo {
-        total_width: (WIDTH_IN_SHARDS * SHARD_WIDTH) as usize,
-        total_height: (HEIGHT_IN_SHARDS * SHARD_HEIGHT) as usize,
-        shard_width: SHARD_WIDTH as usize,
-        shard_height: SHARD_HEIGHT as usize,
-        default_value: 10, 
-        points_per_subgrid: 5, 
-        points_min_max_value: (100, 250), 
-    };
-    GlobalTopography::new(topography_info).generate_topography().await;
+    
+    log!("Colony initialization completed with status: {:?}", coord_info.status);
 } 

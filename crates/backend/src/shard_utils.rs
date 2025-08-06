@@ -187,7 +187,7 @@ impl ShardUtils {
     }
 
     fn get_shard_filename(shard: &Shard) -> String {
-        format!("output/storage/{}.bin", ShardUtils::shard_id(shard))
+        format!("output/storage/{}.dat", ShardUtils::shard_id(shard))
     }
 
     fn get_shard_temp_filename(shard: &Shard) -> String {
