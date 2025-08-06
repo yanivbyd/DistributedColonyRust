@@ -1,4 +1,3 @@
-use shared::colony_model::Shard;
 use serde::{Serialize, Deserialize};
 use shared::storage::StorageUtils;
 

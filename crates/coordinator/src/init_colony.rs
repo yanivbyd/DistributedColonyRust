@@ -12,29 +12,26 @@ const COLONY_LIFE_INFO: ColonyLifeInfo = ColonyLifeInfo {
     health_cost_per_size_unit: 3,
     eat_capacity_per_size_unit: 5
 };
-const TOTAL_WIDTH: i32 = 1250;
-const TOTAL_HEIGHT: i32 = 750;
+const WIDTH_IN_SHARDS: i32 = 5;
+const HEIGHT_IN_SHARDS: i32 = 3;
 
-const SHARD_WIDTH: i32 = TOTAL_WIDTH / 5;
-const SHARD_HEIGHT: i32 = TOTAL_HEIGHT / 3;
+const SHARD_WIDTH: i32 = 250;
+const SHARD_HEIGHT: i32 = 250;
 
-const SHARDS: [Shard; 15] = [
-    Shard { x: 0, y: 0, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // top-left
-    Shard { x: SHARD_WIDTH, y: 0, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // top-middle-left
-    Shard { x: 2 * SHARD_WIDTH, y: 0, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // top-middle
-    Shard { x: 3 * SHARD_WIDTH, y: 0, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // top-middle-right
-    Shard { x: 4 * SHARD_WIDTH, y: 0, width: TOTAL_WIDTH - 4 * SHARD_WIDTH, height: SHARD_HEIGHT }, // top-right
-    Shard { x: 0, y: SHARD_HEIGHT, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // mid-left
-    Shard { x: SHARD_WIDTH, y: SHARD_HEIGHT, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // mid-middle-left
-    Shard { x: 2 * SHARD_WIDTH, y: SHARD_HEIGHT, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // mid-middle
-    Shard { x: 3 * SHARD_WIDTH, y: SHARD_HEIGHT, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // mid-middle-right
-    Shard { x: 4 * SHARD_WIDTH, y: SHARD_HEIGHT, width: TOTAL_WIDTH - 4 * SHARD_WIDTH, height: SHARD_HEIGHT }, // mid-right
-    Shard { x: 0, y: 2 * SHARD_HEIGHT, width: SHARD_WIDTH, height: TOTAL_HEIGHT - 2 * SHARD_HEIGHT }, // bottom-left
-    Shard { x: SHARD_WIDTH, y: 2 * SHARD_HEIGHT, width: SHARD_WIDTH, height: TOTAL_HEIGHT - 2 * SHARD_HEIGHT }, // bottom-middle-left
-    Shard { x: 2 * SHARD_WIDTH, y: 2 * SHARD_HEIGHT, width: SHARD_WIDTH, height: TOTAL_HEIGHT - 2 * SHARD_HEIGHT }, // bottom-middle
-    Shard { x: 3 * SHARD_WIDTH, y: 2 * SHARD_HEIGHT, width: SHARD_WIDTH, height: TOTAL_HEIGHT - 2 * SHARD_HEIGHT }, // bottom-middle-right
-    Shard { x: 4 * SHARD_WIDTH, y: 2 * SHARD_HEIGHT, width: TOTAL_WIDTH - 4 * SHARD_WIDTH, height: TOTAL_HEIGHT - 2 * SHARD_HEIGHT }, // bottom-right
-];
+fn generate_shards() -> Vec<Shard> {
+    let mut shards = Vec::new();
+    for y in 0..HEIGHT_IN_SHARDS {
+        for x in 0..WIDTH_IN_SHARDS {
+            shards.push(Shard {
+                x: x * SHARD_WIDTH,
+                y: y * SHARD_HEIGHT,
+                width: SHARD_WIDTH,
+                height: SHARD_HEIGHT,
+            });
+        }
+    }
+    shards
+}
 
 async fn send_message<T: serde::Serialize>(stream: &mut TcpStream, msg: &T) {
     let encoded = bincode::serialize(msg).expect("Failed to serialize message");
@@ -79,7 +76,7 @@ async fn connect_to_backend() -> TcpStream {
 }
 
 async fn send_init_colony(stream: &mut TcpStream) {
-    let init = BackendRequest::InitColony(InitColonyRequest { width: TOTAL_WIDTH, height: TOTAL_HEIGHT, colony_life_info: COLONY_LIFE_INFO });
+    let init = BackendRequest::InitColony(InitColonyRequest { width: WIDTH_IN_SHARDS * SHARD_WIDTH, height: HEIGHT_IN_SHARDS * SHARD_HEIGHT, colony_life_info: COLONY_LIFE_INFO });
     send_message(stream, &init).await;
 
     if let Some(response) = receive_message::<BackendResponse>(stream).await {
@@ -128,7 +125,8 @@ pub async fn initialize_colony() {
     }
 
     // Only init shards that are not already initialized
-    for shard in SHARDS.iter() {
+    let shards = generate_shards();
+    for shard in shards.iter() {
         if !initialized_shards.contains(shard) {
             send_init_colony_shard(&mut stream, *shard).await;
         } else {
@@ -139,8 +137,8 @@ pub async fn initialize_colony() {
     // Init Topography, initialize and call global topography, use constants at the top of the file when needed
     use crate::global_topography::{GlobalTopography, GlobalTopographyInfo};
     let topography_info = GlobalTopographyInfo {
-        total_width: TOTAL_WIDTH as usize,
-        total_height: TOTAL_HEIGHT as usize,
+        total_width: (WIDTH_IN_SHARDS * SHARD_WIDTH) as usize,
+        total_height: (HEIGHT_IN_SHARDS * SHARD_HEIGHT) as usize,
         shard_width: SHARD_WIDTH as usize,
         shard_height: SHARD_HEIGHT as usize,
         default_value: 10, 
