@@ -5,7 +5,7 @@ pub const BACKEND_PORT: u16 = 8082;
 pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
 
 // Re-export colony model types for backward compatibility
-pub use crate::colony_model::{Color, Cell, ColonyLifeInfo, Shard, ShardLayer, Traits};
+pub use crate::colony_model::{Color, Cell, ColonyLifeInfo, Shard, ShardLayer, Traits, ShardTopographyInfo};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum BackendRequest {
@@ -16,6 +16,7 @@ pub enum BackendRequest {
     InitColonyShard(InitColonyShardRequest),
     GetColonyInfo(GetColonyInfoRequest),
     UpdatedShardContents(UpdatedShardContentsRequest),
+    InitShardTopography(InitShardTopographyRequest),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -27,6 +28,7 @@ pub enum BackendResponse {
     InitColonyShard(InitColonyShardResponse),
     GetColonyInfo(GetColonyInfoResponse),
     UpdatedShardContents(UpdatedShardContentsResponse),
+    InitShardTopography(InitShardTopographyResponse),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -103,4 +105,17 @@ pub struct UpdatedShardContentsRequest {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct UpdatedShardContentsResponse {
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InitShardTopographyRequest {
+    pub shard: Shard,
+    pub topography_info: ShardTopographyInfo,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum InitShardTopographyResponse {
+    Ok,
+    ShardNotInitialized,
+    InvalidTopographyData,
 }

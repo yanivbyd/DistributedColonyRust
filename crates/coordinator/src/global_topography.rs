@@ -1,10 +1,14 @@
 // Global topography module for the coordinator
 // This module will handle global topography-related functionality
 
-use shared::be_api::Shard;
+use shared::be_api::{Shard, BackendRequest, BackendResponse, InitShardTopographyRequest, InitShardTopographyResponse, BACKEND_PORT};
+use shared::{log, log_error};
+use shared::colony_model::ShardTopographyInfo;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
-use shared::colony_model::ShardTopographyInfo;
+use tokio::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use bincode;
 
 pub struct GlobalTopographyInfo {
     pub total_width: usize,
@@ -25,11 +29,69 @@ impl GlobalTopography {
         Self { info }
     }
 
-    fn send_topography_to_local_shard(&self, _shard: Shard, _info: ShardTopographyInfo) {
-        // Assume this is implemented, do not implement it here
+    async fn send_topography_to_local_shard(&self, shard: Shard, info: ShardTopographyInfo) {
+        let request = BackendRequest::InitShardTopography(InitShardTopographyRequest {
+            shard,
+            topography_info: info,
+        });
+
+        if let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{}", BACKEND_PORT)).await {
+            if let Err(e) = Self::send_message(&mut stream, &request).await {
+                log_error!("[COORD] Failed to send topography to shard ({},{},{},{}): {}", 
+                    shard.x, shard.y, shard.width, shard.height, e);
+                return;
+            }
+
+            if let Some(response) = Self::receive_message::<BackendResponse>(&mut stream).await {
+                match response {
+                    BackendResponse::InitShardTopography(InitShardTopographyResponse::Ok) => {
+                        log!("[COORD] Topography sent to shard ({},{},{},{})", 
+                            shard.x, shard.y, shard.width, shard.height);
+                    },
+                    BackendResponse::InitShardTopography(InitShardTopographyResponse::ShardNotInitialized) => {
+                        log_error!("[COORD] Shard not initialized for topography: ({},{},{},{})", 
+                            shard.x, shard.y, shard.width, shard.height);
+                    },
+                    BackendResponse::InitShardTopography(InitShardTopographyResponse::InvalidTopographyData) => {
+                        log_error!("[COORD] Invalid topography data for shard: ({},{},{},{})", 
+                            shard.x, shard.y, shard.width, shard.height);
+                    },
+                    _ => {
+                        log_error!("[COORD] Unexpected response for topography request");
+                    }
+                }
+            } else {
+                log_error!("[COORD] Failed to receive response for topography request");
+            }
+        } else {
+            log_error!("[COORD] Failed to connect to backend for topography request");
+        }
     }
 
-    pub fn generate_topography(&self) {
+    async fn send_message<T: serde::Serialize>(stream: &mut TcpStream, msg: &T) -> Result<(), Box<dyn std::error::Error>> {
+        let encoded = bincode::serialize(msg)?;
+        let len = (encoded.len() as u32).to_be_bytes();
+        stream.write_all(&len).await?;
+        stream.write_all(&encoded).await?;
+        Ok(())
+    }
+
+    async fn receive_message<T: serde::de::DeserializeOwned>(stream: &mut TcpStream) -> Option<T> {
+        let mut len_buf = [0u8; 4];
+        if stream.read_exact(&mut len_buf).await.is_err() {
+            log_error!("Failed to read message length");
+            return None;
+        }
+        let len = u32::from_be_bytes(len_buf) as usize;
+        let mut buf = vec![0u8; len];
+        if stream.read_exact(&mut buf).await.is_err() {
+            log_error!("Failed to read message body");
+            return None;
+        }
+        bincode::deserialize(&buf).ok()
+    }
+
+    pub async fn generate_topography(&self) {
         let horizontal_count = self.info.total_width / self.info.shard_width;
         let vertical_count = self.info.total_height / self.info.shard_height;
         let shard_w = self.info.shard_width;
@@ -112,7 +174,7 @@ impl GlobalTopography {
                     points,
                 };
 
-                self.send_topography_to_local_shard(shard, topography);
+                self.send_topography_to_local_shard(shard, topography).await;
             }
         }
     }

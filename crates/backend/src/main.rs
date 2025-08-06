@@ -3,7 +3,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, GetShardLayerRequest, GetShardLayerResponse};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, GetShardLayerRequest, GetShardLayerResponse, InitShardTopographyRequest, InitShardTopographyResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
@@ -14,10 +14,11 @@ mod colony_shard;
 mod shard_utils;
 mod shard_storage;
 mod colony_events;
-mod topography;
+mod shard_topography;
 
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
+use crate::shard_topography::ShardTopography;
 
 // Debug logging macro that does nothing by default
 macro_rules! log_debug {
@@ -35,6 +36,7 @@ fn call_label(response: &BackendResponse) -> &'static str {
         BackendResponse::InitColonyShard(_) => "InitColonyShard",
         BackendResponse::GetColonyInfo(_) => "GetColonyInfo",
         BackendResponse::UpdatedShardContents(_) => todo!(),
+        BackendResponse::InitShardTopography(_) => "InitShardTopography",
     }
 }
 
@@ -61,6 +63,7 @@ async fn handle_client(socket: TcpStream) {
             Ok(BackendRequest::InitColonyShard(req)) => handle_init_colony_shard(req).await,
             Ok(BackendRequest::GetColonyInfo(req)) => handle_get_colony_info(req).await,
             Ok(BackendRequest::UpdatedShardContents(req)) => handle_updated_shard_contents(req).await,
+            Ok(BackendRequest::InitShardTopography(req)) => handle_init_shard_topography(req).await,
             Err(e) => {
                 log_error!("[BE] Failed to deserialize BackendRequest: {}", e);
                 continue;
@@ -136,15 +139,26 @@ async fn handle_get_colony_info(_req: GetColonyInfoRequest) -> BackendResponse {
     }
 }
 
-async fn handle_updated_shard_contents(req: UpdatedShardContentsRequest) -> BackendResponse {
-    if !Colony::is_initialized() {
-        return BackendResponse::UpdatedShardContents(UpdatedShardContentsResponse {});
-    }
-    let mut colony = Colony::instance();
-    for shard in colony.shards.iter_mut() {
-        ShardUtils::updated_shard_contents(shard, &req);
-    }
+async fn handle_updated_shard_contents(_req: UpdatedShardContentsRequest) -> BackendResponse {
+    log_debug!("[BE] UpdatedShardContents request: shard=({},{},{},{})", req.updated_shard.x, req.updated_shard.y, req.updated_shard.width, req.updated_shard.height);
+    // TODO: Implement shard content update logic
     BackendResponse::UpdatedShardContents(UpdatedShardContentsResponse {})
+}
+
+async fn handle_init_shard_topography(req: InitShardTopographyRequest) -> BackendResponse {
+    log_debug!("[BE] InitShardTopography request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
+    
+    if !Colony::is_initialized() {
+        return BackendResponse::InitShardTopography(InitShardTopographyResponse::ShardNotInitialized);
+    }
+    
+    let mut colony = Colony::instance();
+    if let Some(shard) = colony.get_colony_shard_mut(&req.shard) {
+        ShardTopography::init_shard_topography_from_info(shard, &req.topography_info);
+        BackendResponse::InitShardTopography(InitShardTopographyResponse::Ok)
+    } else {
+        BackendResponse::InitShardTopography(InitShardTopographyResponse::ShardNotInitialized)
+    }
 }
 
 #[tokio::main]

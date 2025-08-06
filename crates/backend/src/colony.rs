@@ -53,6 +53,10 @@ impl Colony {
         self.shards.iter().find(|cs| &cs.shard == shard)
     }
 
+    pub fn get_colony_shard_mut(&mut self, shard: &Shard) -> Option<&mut ColonyShard> {
+        self.shards.iter_mut().find(|cs| &cs.shard == shard)
+    }
+
     pub fn is_valid_shard_dimensions(&self, shard: &Shard) -> bool {
         shard.x >= 0 && shard.y >= 0 &&
         shard.width > 0 && shard.height > 0 &&

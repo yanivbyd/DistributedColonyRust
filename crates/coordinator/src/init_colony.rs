@@ -145,7 +145,7 @@ pub async fn initialize_colony() {
         shard_height: SHARD_HEIGHT as usize,
         default_value: 10, 
         points_per_subgrid: 5, 
-        points_min_max_value: (1, 20), 
+        points_min_max_value: (100, 250), 
     };
-    GlobalTopography::new(topography_info).generate_topography();
+    GlobalTopography::new(topography_info).generate_topography().await;
 } 

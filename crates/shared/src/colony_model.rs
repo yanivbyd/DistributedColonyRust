@@ -47,7 +47,7 @@ pub struct Shard {
     pub height: i32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShardTopographyInfo {
     pub default_value: u8,
     pub top_border: Vec<u8>,     
