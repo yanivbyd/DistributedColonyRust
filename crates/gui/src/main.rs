@@ -8,6 +8,10 @@ use shared::be_api::ShardLayer;
 mod call_be;
 
 const REFRESH_INTERVAL_MS: u64 = 100;
+const WIDTH_IN_SHARDS: i32 = 5;
+const HEIGHT_IN_SHARDS: i32 = 3;
+const SHARD_WIDTH: i32 = 250;
+const SHARD_HEIGHT: i32 = 250;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
@@ -27,21 +31,21 @@ pub struct ShardConfig {
 impl Default for ShardConfig {
     fn default() -> Self {
         Self {
-            total_width: 1250,
-            total_height: 750,
-            cols: 5,
-            rows: 3,
+            total_width: WIDTH_IN_SHARDS * SHARD_WIDTH,
+            total_height: HEIGHT_IN_SHARDS * SHARD_HEIGHT,
+            cols: WIDTH_IN_SHARDS as usize,
+            rows: HEIGHT_IN_SHARDS as usize,
         }
     }
 }
 
 impl ShardConfig {
     fn shard_width(&self) -> i32 {
-        self.total_width / self.cols as i32
+        SHARD_WIDTH
     }
     
     fn shard_height(&self) -> i32 {
-        self.total_height / self.rows as i32
+        SHARD_HEIGHT
     }
     
     fn total_shards(&self) -> usize {
@@ -52,23 +56,15 @@ impl ShardConfig {
         let row = index / self.cols;
         let col = index % self.cols;
         
-        let x = col as i32 * self.shard_width();
-        let y = row as i32 * self.shard_height();
+        let x = col as i32 * SHARD_WIDTH;
+        let y = row as i32 * SHARD_HEIGHT;
         
-        // Handle the last column and row to account for rounding
-        let width = if col == self.cols - 1 {
-            self.total_width - (self.cols - 1) as i32 * self.shard_width()
-        } else {
-            self.shard_width()
-        };
-        
-        let height = if row == self.rows - 1 {
-            self.total_height - (self.rows - 1) as i32 * self.shard_height()
-        } else {
-            self.shard_height()
-        };
-        
-        shared::be_api::Shard { x, y, width, height }
+        shared::be_api::Shard { 
+            x, 
+            y, 
+            width: SHARD_WIDTH, 
+            height: SHARD_HEIGHT 
+        }
     }
 }
 
