@@ -47,6 +47,16 @@ pub struct Shard {
     pub height: i32,
 }
 
+#[derive(Debug, Clone)]
+pub struct ShardTopographyInfo {
+    pub default_value: u8,
+    pub top_border: Vec<u8>,     
+    pub bottom_border: Vec<u8>,  
+    pub left_border: Vec<u8>,    
+    pub right_border: Vec<u8>,   
+    pub points: Vec<(u16, u16, u8)>, 
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum ShardLayer {
     CreatureSize,

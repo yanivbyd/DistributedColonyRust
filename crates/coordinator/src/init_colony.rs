@@ -12,28 +12,28 @@ const COLONY_LIFE_INFO: ColonyLifeInfo = ColonyLifeInfo {
     health_cost_per_size_unit: 3,
     eat_capacity_per_size_unit: 5
 };
-const WIDTH: i32 = 1250;
-const HEIGHT: i32 = 750;
+const TOTAL_WIDTH: i32 = 1250;
+const TOTAL_HEIGHT: i32 = 750;
 
-const FIFTH_WIDTH: i32 = WIDTH / 5;
-const THIRD_HEIGHT: i32 = HEIGHT / 3;
+const SHARD_WIDTH: i32 = TOTAL_WIDTH / 5;
+const SHARD_HEIGHT: i32 = TOTAL_HEIGHT / 3;
 
 const SHARDS: [Shard; 15] = [
-    Shard { x: 0, y: 0, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-left
-    Shard { x: FIFTH_WIDTH, y: 0, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-middle-left
-    Shard { x: 2 * FIFTH_WIDTH, y: 0, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-middle
-    Shard { x: 3 * FIFTH_WIDTH, y: 0, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-middle-right
-    Shard { x: 4 * FIFTH_WIDTH, y: 0, width: WIDTH - 4 * FIFTH_WIDTH, height: THIRD_HEIGHT }, // top-right
-    Shard { x: 0, y: THIRD_HEIGHT, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // mid-left
-    Shard { x: FIFTH_WIDTH, y: THIRD_HEIGHT, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // mid-middle-left
-    Shard { x: 2 * FIFTH_WIDTH, y: THIRD_HEIGHT, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // mid-middle
-    Shard { x: 3 * FIFTH_WIDTH, y: THIRD_HEIGHT, width: FIFTH_WIDTH, height: THIRD_HEIGHT }, // mid-middle-right
-    Shard { x: 4 * FIFTH_WIDTH, y: THIRD_HEIGHT, width: WIDTH - 4 * FIFTH_WIDTH, height: THIRD_HEIGHT }, // mid-right
-    Shard { x: 0, y: 2 * THIRD_HEIGHT, width: FIFTH_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-left
-    Shard { x: FIFTH_WIDTH, y: 2 * THIRD_HEIGHT, width: FIFTH_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-middle-left
-    Shard { x: 2 * FIFTH_WIDTH, y: 2 * THIRD_HEIGHT, width: FIFTH_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-middle
-    Shard { x: 3 * FIFTH_WIDTH, y: 2 * THIRD_HEIGHT, width: FIFTH_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-middle-right
-    Shard { x: 4 * FIFTH_WIDTH, y: 2 * THIRD_HEIGHT, width: WIDTH - 4 * FIFTH_WIDTH, height: HEIGHT - 2 * THIRD_HEIGHT }, // bottom-right
+    Shard { x: 0, y: 0, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // top-left
+    Shard { x: SHARD_WIDTH, y: 0, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // top-middle-left
+    Shard { x: 2 * SHARD_WIDTH, y: 0, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // top-middle
+    Shard { x: 3 * SHARD_WIDTH, y: 0, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // top-middle-right
+    Shard { x: 4 * SHARD_WIDTH, y: 0, width: TOTAL_WIDTH - 4 * SHARD_WIDTH, height: SHARD_HEIGHT }, // top-right
+    Shard { x: 0, y: SHARD_HEIGHT, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // mid-left
+    Shard { x: SHARD_WIDTH, y: SHARD_HEIGHT, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // mid-middle-left
+    Shard { x: 2 * SHARD_WIDTH, y: SHARD_HEIGHT, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // mid-middle
+    Shard { x: 3 * SHARD_WIDTH, y: SHARD_HEIGHT, width: SHARD_WIDTH, height: SHARD_HEIGHT }, // mid-middle-right
+    Shard { x: 4 * SHARD_WIDTH, y: SHARD_HEIGHT, width: TOTAL_WIDTH - 4 * SHARD_WIDTH, height: SHARD_HEIGHT }, // mid-right
+    Shard { x: 0, y: 2 * SHARD_HEIGHT, width: SHARD_WIDTH, height: TOTAL_HEIGHT - 2 * SHARD_HEIGHT }, // bottom-left
+    Shard { x: SHARD_WIDTH, y: 2 * SHARD_HEIGHT, width: SHARD_WIDTH, height: TOTAL_HEIGHT - 2 * SHARD_HEIGHT }, // bottom-middle-left
+    Shard { x: 2 * SHARD_WIDTH, y: 2 * SHARD_HEIGHT, width: SHARD_WIDTH, height: TOTAL_HEIGHT - 2 * SHARD_HEIGHT }, // bottom-middle
+    Shard { x: 3 * SHARD_WIDTH, y: 2 * SHARD_HEIGHT, width: SHARD_WIDTH, height: TOTAL_HEIGHT - 2 * SHARD_HEIGHT }, // bottom-middle-right
+    Shard { x: 4 * SHARD_WIDTH, y: 2 * SHARD_HEIGHT, width: TOTAL_WIDTH - 4 * SHARD_WIDTH, height: TOTAL_HEIGHT - 2 * SHARD_HEIGHT }, // bottom-right
 ];
 
 async fn send_message<T: serde::Serialize>(stream: &mut TcpStream, msg: &T) {
@@ -79,7 +79,7 @@ async fn connect_to_backend() -> TcpStream {
 }
 
 async fn send_init_colony(stream: &mut TcpStream) {
-    let init = BackendRequest::InitColony(InitColonyRequest { width: WIDTH, height: HEIGHT, colony_life_info: COLONY_LIFE_INFO });
+    let init = BackendRequest::InitColony(InitColonyRequest { width: TOTAL_WIDTH, height: TOTAL_HEIGHT, colony_life_info: COLONY_LIFE_INFO });
     send_message(stream, &init).await;
 
     if let Some(response) = receive_message::<BackendResponse>(stream).await {
@@ -126,6 +126,7 @@ pub async fn initialize_colony() {
             send_init_colony(&mut stream).await;
         }
     }
+
     // Only init shards that are not already initialized
     for shard in SHARDS.iter() {
         if !initialized_shards.contains(shard) {
@@ -134,4 +135,17 @@ pub async fn initialize_colony() {
             log!("[COORD] Shard already initialized: ({},{},{},{})", shard.x, shard.y, shard.width, shard.height);
         }
     }
+
+    // Init Topography, initialize and call global topography, use constants at the top of the file when needed
+    use crate::global_topography::{GlobalTopography, GlobalTopographyInfo};
+    let topography_info = GlobalTopographyInfo {
+        total_width: TOTAL_WIDTH as usize,
+        total_height: TOTAL_HEIGHT as usize,
+        shard_width: SHARD_WIDTH as usize,
+        shard_height: SHARD_HEIGHT as usize,
+        default_value: 10, 
+        points_per_subgrid: 5, 
+        points_min_max_value: (1, 20), 
+    };
+    GlobalTopography::new(topography_info).generate_topography();
 } 

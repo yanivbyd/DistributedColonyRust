@@ -1,4 +1,5 @@
 mod init_colony;
+mod global_topography;
 
 use shared::coordinator_api::CoordinatorRequest;
 use tokio::net::TcpListener;
