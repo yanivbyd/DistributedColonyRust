@@ -1,60 +1,37 @@
+mod init_colony;
+
+use shared::coordinator_api::CoordinatorRequest;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
-use futures_util::SinkExt;
-use shared::coordinator_api::{COORDINATOR_PORT, CoordinatorRequest, CoordinatorResponse, InitColonyRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse};
+use shared::coordinator_api::{COORDINATOR_PORT };
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error, log};
 use bincode;
+use tokio::task;
 
-type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
-
-fn call_label(response: &CoordinatorResponse) -> &'static str {
-    match response {
-        CoordinatorResponse::InitColony(_) => "InitColony",
-        CoordinatorResponse::GetColonyInfo(_) => "GetColonyInfo",
-    }
-}
-
-async fn send_response(framed: &mut FramedStream, response: CoordinatorResponse) {
-    let encoded = bincode::serialize(&response).expect("Failed to serialize CoordinatorResponse");
-    let label = call_label(&response);
-    if let Err(e) = framed.send(encoded.into()).await {
-        log_error!("[COORD] Failed to send {} response: {}", label, e);
-    } else {
-        log!("[COORD] Sent {} response", label);
-    }
-}
+use crate::init_colony::initialize_colony;
 
 async fn handle_client(socket: TcpStream) {
     log!("[COORD] handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
     while let Some(Ok(bytes)) = framed.next().await {
         log!("[COORD] handle_client: received bytes");
-        let response = match bincode::deserialize::<CoordinatorRequest>(&bytes) {
-            Ok(CoordinatorRequest::InitColony(req)) => handle_init_colony(req).await,
-            Ok(CoordinatorRequest::GetColonyInfo(req)) => handle_get_colony_info(req).await,
+        match bincode::deserialize::<CoordinatorRequest>(&bytes) {
+            Ok(_request) => {
+                // TODO: Handle different request types
+                // CoordinatorResponse is an empty enum, so we can't create an instance
+                // For now, we'll just log the request and continue
+                log!("[COORD] Received request: {:?}", _request);
+            },
             Err(e) => {
                 log_error!("[COORD] Failed to deserialize CoordinatorRequest: {}", e);
                 continue;
             }
-        };
-        send_response(&mut framed, response).await;
+        }
     }
     log!("[COORD] handle_client: connection closed");
-}
-
-async fn handle_init_colony(req: InitColonyRequest) -> CoordinatorResponse {
-    // TODO: Implement actual colony initialization logic
-    log!("[COORD] InitColony request: width={}, height={}", req.width, req.height);
-    CoordinatorResponse::InitColony(InitColonyResponse::Ok)
-}
-
-async fn handle_get_colony_info(_req: GetColonyInfoRequest) -> CoordinatorResponse {
-    // TODO: Implement actual colony info retrieval logic
-    log!("[COORD] GetColonyInfo request");
-    CoordinatorResponse::GetColonyInfo(GetColonyInfoResponse::ColonyNotInitialized)
 }
 
 #[tokio::main]
@@ -63,6 +40,12 @@ async fn main() {
     log_startup("COORDINATOR");
     set_panic_hook();
     
+    // Make initialize_colony blocking by using spawn_blocking
+    task::spawn_blocking(|| {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+        rt.block_on(initialize_colony())
+    }).await.expect("Failed to initialize colony");
+
     let addr = format!("127.0.0.1:{}", COORDINATOR_PORT);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
     log!("[COORD] Listening on {}", addr);

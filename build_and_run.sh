@@ -9,6 +9,5 @@ sleep 1
 
 cargo run -p coordinator &
 sleep 1
-cargo run -p frontend
 
 cargo run -p gui
