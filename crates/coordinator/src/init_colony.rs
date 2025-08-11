@@ -160,14 +160,14 @@ pub async fn initialize_colony() {
             shard_width: SHARD_WIDTH as usize,
             shard_height: SHARD_HEIGHT as usize,
 
-            base_elevation: 18,
+            base_elevation: 5,
             river_elevation_range: 45, 
             river_influence_distance: 175.0,
             river_count_range: (10, 20),
-            river_segments_range: (20, 40),
-            river_step_length_range: (10.0, 30.0),
-            river_direction_change: 0.3,
-            smoothing_iterations: 3,
+            river_segments_range: (30, 4045),
+            river_step_length_range: (20.0, 30.0),
+            river_direction_change: 0.6,
+            smoothing_iterations: 4,
         };
         GlobalTopography::new(topography_info).generate_topography().await;
         
