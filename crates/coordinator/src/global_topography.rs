@@ -6,24 +6,10 @@ use shared::{log, log_error};
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bincode;
-use rand::Rng;
 
 #[derive(Debug)]
-struct SeedPoint {
-    x: f32,
-    y: f32,
-    height: u8,
-    radius: f32,
-    influence_type: InfluenceType,
-}
-
-#[derive(Debug)]
-enum InfluenceType {
-    Peak,      // Creates high elevation
-    Valley,    // Creates low elevation
-    Ridge,     // Creates linear high elevation
-    Plateau,   // Creates flat high elevation
-    Random,    // Random influence pattern
+struct RiverPath {
+    points: Vec<(f32, f32)>,
 }
 
 pub struct GlobalTopographyInfo {
@@ -31,6 +17,15 @@ pub struct GlobalTopographyInfo {
     pub total_height: usize,
     pub shard_width: usize,
     pub shard_height: usize,
+    // River system parameters
+    pub base_elevation: u8,
+    pub river_elevation_range: u8, // How much elevation rivers add (base + range = max river elevation)
+    pub river_influence_distance: f32, // Distance over which river influence extends
+    pub river_count_range: (usize, usize), // (min, max) number of rivers
+    pub river_segments_range: (usize, usize), // (min, max) segments per river
+    pub river_step_length_range: (f32, f32), // (min, max) step length for river segments
+    pub river_direction_change: f32, // Maximum direction change per segment
+    pub smoothing_iterations: usize,
 }
 
 pub struct GlobalTopography {
@@ -138,172 +133,148 @@ impl GlobalTopography {
     }
 
     fn create_global_topography_image(&self) -> Vec<u8> {
-        let mut image = vec![0u8; self.info.total_width * self.info.total_height];
+        let mut image = vec![self.info.base_elevation; self.info.total_width * self.info.total_height];
         let mut rng = rand::thread_rng();
         
-        // Step 1: Generate multiple seed points with different characteristics
-        let seed_points = self.generate_seed_points(&mut rng);
+        // Step 1: Create river paths
+        let river_paths = self.generate_river_paths(&mut rng);
         
-        // Step 2: Create initial topography based on distance to seed points
+        // Step 2: Apply river elevation and gradients
         for y in 0..self.info.total_height {
             for x in 0..self.info.total_width {
                 let idx = y * self.info.total_width + x;
+                let mut max_river_influence: f32 = 0.0;
                 
-                // Calculate influence from all seed points
-                let mut total_influence = 0.0;
-                let mut total_weight = 0.0;
-                
-                for (i, seed) in seed_points.iter().enumerate() {
-                    let dx = x as f32 - seed.x;
-                    let dy = y as f32 - seed.y;
-                    let distance = (dx * dx + dy * dy).sqrt();
-                    
-                    // Calculate influence based on distance and seed characteristics
-                    let influence = self.calculate_point_influence(distance, seed, i);
-                    let weight = 1.0 / (1.0 + distance * 0.01); // Distance-based weight
-                    
-                    total_influence += influence * weight;
-                    total_weight += weight;
+                // Check distance to all river paths
+                for river in &river_paths {
+                    let distance = self.distance_to_river(x as f32, y as f32, river);
+                    let influence = self.calculate_river_influence(distance);
+                    max_river_influence = max_river_influence.max(influence);
                 }
                 
-                // Normalize by total weight and add base gradient
-                let base_value = if total_weight > 0.0 {
-                    (total_influence / total_weight) as u8
-                } else {
-                    0
-                };
-                
-                // Add structured randomness
-                let noise1 = rng.gen_range(0..25); // Fine detail noise
-                let noise2 = ((x as u64 * 73856093) ^ (y as u64 * 19349663)) % 35; // Coarse noise
-                let noise3 = rng.gen_range(-15..15); // Medium detail noise
-                
-                let initial_value = (base_value as i32 + noise1 as i32 + noise2 as i32 + noise3) as u8;
-                image[idx] = initial_value;
+                // Apply river influence to elevation
+                let river_elevation = (self.info.base_elevation as f32 + max_river_influence * self.info.river_elevation_range as f32) as u8;
+                image[idx] = river_elevation;
             }
         }
         
-        // Step 3: Apply Laplacian smoothing multiple times
-        let smoothing_iterations = 4;
-        for _ in 0..smoothing_iterations {
+        // Step 3: Apply gradient smoothing around rivers
+        for _ in 0..self.info.smoothing_iterations {
             self.apply_laplacian_smoothing(&mut image);
-        }
-        
-        // Step 4: Add final random variations
-        for y in 0..self.info.total_height {
-            for x in 0..self.info.total_height {
-                let idx = y * self.info.total_width + x;
-                let current_value = image[idx] as i32;
-                
-                // Add small random variations
-                let variation = rng.gen_range(-8..8);
-                let new_value = (current_value + variation).clamp(0, 255) as u8;
-                image[idx] = new_value;
-            }
         }
         
         image
     }
 
-    fn generate_seed_points(&self, rng: &mut impl rand::Rng) -> Vec<SeedPoint> {
-        let mut seeds = Vec::new();
-        let num_seeds = rng.gen_range(5..12); // Random number of seed points
-        
-        // Always add a center seed point
-        seeds.push(SeedPoint {
-            x: self.info.total_width as f32 / 2.0,
-            y: self.info.total_height as f32 / 2.0,
-            height: rng.gen_range(180..220),
-            radius: rng.gen_range(50.0..150.0),
-            influence_type: InfluenceType::Peak,
-        });
-        
-        // Generate additional random seed points
-        for _ in 0..num_seeds {
-            let x = rng.gen_range(0.0..self.info.total_width as f32);
-            let y = rng.gen_range(0.0..self.info.total_height as f32);
-            
-            let influence_type = match rng.gen_range(0..5) {
-                0 => InfluenceType::Peak,
-                1 => InfluenceType::Valley,
-                2 => InfluenceType::Ridge,
-                3 => InfluenceType::Plateau,
-                _ => InfluenceType::Random,
-            };
-            
-            let height = match influence_type {
-                InfluenceType::Peak => rng.gen_range(150..255),
-                InfluenceType::Valley => rng.gen_range(0..100),
-                InfluenceType::Ridge => rng.gen_range(120..200),
-                InfluenceType::Plateau => rng.gen_range(100..180),
-                InfluenceType::Random => rng.gen_range(50..200),
-            };
-            
-            seeds.push(SeedPoint {
-                x,
-                y,
-                height,
-                radius: rng.gen_range(30.0..120.0),
-                influence_type,
-            });
-        }
-        
-        seeds
-    }
 
-    fn calculate_point_influence(&self, distance: f32, seed: &SeedPoint, seed_index: usize) -> f32 {
-        let normalized_distance = distance / seed.radius;
+    
+    fn generate_river_paths(&self, rng: &mut impl rand::Rng) -> Vec<RiverPath> {
+        let mut rivers = Vec::new();
+        let num_rivers = rng.gen_range(self.info.river_count_range.0..=self.info.river_count_range.1);
         
-        match seed.influence_type {
-            InfluenceType::Peak => {
-                if normalized_distance <= 1.0 {
-                    // Gaussian-like peak
-                    let falloff = (-normalized_distance * normalized_distance * 2.0).exp();
-                    seed.height as f32 * falloff
-                } else {
-                    0.0
-                }
-            },
-            InfluenceType::Valley => {
-                if normalized_distance <= 1.0 {
-                    // Inverted peak for valley
-                    let falloff = (-normalized_distance * normalized_distance * 1.5).exp();
-                    -(seed.height as f32) * falloff
-                } else {
-                    0.0
-                }
-            },
-            InfluenceType::Ridge => {
-                if normalized_distance <= 1.0 {
-                    // Linear ridge pattern
-                    let ridge_factor = (seed_index as f32 * 0.5).sin() * 0.3 + 0.7;
-                    let falloff = (-normalized_distance * normalized_distance * 1.0).exp();
-                    seed.height as f32 * falloff * ridge_factor
-                } else {
-                    0.0
-                }
-            },
-            InfluenceType::Plateau => {
-                if normalized_distance <= 1.0 {
-                    // Flat plateau with sharp edges
-                    let plateau_factor = if normalized_distance < 0.8 { 1.0 } else { 0.0 };
-                    seed.height as f32 * plateau_factor
-                } else {
-                    0.0
-                }
-            },
-            InfluenceType::Random => {
-                if normalized_distance <= 1.0 {
-                    // Random pattern based on seed index
-                    let random_factor = ((seed_index as f32 * 1.618033988749895) % 1.0).sin();
-                    let falloff = (-normalized_distance * normalized_distance * 1.2).exp();
-                    seed.height as f32 * falloff * random_factor
-                } else {
-                    0.0
-                }
-            },
+        for _ in 0..num_rivers {
+            let river = self.generate_single_river(rng);
+            rivers.push(river);
+        }
+        
+        rivers
+    }
+    
+    fn generate_single_river(&self, rng: &mut impl rand::Rng) -> RiverPath {
+        let mut points = Vec::new();
+        
+        // Start from a random edge
+        let start_side = rng.gen_range(0..4); // 0=top, 1=right, 2=bottom, 3=left
+        let (start_x, start_y) = match start_side {
+            0 => (rng.gen_range(0.0..self.info.total_width as f32), 0.0), // top
+            1 => (self.info.total_width as f32, rng.gen_range(0.0..self.info.total_height as f32)), // right
+            2 => (rng.gen_range(0.0..self.info.total_width as f32), self.info.total_height as f32), // bottom
+            _ => (0.0, rng.gen_range(0.0..self.info.total_height as f32)), // left
+        };
+        
+        points.push((start_x, start_y));
+        
+        // Generate river path with meandering
+        let mut current_x = start_x;
+        let mut current_y = start_y;
+        let mut direction = rng.gen_range(0.0..std::f32::consts::PI * 2.0);
+        
+        let num_segments = rng.gen_range(self.info.river_segments_range.0..=self.info.river_segments_range.1);
+        for _ in 0..num_segments {
+            // Add some randomness to direction
+            direction += rng.gen_range(-self.info.river_direction_change..self.info.river_direction_change);
+            
+            // Move in current direction
+            let step_length = rng.gen_range(self.info.river_step_length_range.0..self.info.river_step_length_range.1);
+            current_x += direction.cos() * step_length;
+            current_y += direction.sin() * step_length;
+            
+            // Keep river within bounds
+            current_x = current_x.clamp(0.0, self.info.total_width as f32);
+            current_y = current_y.clamp(0.0, self.info.total_height as f32);
+            
+            points.push((current_x, current_y));
+            
+            // Stop if we've reached another edge
+            if current_x <= 0.0 || current_x >= self.info.total_width as f32 ||
+               current_y <= 0.0 || current_y >= self.info.total_height as f32 {
+                break;
+            }
+        }
+        
+        RiverPath {
+            points,
         }
     }
+    
+    fn distance_to_river(&self, x: f32, y: f32, river: &RiverPath) -> f32 {
+        let mut min_distance = f32::INFINITY;
+        
+        // Check distance to each river segment
+        for i in 0..river.points.len() - 1 {
+            let (x1, y1) = river.points[i];
+            let (x2, y2) = river.points[i + 1];
+            
+            let distance = self.distance_to_line_segment(x, y, x1, y1, x2, y2);
+            min_distance = min_distance.min(distance);
+        }
+        
+        min_distance
+    }
+    
+    fn distance_to_line_segment(&self, px: f32, py: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
+        let dx = x2 - x1;
+        let dy = y2 - y1;
+        
+        if dx == 0.0 && dy == 0.0 {
+            // Line segment is a point
+            return ((px - x1).powi(2) + (py - y1).powi(2)).sqrt();
+        }
+        
+        let t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+        let t = t.clamp(0.0, 1.0);
+        
+        let closest_x = x1 + t * dx;
+        let closest_y = y1 + t * dy;
+        
+        ((px - closest_x).powi(2) + (py - closest_y).powi(2)).sqrt()
+    }
+    
+    fn calculate_river_influence(&self, distance: f32) -> f32 {
+        // Create a smooth gradient that decreases with distance
+        if distance <= self.info.river_influence_distance {
+            // Smooth falloff using quadratic interpolation
+            let t = distance / self.info.river_influence_distance;
+            let influence = (1.0 - t).powi(2); // Quadratic falloff
+            influence.clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+    
+
+
+
 
     fn apply_laplacian_smoothing(&self, image: &mut [u8]) {
         let width = self.info.total_width;
