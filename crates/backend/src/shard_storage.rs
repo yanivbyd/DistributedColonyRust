@@ -1,5 +1,5 @@
-use shared::be_api::Cell;
-use crate::colony_shard::ColonyShard;
+use shared::{be_api::Cell};
+use crate::{colony_shard::ColonyShard};
 use shared::storage::StorageUtils;
 use serde::{Serialize, Deserialize};
 

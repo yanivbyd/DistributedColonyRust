@@ -139,9 +139,6 @@ impl ColonyShard {
             .collect();
 
         for id in 0..self.grid.len() {
-            self.grid[id].food = 10;
-            self.grid[id].extra_food_per_tick = 10;
-
             if rng.gen_bool(0.1) {
                 // create creatures
                 let template = creature_templates[rng.gen_range(0..creature_templates.len())];

@@ -1,4 +1,4 @@
-use crate::colony_shard::ColonyShard;
+use crate::{colony_shard::ColonyShard, shard_utils::ShardUtils};
 use shared::log;
 pub struct ShardTopography;
 
@@ -36,6 +36,7 @@ impl ShardTopography {
             }
         }
         
+        ShardUtils::store_shard(shard);
         Ok(())
     }
 

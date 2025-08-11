@@ -16,8 +16,8 @@ impl ShardUtils {
                 Cell { 
                     color: white_color, 
                     tick_bit: false, 
-                    food: 0, 
-                    extra_food_per_tick: 0,
+                    food: 50, 
+                    extra_food_per_tick: 50,
                     health: 0,
                     traits: Traits { size: 1 },
                 }
@@ -31,7 +31,8 @@ impl ShardUtils {
         } else {
             log!("Randomizing shard: {}", Self::shard_id(shard));
             colony_shard.randomize_at_start();
-        }        
+        }
+
         colony_shard
     }
 

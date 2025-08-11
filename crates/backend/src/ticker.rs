@@ -39,7 +39,7 @@ pub fn start_ticker() {
                     apply_event(&mut colony, &event);
                 }
 
-                if tick_count % 100 == 0 || tick_count == 5 {
+                if tick_count % 100 == 0 {
                     for shard in &colony.shards {
                         ShardUtils::store_shard(&shard);
                     }
