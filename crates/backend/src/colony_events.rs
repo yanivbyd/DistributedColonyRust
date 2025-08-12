@@ -1,4 +1,5 @@
-use crate::{colony::Colony, colony_shard::WHITE_COLOR};
+use crate::{colony::Colony, colony_shard::{is_blank, WHITE_COLOR}};
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 use shared::{be_api::Shard, log};
 
 pub struct Circle {
@@ -29,7 +30,7 @@ pub enum Region {
 
 pub enum ColonyEvent {
     LocalDeath(Region),
-    ReshuffleStrength(Region),
+    RandomTrait(Region),
 }
 
 fn region_overlaps_shard(region: &Region, shard: &Shard) -> bool {
@@ -125,7 +126,7 @@ pub fn log_event(event: &ColonyEvent) {
                 }
             }
         },
-        ColonyEvent::ReshuffleStrength(region) => {
+        ColonyEvent::RandomTrait(region) => {
             match region {
                 Region::Circle(circle) => {
                     log!("[BE] Event: ReshuffleStrength (Circle) at ({:.1}, {:.1}) with radius {:.1}", 
@@ -186,7 +187,7 @@ pub fn randomize_event(colony: &Colony) -> Option<ColonyEvent> {
     if rand::random::<bool>() {
         Some(ColonyEvent::LocalDeath(region))
     } else {
-        Some(ColonyEvent::ReshuffleStrength(region))
+        Some(ColonyEvent::RandomTrait(region))
     }
 }
 
@@ -194,7 +195,7 @@ pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
     for shard in &mut colony.shards {
         let region = match event {
             ColonyEvent::LocalDeath(r) => r,
-            ColonyEvent::ReshuffleStrength(r) => r,
+            ColonyEvent::RandomTrait(r) => r,
         };
         if region_overlaps_shard(region, &shard.shard) {
             match event {
@@ -203,9 +204,13 @@ pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
                         cell.color = WHITE_COLOR;
                     });
                 },
-                ColonyEvent::ReshuffleStrength(_) => {
+                ColonyEvent::RandomTrait(_) => {
+                    let mut rng = SmallRng::from_entropy();
+                    let rnd_size: u8 = rng.gen_range(1..250);                    
                     apply_region_to_shard(shard, region, |cell| {
-                        cell.health = 5;
+                        if !is_blank(cell) {
+                            cell.traits.size = rnd_size;
+                        }
                     });
                 }
             }

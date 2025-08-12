@@ -92,9 +92,9 @@ impl ColonyShard {
     fn eat_food(&mut self, cell_idx: usize) {
         let food_eaten = min(
             self.grid[cell_idx].food,
-            self.grid[cell_idx].traits.size * self.colony_life_info.eat_capacity_per_size_unit,
+            self.grid[cell_idx].traits.size.saturating_mul(self.colony_life_info.eat_capacity_per_size_unit),
         );
-        let health_cost = self.grid[cell_idx].traits.size * self.colony_life_info.health_cost_per_size_unit;
+        let health_cost = self.grid[cell_idx].traits.size.saturating_mul(self.colony_life_info.health_cost_per_size_unit);
         self.grid[cell_idx].health = self.grid[cell_idx].health.saturating_add(food_eaten).saturating_sub(health_cost);
         self.grid[cell_idx].food = self.grid[cell_idx].food.saturating_sub(food_eaten);
     }

@@ -1,5 +1,5 @@
 use shared::be_api::{InitColonyRequest, Shard, ColonyLifeInfo};
-use shared::log;
+use shared::{log, log_error};
 use std::{sync::{Mutex, OnceLock}};
 use crate::colony_shard::ColonyShard;
 
@@ -16,11 +16,21 @@ static COLONY: OnceLock<Mutex<Colony>> = OnceLock::new();
 
 impl Colony {
     pub fn instance() -> std::sync::MutexGuard<'static, Colony> {
-        COLONY.get().expect("Colony is not initialized!").lock().expect("Failed to lock Colony")
+        match COLONY.get() {
+            Some(colony) => colony.lock().expect("Failed to lock Colony"),
+            None => {
+                log_error!("Colony is not initialized! Attempting to access Colony before initialization.");
+                panic!("Colony is not initialized! Make sure to call Colony::init() before accessing Colony::instance()");
+            }
+        }
     }
 
     pub fn is_initialized() -> bool {
-        COLONY.get().is_some()
+        let initialized = COLONY.get().is_some();
+        if !initialized {
+            log_error!("Colony::is_initialized() called but Colony is not initialized");
+        }
+        initialized
     }
 
     pub fn init(req: &InitColonyRequest) {
