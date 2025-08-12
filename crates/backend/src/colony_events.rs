@@ -61,30 +61,42 @@ fn region_overlaps_shard(region: &Region, shard: &Shard) -> bool {
     }
 }
 
-fn apply_region_to_shard(shard: &mut crate::colony_shard::ColonyShard, region: &Region, cell_fn: fn(&mut shared::be_api::Cell)) {
+fn apply_region_to_shard<F>(
+    shard: &mut crate::colony_shard::ColonyShard,
+    region: &Region,
+    mut cell_fn: F,
+) 
+where
+    F: FnMut(&mut shared::be_api::Cell),
+{
     let width = shard.shard.width as usize;
     let height = shard.shard.height as usize;
     let row_size = width + 2;
-    for y in 0..height+2 {
-        for x in 0..width+2 {
+
+    for y in 0..height + 2 {
+        for x in 0..width + 2 {
             let global_x = shard.shard.x as f32 + x as f32;
             let global_y = shard.shard.y as f32 + y as f32;
+
             let inside = match region {
                 Region::Circle(circle) => {
                     let dx = global_x - circle.x;
                     let dy = global_y - circle.y;
                     dx * dx + dy * dy <= circle.radius * circle.radius
-                },
+                }
                 Region::Ellipse(ellipse) => {
                     let dx = global_x - ellipse.x;
                     let dy = global_y - ellipse.y;
-                    (dx * dx) / (ellipse.radius_x * ellipse.radius_x) + (dy * dy) / (ellipse.radius_y * ellipse.radius_y) <= 1.0
-                },
+                    (dx * dx) / (ellipse.radius_x * ellipse.radius_x)
+                        + (dy * dy) / (ellipse.radius_y * ellipse.radius_y)
+                        <= 1.0
+                }
                 Region::Rectangle(rect) => {
-                    global_x >= rect.x && global_x < rect.x + rect.width &&
-                    global_y >= rect.y && global_y < rect.y + rect.height
+                    global_x >= rect.x && global_x < rect.x + rect.width
+                        && global_y >= rect.y && global_y < rect.y + rect.height
                 }
             };
+
             if inside {
                 let idx = (y + 1) * row_size + (x + 1);
                 if let Some(cell) = shard.grid.get_mut(idx) {
