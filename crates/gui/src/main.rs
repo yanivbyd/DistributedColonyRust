@@ -286,7 +286,7 @@ impl BEImageApp {
         self.show_layer_tab_with_legend(ui, data, None)
     }
 
-    fn show_layer_tab_with_legend(&self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>, legend_max: Option<i32>) {
+    fn show_layer_tab_with_legend(&self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>, legend_min_value_for_max: Option<i32>) {
         let locked = data.lock().unwrap();
         
         // Find global maximum across all shards for consistent normalization
@@ -296,7 +296,13 @@ impl BEImageApp {
             .max()
             .copied()
             .unwrap_or(0);
-        
+
+        // Make global_max no lower than legend_max, if legend_max is Some and greater
+        let global_max = match legend_min_value_for_max {
+            Some(legend) if legend > global_max => legend,
+            _ => global_max,
+        };
+
         self.show_combined_image(ui, &locked, |shard_data| {
             if let Some(data) = shard_data {
                 if global_max > 0 {
@@ -357,12 +363,11 @@ impl BEImageApp {
             // Add labels
             ui.add_space(legend_height + 5.0);
             ui.horizontal(|ui| {
-                let legend_max_value = legend_max.map(|lm| lm.max(global_max)).unwrap_or(global_max);
                 ui.label(format!("0"));
                 ui.add_space(legend_width / 2.0 - 30.0);
-                ui.label(format!("{}", legend_max_value / 2));
+                ui.label(format!("{}", global_max / 2));
                 ui.add_space(legend_width / 2.0 - 30.0);
-                ui.label(format!("{}", legend_max_value));
+                ui.label(format!("{}", global_max));
             });
         }
     }

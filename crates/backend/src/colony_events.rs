@@ -1,4 +1,5 @@
 use crate::{colony::Colony, colony_shard::{is_blank, WHITE_COLOR}};
+
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use shared::{be_api::Shard, log};
 
@@ -30,7 +31,7 @@ pub enum Region {
 
 pub enum ColonyEvent {
     LocalDeath(Region),
-    RandomTrait(Region),
+    RandomTrait(Region, u8), // Region and random size
 }
 
 fn region_overlaps_shard(region: &Region, shard: &Shard) -> bool {
@@ -105,7 +106,7 @@ where
                 }
             }
         }
-    }
+    }    
 }
 
 pub fn log_event(event: &ColonyEvent) {
@@ -126,19 +127,19 @@ pub fn log_event(event: &ColonyEvent) {
                 }
             }
         },
-        ColonyEvent::RandomTrait(region) => {
+        ColonyEvent::RandomTrait(region, size) => {
             match region {
                 Region::Circle(circle) => {
-                    log!("[BE] Event: ReshuffleStrength (Circle) at ({:.1}, {:.1}) with radius {:.1}", 
-                         circle.x, circle.y, circle.radius);
+                    log!("[BE] Event: RandomTrait (Circle) at ({:.1}, {:.1}) with radius {:.1}, size {}", 
+                         circle.x, circle.y, circle.radius, size);
                 },
                 Region::Ellipse(ellipse) => {
-                    log!("[BE] Event: ReshuffleStrength (Ellipse) at ({:.1}, {:.1}) with radius ({:.1}, {:.1})", 
-                         ellipse.x, ellipse.y, ellipse.radius_x, ellipse.radius_y);
+                    log!("[BE] Event: RandomTrait (Ellipse) at ({:.1}, {:.1}) with radius ({:.1}, {:.1}), size {}", 
+                         ellipse.x, ellipse.y, ellipse.radius_x, ellipse.radius_y, size);
                 },
                 Region::Rectangle(rect) => {
-                    log!("[BE] Event: ReshuffleStrength (Rectangle) at ({:.1}, {:.1}) with size ({:.1}, {:.1})", 
-                         rect.x, rect.y, rect.width, rect.height);
+                    log!("[BE] Event: RandomTrait (Rectangle) at ({:.1}, {:.1}) with size ({:.1}, {:.1}), trait size {}", 
+                         rect.x, rect.y, rect.width, rect.height, size);
                 }
             }
         }
@@ -146,6 +147,7 @@ pub fn log_event(event: &ColonyEvent) {
 }
 
 pub fn randomize_event(colony: &Colony) -> Option<ColonyEvent> {
+    let mut rng = SmallRng::from_entropy();    
     if rand::random::<f32>() > 0.1 {
         return None;
     }
@@ -187,29 +189,28 @@ pub fn randomize_event(colony: &Colony) -> Option<ColonyEvent> {
     if rand::random::<bool>() {
         Some(ColonyEvent::LocalDeath(region))
     } else {
-        Some(ColonyEvent::RandomTrait(region))
+        let random_size = rng.gen_range(1..99);
+        Some(ColonyEvent::RandomTrait(region, random_size))
     }
 }
 
 pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
     for shard in &mut colony.shards {
-        let region = match event {
-            ColonyEvent::LocalDeath(r) => r,
-            ColonyEvent::RandomTrait(r) => r,
-        };
-        if region_overlaps_shard(region, &shard.shard) {
-            match event {
-                ColonyEvent::LocalDeath(_) => {
+        match event {
+            ColonyEvent::LocalDeath(region) => {
+                if region_overlaps_shard(region, &shard.shard) {
                     apply_region_to_shard(shard, region, |cell| {
                         cell.color = WHITE_COLOR;
                     });
-                },
-                ColonyEvent::RandomTrait(_) => {
-                    let mut rng = SmallRng::from_entropy();
-                    let rnd_size: u8 = rng.gen_range(1..250);                    
+                }
+            },
+            ColonyEvent::RandomTrait(region, new_size) => {
+                if region_overlaps_shard(region, &shard.shard) {
+                    log!("[BE] RandomTrait: Applying size {} to shard ({}, {}, {}, {})", 
+                         new_size, shard.shard.x, shard.shard.y, shard.shard.width, shard.shard.height);
                     apply_region_to_shard(shard, region, |cell| {
                         if !is_blank(cell) {
-                            cell.traits.size = rnd_size;
+                            cell.traits.size = *new_size;
                         }
                     });
                 }
