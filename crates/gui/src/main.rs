@@ -12,6 +12,7 @@ const WIDTH_IN_SHARDS: i32 = 5;
 const HEIGHT_IN_SHARDS: i32 = 3;
 const SHARD_WIDTH: i32 = 250;
 const SHARD_HEIGHT: i32 = 250;
+const MIN_CREATURE_SIZE_LEGEND_MAX: i32 = 100;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
@@ -282,6 +283,10 @@ impl BEImageApp {
     }
 
     fn show_layer_tab(&self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>) {
+        self.show_layer_tab_with_legend(ui, data, None)
+    }
+
+    fn show_layer_tab_with_legend(&self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>, legend_max: Option<i32>) {
         let locked = data.lock().unwrap();
         
         // Find global maximum across all shards for consistent normalization
@@ -352,11 +357,12 @@ impl BEImageApp {
             // Add labels
             ui.add_space(legend_height + 5.0);
             ui.horizontal(|ui| {
+                let legend_max_value = legend_max.map(|lm| lm.max(global_max)).unwrap_or(global_max);
                 ui.label(format!("0"));
                 ui.add_space(legend_width / 2.0 - 30.0);
-                ui.label(format!("{}", global_max / 2));
+                ui.label(format!("{}", legend_max_value / 2));
                 ui.add_space(legend_width / 2.0 - 30.0);
-                ui.label(format!("{}", global_max));
+                ui.label(format!("{}", legend_max_value));
             });
         }
     }
@@ -366,7 +372,7 @@ impl BEImageApp {
     }
 
     fn show_sizes_tab(&self, ui: &mut egui::Ui) {
-        self.show_layer_tab(ui, &self.sizes);
+        self.show_layer_tab_with_legend(ui, &self.sizes, Some(MIN_CREATURE_SIZE_LEGEND_MAX));
     }
 }
 
