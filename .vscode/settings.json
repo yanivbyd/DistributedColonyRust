@@ -1,0 +1,17 @@
+{
+    "workbench.statusBar.visible": true,
+    "workbench.statusBar.items": {
+        "colony-build": {
+            "name": "Colony Build & Run",
+            "command": "workbench.action.tasks.runTask",
+            "args": "Colony - Build and Run All",
+            "tooltip": "Build and run the entire colony system"
+        },
+        "colony-kill": {
+            "name": "Colony Kill All",
+            "command": "workbench.action.tasks.runTask", 
+            "args": "Colony - Kill All",
+            "tooltip": "Kill all colony processes"
+        }
+    }
+}

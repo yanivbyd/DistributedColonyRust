@@ -1,0 +1,44 @@
+{
+    "name": "colony-tasks",
+    "displayName": "Colony Tasks",
+    "description": "Custom toolbar for Colony project tasks",
+    "version": "1.0.0",
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "colony-tasks",
+                    "title": "Colony Tasks",
+                    "icon": "$(rocket)"
+                }
+            ]
+        },
+        "views": {
+            "colony-tasks": [
+                {
+                    "id": "colony-tasks-view",
+                    "name": "Colony Tasks"
+                }
+            ]
+        },
+        "menus": {
+            "view/title": [
+                {
+                    "command": "workbench.action.tasks.runTask",
+                    "args": "Colony - Build and Run All",
+                    "when": "view == colony-tasks-view",
+                    "group": "navigation"
+                },
+                {
+                    "command": "workbench.action.tasks.runTask",
+                    "args": "Colony - Kill All",
+                    "when": "view == colony-tasks-view",
+                    "group": "navigation"
+                }
+            ]
+        }
+    }
+}
