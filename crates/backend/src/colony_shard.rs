@@ -72,6 +72,7 @@ pub struct ColonyShard {
 }
 
 impl ColonyShard {
+    #[inline(always)]
     fn get_neighbors(x: usize, y: usize, width: usize, height: usize, offsets: &[(isize, isize)], my_cell: usize, neighbors: &mut [usize]) -> usize {
         let mut count = 0;
         for (dx, dy) in offsets.iter() {
@@ -98,28 +99,46 @@ impl ColonyShard {
         self.grid[cell_idx].food = self.grid[cell_idx].food.saturating_sub(food_eaten);
     }
 
-    fn move_to_highest_food_neighbor(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool) -> bool {
-        let mut best_neighbor = None;
-        let mut highest_food = self.grid[my_cell].food;
-        
-        // Find the neighbor with the highest food
+    #[inline(always)]
+    fn move_to_highest_food_neighbor(
+        &mut self,
+        my_cell: usize,
+        neighbors: &[usize],
+        neighbor_count: usize,
+        next_bit: bool
+    ) -> bool {
+        // Snapshot my values once
+        let my_food = self.grid[my_cell].food;
+        let my_color = self.grid[my_cell].color;
+        let my_health = self.grid[my_cell].health;
+        let my_traits = self.grid[my_cell].traits;
+
+        // Track best candidate among blanks with strictly higher food
+        let mut best_idx: usize = usize::MAX;
+        let mut best_food = my_food;
+
+        // Scan neighbors (<= 8)
         for i in 0..neighbor_count {
-            let neighbor = neighbors[i];
-            if is_blank(&self.grid[neighbor]) && self.grid[neighbor].food > highest_food {
-                highest_food = self.grid[neighbor].food;
-                best_neighbor = Some(neighbor);
-            }
+            let n = neighbors[i];
+            let nref = &self.grid[n];
+            // cheap rejects first
+            if nref.health != 0 { continue; }           // not blank
+            let nf = nref.food;
+            if nf <= best_food { continue; }            // not better
+            best_food = nf;
+            best_idx = n;
         }
-        
-        if let Some(best_neighbor) = best_neighbor {
-            self.grid[best_neighbor].color = self.grid[my_cell].color;
-            self.grid[best_neighbor].health = self.grid[my_cell].health;
-            self.grid[best_neighbor].traits = self.grid[my_cell].traits;
-            self.grid[best_neighbor].tick_bit = next_bit;
+
+        if best_idx != usize::MAX {
+            // write winner once
+            let dst = best_idx;
+            self.grid[dst].color = my_color;
+            self.grid[dst].health = my_health;
+            self.grid[dst].traits = my_traits;
+            self.grid[dst].tick_bit = next_bit;
             set_blank(&mut self.grid[my_cell]);
             return true;
         }
-        
         false
     }
 
@@ -255,23 +274,35 @@ impl ColonyShard {
         }
     }
     
-    fn kill_neighbour(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool) -> bool {
+    #[inline(always)]
+    fn kill_neighbour(
+        &mut self,
+        my_cell: usize,
+        neighbors: &[usize],
+        neighbor_count: usize,
+        next_bit: bool
+    ) -> bool {
+        // Snapshot my values
         let my_color = self.grid[my_cell].color;
-        
+        let my_size  = self.grid[my_cell].traits.size;
+
         for i in 0..neighbor_count {
-            let neighbor = neighbors[i];
-            if !is_blank(&self.grid[neighbor]) && 
-               !self.grid[neighbor].color.equals(&my_color) && 
-               self.grid[neighbor].tick_bit != next_bit &&
-               self.grid[neighbor].traits.size < self.grid[my_cell].traits.size {
-                set_blank(&mut self.grid[neighbor]);
-                
-                let health_reduction = self.grid[my_cell].health / 10;
-                self.grid[my_cell].health = self.grid[my_cell].health.saturating_sub(health_reduction);
-                
-                return true;
-            }
-        }        
+            let n = neighbors[i];
+            let nref = &self.grid[n];
+            // cheapest rejects first
+            if nref.tick_bit == next_bit { continue; }  // already processed this epoch
+            if nref.health == 0 { continue; }           // blank
+            let nsize = nref.traits.size;
+            if nsize >= my_size { continue; }           // can't kill bigger/equal
+            // color check last (3-byte compare)
+            if nref.color.equals(&my_color) { continue; }
+
+            // kill: make neighbor blank, reduce my health
+            set_blank(&mut self.grid[n]);
+            let h_red = self.grid[my_cell].health / 10;
+            self.grid[my_cell].health = self.grid[my_cell].health.saturating_sub(h_red);
+            return true;
+        }
         false
     }
         
@@ -301,6 +332,7 @@ fn set_blank(cell: &mut Cell) {
     assert_blank_consistency(cell);
 }
 
+#[inline(always)]
 pub fn in_grid_range(width: usize, height: usize, x: isize, y: isize) -> bool {
     x >= 0 && x < width as isize && y >= 0 && y < height as isize
 } 
