@@ -1,7 +1,6 @@
 use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits};
 use shared::log;
-use rand::{Rng, SeedableRng};
-use rand::rngs::SmallRng;
+use rand::{Rng, rngs::SmallRng};
 use rand::seq::SliceRandom;
 use std::cmp::min;
 use std::sync::OnceLock;
@@ -124,8 +123,7 @@ impl ColonyShard {
         false
     }
 
-    pub fn randomize_at_start(&mut self) {
-        let mut rng = SmallRng::from_entropy();
+    pub fn randomize_at_start(&mut self, rng: &mut SmallRng) {
         const NUM_RANDOM_CREATURES: usize = 3;
         let creature_templates: Vec<CreatureTemplate> = (0..NUM_RANDOM_CREATURES)
             .map(|_| CreatureTemplate {
@@ -150,9 +148,8 @@ impl ColonyShard {
     }
 
     #[inline(never)]
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self, rng: &mut SmallRng) {
         if self.grid.is_empty() { return; }
-        let mut rng = SmallRng::from_entropy();
         let width = (self.shard.width + 2) as usize;
         let height = (self.shard.height + 2) as usize;
         let tick_bit = self.grid[width+4].tick_bit;
@@ -193,7 +190,7 @@ impl ColonyShard {
                 continue;
             }
 
-            if self.breed(my_cell, &neighbors, neighbor_count, next_bit) {
+            if self.breed(my_cell, &neighbors, neighbor_count, next_bit, rng) {
                 stats.breeds += 1;
             }
 
@@ -213,7 +210,7 @@ impl ColonyShard {
         }
     }
     
-    fn breed(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool) -> bool {
+    fn breed(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool, rng: &mut SmallRng) -> bool {
         if self.grid[my_cell].health < 200 {
             return false;
         }
@@ -227,7 +224,7 @@ impl ColonyShard {
                 // Create new creature with half health
                 self.grid[neighbor].color = self.grid[my_cell].color;
                 self.grid[neighbor].health = half_health;
-                self.grid[neighbor].traits = self.copy_traits_with_mutation(&self.grid[my_cell].traits);
+                self.grid[neighbor].traits = self.copy_traits_with_mutation(&self.grid[my_cell].traits, rng);
                 self.grid[neighbor].tick_bit = next_bit;
                 
                 // Reduce parent's health by half
@@ -240,9 +237,7 @@ impl ColonyShard {
         false
     }
     
-    fn copy_traits_with_mutation(&self, parent_traits: &Traits) -> Traits {
-        let mut rng = SmallRng::from_entropy();
-        
+    fn copy_traits_with_mutation(&self, parent_traits: &Traits, rng: &mut SmallRng) -> Traits {
         // 1% chance to mutate size
         if rng.gen_bool(0.01) {
             let size_change = if rng.gen_bool(0.5) { 1 } else { -1 };

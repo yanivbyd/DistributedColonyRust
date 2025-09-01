@@ -2,12 +2,13 @@ use crate::colony_shard::{ColonyShard, is_blank};
 use shared::{be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits, UpdatedShardContentsRequest, ShardLayer}, log_error};
 use crate::shard_storage::ShardStorage;
 use shared::log;
+use rand::rngs::SmallRng;
 
 pub struct ShardUtils;
 
 impl ShardUtils {
 
-    pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo) -> ColonyShard {
+    pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo, rng: &mut SmallRng) -> ColonyShard {
         let white_color = Color { red: 255, green: 255, blue: 255 };
         let mut colony_shard = ColonyShard {
             shard: shard.clone(),
@@ -30,7 +31,7 @@ impl ShardUtils {
             log!("Loaded shard from: {}", shard_filename);
         } else {
             log!("Randomizing shard: {}", Self::shard_id(shard));
-            colony_shard.randomize_at_start();
+            colony_shard.randomize_at_start(rng);
         }
 
         colony_shard

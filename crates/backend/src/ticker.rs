@@ -4,6 +4,8 @@ use crate::colony_events::{apply_event, log_event, randomize_event};
 use shared::log;
 use shared::metrics::LatencyMonitor;
 use rayon::prelude::*;
+use rand::rngs::SmallRng;
+use rand::{thread_rng, SeedableRng};
 
 pub fn start_ticker() {
     std::thread::spawn(move || {
@@ -21,7 +23,8 @@ pub fn start_ticker() {
                 // First phase: tick all shards in parallel
                 colony.shards.par_iter_mut().for_each(|shard| {
                     let _ = LatencyMonitor::start("shard_tick_latency_ms");
-                    shard.tick();
+                    let mut rng = SmallRng::from_rng(&mut thread_rng()).unwrap();
+                    shard.tick(&mut rng);
                 });
                     
                 // Export all shard contents in parallel

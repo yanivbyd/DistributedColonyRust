@@ -7,6 +7,7 @@ use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImag
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
+use rand::{SeedableRng, rngs::SmallRng};
 
 mod colony;
 mod ticker;
@@ -95,7 +96,8 @@ async fn handle_init_colony_shard(req: InitColonyShardRequest) -> BackendRespons
     } else if !Colony::instance().is_valid_shard_dimensions(&req.shard) {
         BackendResponse::InitColonyShard(InitColonyShardResponse::InvalidShardDimensions)
     } else {
-        Colony::instance().add_shard(ShardUtils::new_colony_shard(&req.shard, &req.colony_life_info));
+        let mut rng = SmallRng::from_entropy();
+        Colony::instance().add_shard(ShardUtils::new_colony_shard(&req.shard, &req.colony_life_info, &mut rng));
         BackendResponse::InitColonyShard(InitColonyShardResponse::Ok)
     }
 }
