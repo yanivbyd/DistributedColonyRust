@@ -277,13 +277,28 @@ impl ColonyShard {
         
 }
 
+#[inline(always)]
 pub fn is_blank(cell: &Cell) -> bool {
-    cell.color.red == 255 && cell.color.green == 255 && cell.color.blue == 255
+    cell.health == 0
 }
 
+#[cfg(debug_assertions)]
+#[inline(always)]
+fn assert_blank_consistency(cell: &Cell) {
+    if cell.health == 0 {
+        debug_assert!(
+            cell.color.red == 255 && cell.color.green == 255 && cell.color.blue == 255,
+            "blank sentinel mismatch: health==0 but color != WHITE"
+        );
+    }
+}
+
+#[inline(always)]
 fn set_blank(cell: &mut Cell) {
     cell.color = WHITE_COLOR;
     cell.health = 0;
+    #[cfg(debug_assertions)]
+    assert_blank_consistency(cell);
 }
 
 pub fn in_grid_range(width: usize, height: usize, x: isize, y: isize) -> bool {
