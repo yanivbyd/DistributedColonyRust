@@ -15,6 +15,28 @@ opt-level = 3
 debug = true
 opt-level = 0 
 
+[profile.fast]
+inherits = "dev"
+opt-level = 1
+debug = true
+incremental = true
+codegen-units = 256
+lto = false
+panic = "abort"
+strip = false
+overflow-checks = false
+
+[profile.balanced]
+inherits = "dev"
+opt-level = 3
+debug = true
+incremental = true
+codegen-units = 16
+lto = "thin"
+panic = "abort"
+strip = false
+overflow-checks = false
+
 [profile.profiling]
 inherits = "release"
 debug = true
