@@ -156,50 +156,57 @@ impl ColonyShard {
         let next_bit = !tick_bit;
         let neighbor_perms = get_neighbor_permutations();
         let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
-        let mut neighbors = [0; 8];
+        let mut neighbors = [0usize; 8];
         let mut stats = TickStats::new(tick_bit);
         
         ShardUtils::set_shadow_margin_tick_bits(self, tick_bit);
 
-        for my_cell in 0..self.grid.len() {
-            // Increment food
-            self.grid[my_cell].food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick);
+        for y in 0..height {
+            let row_base = y * width;
+            for x in 0..width {
+                let my_cell = row_base + x;
 
-            // Handle tick bit
-            if self.grid[my_cell].tick_bit == next_bit {
-                continue;
-            } else {
-                self.grid[my_cell].tick_bit = next_bit;
-            }
-            
-            if is_blank(&self.grid[my_cell]) {
-                continue;
-            }
+                // Increment food (fast)
+                let cell = &mut self.grid[my_cell];
+                cell.food = cell.food.saturating_add(cell.extra_food_per_tick);
 
-            // Randomize neightbor offsets
-            if my_cell % 50 == 0 {
-                offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
-            }
-            let neighbor_count = Self::get_neighbors(my_cell % width, my_cell / width, width, height, offsets, my_cell, &mut neighbors);
+                // Handle tick bit
+                if cell.tick_bit == next_bit {
+                    continue;
+                } else {
+                    cell.tick_bit = next_bit;
+                }
+                
+                if is_blank(cell) {
+                    continue;
+                }
 
-            // EAT food
-            self.eat_food(my_cell);
-            if self.grid[my_cell].health == 0 {
-                set_blank(&mut self.grid[my_cell]);
-                stats.deaths += 1;
-                continue;
-            }
+                // Cheap cadence for neighbor offset randomization (every 64 cells)
+                if (my_cell & 63) == 0 {
+                    offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
+                }
 
-            if self.breed(my_cell, &neighbors, neighbor_count, next_bit, rng) {
-                stats.breeds += 1;
-            }
+                let neighbor_count = Self::get_neighbors(x, y, width, height, offsets, my_cell, &mut neighbors);
 
-            if self.kill_neighbour(my_cell, &neighbors, neighbor_count, next_bit) {
-                stats.kills += 1;
-            }
+                // EAT food
+                self.eat_food(my_cell);
+                if self.grid[my_cell].health == 0 {
+                    set_blank(&mut self.grid[my_cell]);
+                    stats.deaths += 1;
+                    continue;
+                }
 
-            if self.move_to_highest_food_neighbor(my_cell, &neighbors, neighbor_count, next_bit) {
-                stats.moves += 1;
+                if self.breed(my_cell, &neighbors, neighbor_count, next_bit, rng) {
+                    stats.breeds += 1;
+                }
+
+                if self.kill_neighbour(my_cell, &neighbors, neighbor_count, next_bit) {
+                    stats.kills += 1;
+                }
+
+                if self.move_to_highest_food_neighbor(my_cell, &neighbors, neighbor_count, next_bit) {
+                    stats.moves += 1;
+                }
             }
         }
         
