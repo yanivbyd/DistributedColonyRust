@@ -5,4 +5,16 @@ members = [
     "crates/gui",
     "crates/coordinator"
 ]
-resolver = "2" 
+resolver = "2"
+
+[profile.release]
+debug = true
+opt-level = 3
+
+[profile.dev]
+debug = true
+opt-level = 0 
+
+[profile.profiling]
+inherits = "release"
+debug = true

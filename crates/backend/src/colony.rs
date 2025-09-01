@@ -20,6 +20,7 @@ impl Colony {
             Some(colony) => colony.lock().expect("Failed to lock Colony"),
             None => {
                 log_error!("Colony is not initialized! Attempting to access Colony before initialization.");
+                eprintln!("{}", std::backtrace::Backtrace::capture());                
                 panic!("Colony is not initialized! Make sure to call Colony::init() before accessing Colony::instance()");
             }
         }

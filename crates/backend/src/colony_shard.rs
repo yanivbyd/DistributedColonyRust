@@ -149,6 +149,7 @@ impl ColonyShard {
         }
     }
 
+    #[inline(never)]
     pub fn tick(&mut self) {
         if self.grid.is_empty() { return; }
         let mut rng = SmallRng::from_entropy();

@@ -102,6 +102,9 @@ async fn handle_init_colony_shard(req: InitColonyShardRequest) -> BackendRespons
 
 async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {
     log_debug!("[BE] GetShardImage request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
+    if ! Colony::is_initialized() {
+        return BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable);
+    }
     let colony = Colony::instance();
     if let Some(shard) = &colony.get_colony_shard(&req.shard) {
         match ShardUtils::get_shard_image(shard, &req.shard) {
@@ -115,6 +118,9 @@ async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {
 
 async fn handle_get_shard_layer(req: GetShardLayerRequest) -> BackendResponse {
     log_debug!("[BE] GetShardLayer request: shard=({},{},{},{}), layer={:?}", req.shard.x, req.shard.y, req.shard.width, req.shard.height, req.layer);
+    if ! Colony::is_initialized() {
+        return BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable);
+    }
     let colony = Colony::instance();
     if let Some(shard) = &colony.get_colony_shard(&req.shard) {
         match ShardUtils::get_shard_layer(shard, &req.shard, &req.layer) {
