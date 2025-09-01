@@ -18,18 +18,23 @@ pub fn start_ticker() {
                     tick_count += 1;
                 }
 
-                // Prepare a vector to hold the exported contents
-                let exported_contents: Vec<_> = colony.shards.par_iter_mut()
-                    .map(|colony_shard| {
-                        let _ = LatencyMonitor::start("shard_tick_latency_ms");
-                        colony_shard.tick();
-                        ShardUtils::export_shard_contents(colony_shard)
-                    })
+                // First phase: tick all shards in parallel
+                colony.shards.par_iter_mut().for_each(|shard| {
+                    let _ = LatencyMonitor::start("shard_tick_latency_ms");
+                    shard.tick();
+                });
+                    
+                // Export all shard contents in parallel
+                let exported_contents: Vec<_> = colony.shards.par_iter()
+                    .map(|colony_shard| ShardUtils::export_shard_contents(colony_shard))
                     .collect();
 
+                // Update shards with adjacent exported contents
                 for req in &exported_contents {
                     for shard in colony.shards.iter_mut() {
-                        ShardUtils::updated_shard_contents(shard, req);
+                        if ShardUtils::are_shards_adjacent(&req.updated_shard, &shard.shard) {
+                            ShardUtils::updated_shard_contents(shard, req);
+                        }
                     }
                 }
 
