@@ -221,7 +221,7 @@ impl BEImageApp {
             (255, 255, 128),  // Yellow
             (222, 184, 135),  // Tan
             (204, 51, 0),     // Red
-            (102, 51, 0),     // Dark Brown
+            (143, 10, 10),     // Dark Red
         ];
 
         let clamped = normalized.clamp(0.0, 1.0);
