@@ -1,7 +1,7 @@
 use crate::{colony::Colony, colony_shard::{WHITE_COLOR}};
 
 use rand::{rngs::SmallRng, Rng};
-use shared::{be_api::{Color, Shard}, log, utils::{random_chance, random_color}};
+use shared::{be_api::{Color, Shard, Traits}, log, utils::{random_chance, random_color}};
 
 pub struct Circle {
     pub x: i32,
@@ -31,7 +31,7 @@ pub enum Region {
 
 pub struct CreateCreatureParams {
     pub color: Color,
-    pub size: u8,
+    pub traits: Traits,
     pub starting_health: u8,
 }
 
@@ -132,8 +132,8 @@ pub fn log_event(event: &ColonyEvent, region: &Region) {
     let event_details = match event {
         ColonyEvent::LocalDeath => "LocalDeath".to_string(),
         ColonyEvent::RandomTrait(params) => format!("RandomTrait, size {}", params.size),
-        ColonyEvent::CreateCreature(params) => format!("CreateCreature, color {:?}, size {}, health {}", 
-            params.color, params.size, params.starting_health),
+        ColonyEvent::CreateCreature(params) => format!("CreateCreature, color {:?}, traits {:?}, health {}", 
+            params.color, params.traits, params.starting_health),
     };
     
     let region_details = match region {
@@ -167,7 +167,7 @@ fn randomize_colony_event(rng: &mut SmallRng) -> ColonyEvent {
         _ => {
             ColonyEvent::CreateCreature(CreateCreatureParams {
                 color: random_color(rng),
-                size: rng.gen_range(1..20),
+                traits: Traits { size: rng.gen_range(1..20), can_kill: rng.gen_bool(0.5) },
                 starting_health: 200,
             })
         }
@@ -232,7 +232,7 @@ pub fn apply_event(colony: &mut Colony, event: &ColonyEvent, region: &Region) {
             ColonyEvent::CreateCreature(params) => {
                 apply_region_to_shard(shard, region, |cell| {
                     cell.color = params.color;
-                    cell.traits.size = params.size;
+                    cell.traits = params.traits;
                     cell.health = params.starting_health;
                 });
             }

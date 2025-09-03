@@ -31,12 +31,14 @@ pub struct Cell {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct Traits {
     pub size: u8,
+    pub can_kill: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct ColonyLifeInfo {
     pub health_cost_per_size_unit: u8,
     pub eat_capacity_per_size_unit: u8,
+    pub health_cost_if_can_kill: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

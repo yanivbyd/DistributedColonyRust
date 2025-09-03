@@ -20,7 +20,7 @@ impl ShardUtils {
                     food: 50, 
                     extra_food_per_tick: 50,
                     health: 0,
-                    traits: Traits { size: 1 },
+                    traits: Traits { size: 1, can_kill: true },
                 }
             }).collect(),
         };

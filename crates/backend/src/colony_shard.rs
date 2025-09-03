@@ -1,12 +1,11 @@
 use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits};
 use shared::log;
-use shared::utils::{new_random_generator, random_color};
+use shared::utils::{new_random_generator, random_chance, random_color};
 use rand::{Rng, rngs::SmallRng};
 use rand::seq::SliceRandom;
 use std::cmp::min;
 use std::sync::OnceLock;
 use crate::shard_utils::ShardUtils;
-
 
 pub const WHITE_COLOR: Color = Color { red: 255, green: 255, blue: 255 };
 const LOG_TICK_STATS: bool = false;
@@ -95,7 +94,8 @@ impl ColonyShard {
             self.grid[cell_idx].food,
             self.grid[cell_idx].traits.size.saturating_mul(self.colony_life_info.eat_capacity_per_size_unit),
         );
-        let health_cost = self.grid[cell_idx].traits.size.saturating_mul(self.colony_life_info.health_cost_per_size_unit);
+        let health_cost = self.grid[cell_idx].traits.size.saturating_mul(self.colony_life_info.health_cost_per_size_unit)
+            + if self.grid[cell_idx].traits.can_kill { self.colony_life_info.health_cost_if_can_kill } else { 0 };
         self.grid[cell_idx].health = self.grid[cell_idx].health.saturating_add(food_eaten).saturating_sub(health_cost);
         self.grid[cell_idx].food = self.grid[cell_idx].food.saturating_sub(food_eaten);
     }
@@ -264,21 +264,19 @@ impl ColonyShard {
         if rng.gen_bool(0.01) {
             let size_change = if rng.gen_bool(0.5) { 1 } else { -1 };
             let new_size = parent_traits.size.saturating_add_signed(size_change);
-            Traits { size: new_size }
+            let new_can_kill = if random_chance(rng, 100) { parent_traits.can_kill } else { ! parent_traits.can_kill };
+            Traits { size: new_size, can_kill: new_can_kill }
         } else {
             *parent_traits
         }
     }
     
     #[inline(always)]
-    fn kill_neighbour(
-        &mut self,
-        my_cell: usize,
-        neighbors: &[usize],
-        neighbor_count: usize,
-        next_bit: bool
-    ) -> bool {
-        // Snapshot my values
+    fn kill_neighbour(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool) -> bool {
+        if !self.grid[my_cell].traits.can_kill {
+            return false;
+        }
+
         let my_size  = self.grid[my_cell].traits.size;
 
         for i in 0..neighbor_count {
