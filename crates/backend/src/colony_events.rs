@@ -1,7 +1,7 @@
 use crate::{colony::Colony, colony_shard::{WHITE_COLOR}};
 
 use rand::{rngs::SmallRng, Rng};
-use shared::{be_api::{Shard, Color}, log, utils::{random_color}};
+use shared::{be_api::{Color, Shard}, log, utils::{random_chance, random_color}};
 
 pub struct Circle {
     pub x: i32,
@@ -203,7 +203,7 @@ fn randomize_event_region(colony: &Colony, rng: &mut SmallRng) -> Region {
 }
 
 pub fn randomize_event(colony: &Colony, rng: &mut SmallRng) -> Option<(ColonyEvent, Region)> {
-    if rng.gen_range(1..=50) >= 3 {
+    if !random_chance(rng, 50) {
         return None;
     }        
     Some((randomize_colony_event(rng), randomize_event_region(colony, rng)))

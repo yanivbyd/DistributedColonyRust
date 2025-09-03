@@ -7,10 +7,8 @@ pub fn new_random_generator() -> SmallRng {
     SmallRng::from_rng(&mut thread_rng()).unwrap()
 }
 
-/// Returns true with the given probability (0.0 to 1.0).
-/// This provides a clean way to check if random events should occur.
-pub fn random_chance(rng: &mut SmallRng, probability: f32) -> bool {
-    rng.gen_range(0..=1000) as f32 / 1000.0 < probability
+pub fn random_chance(rng: &mut SmallRng, out_of: u32) -> bool {
+    rng.gen_range(1..=out_of) == 1
 }
 
 /// Generates a random color that is guaranteed to be visually distinct from white.
