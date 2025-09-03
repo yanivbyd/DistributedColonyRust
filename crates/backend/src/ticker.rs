@@ -3,9 +3,8 @@ use crate::shard_utils::ShardUtils;
 use crate::colony_events::{apply_event, log_event, randomize_event};
 use shared::log;
 use shared::metrics::LatencyMonitor;
+use shared::utils::new_random_generator;
 use rayon::prelude::*;
-use rand::rngs::SmallRng;
-use rand::{thread_rng, SeedableRng};
 
 pub fn start_ticker() {
     std::thread::spawn(move || {
@@ -23,7 +22,7 @@ pub fn start_ticker() {
                 // First phase: tick all shards in parallel
                 colony.shards.par_iter_mut().for_each(|shard| {
                     let _ = LatencyMonitor::start("shard_tick_latency_ms");
-                    let mut rng = SmallRng::from_rng(&mut thread_rng()).unwrap();
+                    let mut rng = new_random_generator();
                     shard.tick(&mut rng);
                 });
                     
@@ -42,9 +41,10 @@ pub fn start_ticker() {
                 }
 
                 // Randomize event and apply it (locally)
-                if let Some(event) = randomize_event(&colony) {
-                    log_event(&event);
-                    apply_event(&mut colony, &event);
+                let mut event_rng = new_random_generator();
+                if let Some((event, region)) = randomize_event(&colony, &mut event_rng) {
+                    log_event(&event, &region);
+                    apply_event(&mut colony, &event, &region);
                 }
 
                 if tick_count % 100 == 0 {

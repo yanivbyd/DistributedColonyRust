@@ -3,6 +3,7 @@
 
 use shared::be_api::{Shard, BackendRequest, BackendResponse, InitShardTopographyRequest, InitShardTopographyResponse, BACKEND_PORT};
 use shared::{log, log_error};
+use shared::utils::new_random_generator;
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bincode;
@@ -134,7 +135,7 @@ impl GlobalTopography {
 
     fn create_global_topography_image(&self) -> Vec<u8> {
         let mut image = vec![self.info.base_elevation; self.info.total_width * self.info.total_height];
-        let mut rng = rand::thread_rng();
+        let mut rng = new_random_generator();
         
         // Step 1: Create river paths
         let river_paths = self.generate_river_paths(&mut rng);

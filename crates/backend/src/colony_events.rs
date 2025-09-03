@@ -1,26 +1,26 @@
-use crate::{colony::Colony, colony_shard::{is_blank, WHITE_COLOR}};
+use crate::{colony::Colony, colony_shard::{WHITE_COLOR}};
 
-use rand::{rngs::SmallRng, Rng, SeedableRng};
-use shared::{be_api::Shard, log};
+use rand::{rngs::SmallRng, Rng};
+use shared::{be_api::{Shard, Color}, log, utils::{random_color}};
 
 pub struct Circle {
-    pub x: f32,
-    pub y: f32,
-    pub radius: f32,
+    pub x: i32,
+    pub y: i32,
+    pub radius: i32,
 }
 
 pub struct Ellipse {
-    pub x: f32,
-    pub y: f32,
-    pub radius_x: f32,
-    pub radius_y: f32,
+    pub x: i32,
+    pub y: i32,
+    pub radius_x: i32,
+    pub radius_y: i32,
 }
 
 pub struct Rectangle {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
 }
 
 pub enum Region {
@@ -29,36 +29,76 @@ pub enum Region {
     Rectangle(Rectangle),
 }
 
+pub struct CreateCreatureParams {
+    pub color: Color,
+    pub size: u8,
+    pub starting_health: u8,
+}
+
+pub struct RandomTraitParams {
+    pub size: u8,
+}
+
 pub enum ColonyEvent {
-    LocalDeath(Region),
-    RandomTrait(Region, u8), // Region and random size
+    LocalDeath,
+    RandomTrait(RandomTraitParams),
+    CreateCreature(CreateCreatureParams),
+}
+
+fn point_inside_region(x: i32, y: i32, region: &Region) -> bool {
+    match region {
+        Region::Circle(circle) => {
+            let dx = x - circle.x;
+            let dy = y - circle.y;
+            // Use saturating operations to prevent overflow
+            let dx2 = dx.saturating_mul(dx);
+            let dy2 = dy.saturating_mul(dy);
+            let radius2 = circle.radius.saturating_mul(circle.radius);
+            dx2.saturating_add(dy2) <= radius2
+        }
+        Region::Ellipse(ellipse) => {
+            let dx = x - ellipse.x;
+            let dy = y - ellipse.y;
+            // Use saturating operations to prevent overflow
+            let dx2 = dx.saturating_mul(dx);
+            let dy2 = dy.saturating_mul(dy);
+            let rx2 = ellipse.radius_x.saturating_mul(ellipse.radius_x);
+            let ry2 = ellipse.radius_y.saturating_mul(ellipse.radius_y);
+            
+            // Calculate left side: dx²*ry² + dy²*rx²
+            let left_side = dx2.saturating_mul(ry2).saturating_add(dy2.saturating_mul(rx2));
+            
+            // Calculate right side: rx²*ry²
+            let right_side = rx2.saturating_mul(ry2);
+            
+            left_side <= right_side
+        }
+        Region::Rectangle(rect) => {
+            x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height
+        }
+    }
 }
 
 fn region_overlaps_shard(region: &Region, shard: &Shard) -> bool {
+    let shard_right = shard.x + shard.width;
+    let shard_bottom = shard.y + shard.height;
+    
     match region {
         Region::Circle(circle) => {
-            let closest_x = circle.x.max(shard.x as f32).min((shard.x + shard.width) as f32);
-            let closest_y = circle.y.max(shard.y as f32).min((shard.y + shard.height) as f32);
-            let dx = circle.x - closest_x;
-            let dy = circle.y - closest_y;
-            (dx * dx + dy * dy) <= (circle.radius * circle.radius)
+            let closest_x = circle.x.max(shard.x).min(shard_right);
+            let closest_y = circle.y.max(shard.y).min(shard_bottom);
+            point_inside_region(closest_x, closest_y, region)
         },
         Region::Ellipse(ellipse) => {
-            let closest_x = ellipse.x.max(shard.x as f32).min((shard.x + shard.width) as f32);
-            let closest_y = ellipse.y.max(shard.y as f32).min((shard.y + shard.height) as f32);
-            let dx = ellipse.x - closest_x;
-            let dy = ellipse.y - closest_y;
-            (dx * dx) / (ellipse.radius_x * ellipse.radius_x) + (dy * dy) / (ellipse.radius_y * ellipse.radius_y) <= 1.0
+            let closest_x = ellipse.x.max(shard.x).min(shard_right);
+            let closest_y = ellipse.y.max(shard.y).min(shard_bottom);
+            point_inside_region(closest_x, closest_y, region)
         },
         Region::Rectangle(rect) => {
-            // Check if rectangle overlaps with shard
-            let shard_right = shard.x + shard.width;
-            let shard_bottom = shard.y + shard.height;
             let rect_right = rect.x + rect.width;
             let rect_bottom = rect.y + rect.height;
             
-            rect.x < shard_right as f32 && rect_right > shard.x as f32 &&
-            rect.y < shard_bottom as f32 && rect_bottom > shard.y as f32
+            rect.x < shard_right && rect_right > shard.x && rect.y < shard_bottom && rect_bottom > shard.y
         }
     }
 }
@@ -77,143 +117,124 @@ where
 
     for y in 0..height + 2 {
         for x in 0..width + 2 {
-            let global_x = shard.shard.x as f32 + x as f32;
-            let global_y = shard.shard.y as f32 + y as f32;
+            let global_x = shard.shard.x + x as i32;
+            let global_y = shard.shard.y + y as i32;
 
-            let inside = match region {
-                Region::Circle(circle) => {
-                    let dx = global_x - circle.x;
-                    let dy = global_y - circle.y;
-                    dx * dx + dy * dy <= circle.radius * circle.radius
-                }
-                Region::Ellipse(ellipse) => {
-                    let dx = global_x - ellipse.x;
-                    let dy = global_y - ellipse.y;
-                    (dx * dx) / (ellipse.radius_x * ellipse.radius_x)
-                        + (dy * dy) / (ellipse.radius_y * ellipse.radius_y)
-                        <= 1.0
-                }
-                Region::Rectangle(rect) => {
-                    global_x >= rect.x && global_x < rect.x + rect.width
-                        && global_y >= rect.y && global_y < rect.y + rect.height
-                }
-            };
-
-            if inside {
-                let idx = (y + 1) * row_size + (x + 1);
-                if let Some(cell) = shard.grid.get_mut(idx) {
-                    cell_fn(cell);
-                }
+            if point_inside_region(global_x, global_y, region) {
+                let idx = y * row_size + x;
+                cell_fn(shard.grid.get_mut(idx).unwrap());
             }
         }
     }    
 }
 
-pub fn log_event(event: &ColonyEvent) {
-    match event {
-        ColonyEvent::LocalDeath(region) => {
-            match region {
-                Region::Circle(circle) => {
-                    log!("[BE] Event: LocalDeath (Circle) at ({:.1}, {:.1}) with radius {:.1}", 
-                         circle.x, circle.y, circle.radius);
-                },
-                Region::Ellipse(ellipse) => {
-                    log!("[BE] Event: LocalDeath (Ellipse) at ({:.1}, {:.1}) with radius ({:.1}, {:.1})", 
-                         ellipse.x, ellipse.y, ellipse.radius_x, ellipse.radius_y);
-                },
-                Region::Rectangle(rect) => {
-                    log!("[BE] Event: LocalDeath (Rectangle) at ({:.1}, {:.1}) with size ({:.1}, {:.1})", 
-                         rect.x, rect.y, rect.width, rect.height);
-                }
-            }
-        },
-        ColonyEvent::RandomTrait(region, size) => {
-            match region {
-                Region::Circle(circle) => {
-                    log!("[BE] Event: RandomTrait (Circle) at ({:.1}, {:.1}) with radius {:.1}, size {}", 
-                         circle.x, circle.y, circle.radius, size);
-                },
-                Region::Ellipse(ellipse) => {
-                    log!("[BE] Event: RandomTrait (Ellipse) at ({:.1}, {:.1}) with radius ({:.1}, {:.1}), size {}", 
-                         ellipse.x, ellipse.y, ellipse.radius_x, ellipse.radius_y, size);
-                },
-                Region::Rectangle(rect) => {
-                    log!("[BE] Event: RandomTrait (Rectangle) at ({:.1}, {:.1}) with size ({:.1}, {:.1}), trait size {}", 
-                         rect.x, rect.y, rect.width, rect.height, size);
-                }
-            }
-        }
-    }
-}
-
-pub fn randomize_event(colony: &Colony) -> Option<ColonyEvent> {
-    let mut rng = SmallRng::from_entropy();    
-    if rand::random::<f32>() > 0.1 {
-        return None;
-    }
+pub fn log_event(event: &ColonyEvent, region: &Region) {
+    let event_details = match event {
+        ColonyEvent::LocalDeath => "LocalDeath".to_string(),
+        ColonyEvent::RandomTrait(params) => format!("RandomTrait, size {}", params.size),
+        ColonyEvent::CreateCreature(params) => format!("CreateCreature, color {:?}, size {}, health {}", 
+            params.color, params.size, params.starting_health),
+    };
     
-    // Randomize region type (Circle, Ellipse, or Rectangle)
-    let region = match rand::random::<u8>() % 3 {
-        0 => {
-            // Circle
-            let circle = Circle {
-                x: (rand::random::<i32>().abs() % (colony._width + 200) - 100) as f32,
-                y: (rand::random::<i32>().abs() % (colony._height + 200) - 100) as f32,
-                radius: (rand::random::<i32>().abs() % 20) as f32,
-            };
-            Region::Circle(circle)
+    let region_details = match region {
+        Region::Circle(circle) => {
+            format!("(Circle) at ({:.1}, {:.1}) with radius {:.1}", 
+                circle.x, circle.y, circle.radius)
         },
-        1 => {
-            // Ellipse
-            let ellipse = Ellipse {
-                x: (rand::random::<i32>().abs() % (colony._width + 200) - 100) as f32,
-                y: (rand::random::<i32>().abs() % (colony._height + 200) - 100) as f32,
-                radius_x: (rand::random::<i32>().abs() % 100) as f32,
-                radius_y: (rand::random::<i32>().abs() % 100) as f32,
-            };
-            Region::Ellipse(ellipse)
+        Region::Ellipse(ellipse) => {
+            format!("(Ellipse) at ({:.1}, {:.1}) with radius ({:.1}, {:.1})", 
+                ellipse.x, ellipse.y, ellipse.radius_x, ellipse.radius_y)
         },
-        _ => {
-            // Rectangle
-            let rect = Rectangle {
-                x: (rand::random::<i32>().abs() % (colony._width + 200) - 100) as f32,
-                y: (rand::random::<i32>().abs() % (colony._height + 200) - 100) as f32,
-                width: (rand::random::<i32>().abs() % 50 + 10) as f32,
-                height: (rand::random::<i32>().abs() % 50 + 10) as f32,
-            };
-            Region::Rectangle(rect)
+        Region::Rectangle(rect) => {
+            format!("(Rectangle) at ({:.1}, {:.1}) with size ({:.1}, {:.1})", 
+                rect.x, rect.y, rect.width, rect.height)
         }
     };
     
-    // Randomize event type
-    if rand::random::<bool>() {
-        Some(ColonyEvent::LocalDeath(region))
-    } else {
-        let random_size = rng.gen_range(1..99);
-        Some(ColonyEvent::RandomTrait(region, random_size))
+    log!("Event: {} {}", event_details, region_details);
+}
+
+fn randomize_colony_event(rng: &mut SmallRng) -> ColonyEvent {
+    match rng.gen_range(0..3) {
+        0 => {
+            ColonyEvent::LocalDeath
+        },
+        1 => {
+            ColonyEvent::RandomTrait(RandomTraitParams {
+                size: rng.gen_range(1..99),
+            })
+        },
+        _ => {
+            ColonyEvent::CreateCreature(CreateCreatureParams {
+                color: random_color(rng),
+                size: rng.gen_range(1..20),
+                starting_health: 30,
+            })
+        }
     }
 }
 
-pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
+fn randomize_event_region(colony: &Colony, rng: &mut SmallRng) -> Region {
+    match rng.gen_range(0..3) {
+        0 => {
+            Region::Circle(Circle {
+                x: (rng.gen_range(0..colony._width + 200) - 100) as i32,
+                y: (rng.gen_range(0..colony._height + 200) - 100) as i32,
+                radius: rng.gen_range(5..30) as i32,
+            })
+        },
+        1 => {
+            Region::Ellipse(Ellipse {
+                x: (rng.gen_range(0..colony._width + 200) - 100) as i32,
+                y: (rng.gen_range(0..colony._height + 200) - 100) as i32,
+                radius_x: rng.gen_range(5..40) as i32,
+                radius_y: rng.gen_range(5..40) as i32,
+            })
+        },
+        _ => {
+            Region::Rectangle(Rectangle {
+                x: (rng.gen_range(0..colony._width + 200) - 100) as i32,
+                y: (rng.gen_range(0..colony._height + 200) - 100) as i32,
+                width: rng.gen_range(5..40) as i32,
+                height: rng.gen_range(5..40) as i32,
+            })
+        }
+    }
+}
+
+pub fn randomize_event(colony: &Colony, rng: &mut SmallRng) -> Option<(ColonyEvent, Region)> {
+    if rng.gen_range(1..=50) >= 3 {
+        return None;
+    }        
+    Some((randomize_colony_event(rng), randomize_event_region(colony, rng)))
+}
+
+pub fn apply_event(colony: &mut Colony, event: &ColonyEvent, region: &Region) {
     for shard in &mut colony.shards {
+        if !region_overlaps_shard(region, &shard.shard) {
+            continue;
+        }
+        
         match event {
-            ColonyEvent::LocalDeath(region) => {
-                if region_overlaps_shard(region, &shard.shard) {
-                    apply_region_to_shard(shard, region, |cell| {
-                        cell.color = WHITE_COLOR;
-                    });
-                }
+            ColonyEvent::LocalDeath => {
+                apply_region_to_shard(shard, region, |cell| {
+                    cell.color = WHITE_COLOR;
+                    cell.health = 0;
+                });
             },
-            ColonyEvent::RandomTrait(region, new_size) => {
-                if region_overlaps_shard(region, &shard.shard) {
-                    log!("[BE] RandomTrait: Applying size {} to shard ({}, {}, {}, {})", 
-                         new_size, shard.shard.x, shard.shard.y, shard.shard.width, shard.shard.height);
-                    apply_region_to_shard(shard, region, |cell| {
-                        if !is_blank(cell) {
-                            cell.traits.size = *new_size;
-                        }
-                    });
-                }
+            ColonyEvent::RandomTrait(params) => {
+                apply_region_to_shard(shard, region, |cell| {
+                    if cell.health > 0 {
+                        cell.traits.size = params.size;
+                    }
+                });
+            },
+            ColonyEvent::CreateCreature(params) => {
+                apply_region_to_shard(shard, region, |cell| {
+                    cell.color = params.color;
+                    cell.traits.size = params.size;
+                    cell.health = params.starting_health;
+                });
             }
         }
     }

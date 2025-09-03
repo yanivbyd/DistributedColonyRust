@@ -1,5 +1,6 @@
 use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits};
 use shared::log;
+use shared::utils::{new_random_generator, random_color};
 use rand::{Rng, rngs::SmallRng};
 use rand::seq::SliceRandom;
 use std::cmp::min;
@@ -52,7 +53,7 @@ pub static NEIGHBOR_PERMUTATIONS: OnceLock<Vec<[ (isize, isize); 8 ]>> = OnceLoc
 
 pub fn get_neighbor_permutations() -> &'static Vec<[ (isize, isize); 8 ]> {
     NEIGHBOR_PERMUTATIONS.get_or_init(|| {
-        let mut rng = rand::thread_rng();
+        let mut rng = new_random_generator();
         let mut perms = Vec::with_capacity(100);
         for _ in 0..100 {
             let mut arr = NEIGHBOR_OFFSETS;
@@ -146,11 +147,7 @@ impl ColonyShard {
         const NUM_RANDOM_CREATURES: usize = 3;
         let creature_templates: Vec<CreatureTemplate> = (0..NUM_RANDOM_CREATURES)
             .map(|_| CreatureTemplate {
-                color: Color {
-                    red: rng.gen_range(0..=255),
-                    green: rng.gen_range(0..=255),
-                    blue: rng.gen_range(0..=255),
-                },
+                color: random_color(rng),
                 size: 18,
             })
             .collect();
