@@ -20,15 +20,13 @@ pub fn random_color(rng: &mut SmallRng) -> crate::colony_model::Color {
     let mut green = rng.gen_range(0..=255);
     let mut blue = rng.gen_range(0..=255);
     
-    // Ensure the color is not too close to white by making at least one channel
-    // significantly lower (below 200)
-    let max_channel = red.max(green).max(blue);
-    if max_channel > 240 {
+    let min_channel = red.min(green).min(blue);
+    if min_channel > 240 {
         // Randomly choose one channel to reduce
         match rng.gen_range(0..3) {
-            0 => red = rng.gen_range(0..180),
-            1 => green = rng.gen_range(0..180),
-            _ => blue = rng.gen_range(0..180),
+            0 => red = rng.gen_range(0..240),
+            1 => green = rng.gen_range(0..240),
+            _ => blue = rng.gen_range(0..240),
         }
     }
     

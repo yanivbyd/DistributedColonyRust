@@ -12,7 +12,7 @@ const WIDTH_IN_SHARDS: i32 = 5;
 const HEIGHT_IN_SHARDS: i32 = 3;
 const SHARD_WIDTH: i32 = 250;
 const SHARD_HEIGHT: i32 = 250;
-const MIN_CREATURE_SIZE_LEGEND_MAX: i32 = 100;
+const MIN_CREATURE_SIZE_LEGEND_MAX: i32 = 30;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {

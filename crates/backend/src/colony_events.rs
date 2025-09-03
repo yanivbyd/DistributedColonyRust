@@ -161,14 +161,14 @@ fn randomize_colony_event(rng: &mut SmallRng) -> ColonyEvent {
         },
         1 => {
             ColonyEvent::RandomTrait(RandomTraitParams {
-                size: rng.gen_range(1..99),
+                size: rng.gen_range(1..20),
             })
         },
         _ => {
             ColonyEvent::CreateCreature(CreateCreatureParams {
                 color: random_color(rng),
                 size: rng.gen_range(1..20),
-                starting_health: 30,
+                starting_health: 200,
             })
         }
     }
