@@ -204,7 +204,6 @@ impl ColonyShard {
 
                 let neighbor_count = Self::get_neighbors(x, y, width, height, offsets, my_cell, &mut neighbors);
 
-                // EAT food
                 self.eat_food(my_cell);
                 if self.grid[my_cell].health == 0 {
                     set_blank(&mut self.grid[my_cell]);
@@ -280,7 +279,6 @@ impl ColonyShard {
         next_bit: bool
     ) -> bool {
         // Snapshot my values
-        let my_color = self.grid[my_cell].color;
         let my_size  = self.grid[my_cell].traits.size;
 
         for i in 0..neighbor_count {
@@ -290,15 +288,14 @@ impl ColonyShard {
             if nref.tick_bit == next_bit { continue; }  // already processed this epoch
             if nref.health == 0 { continue; }           // blank
             let nsize = nref.traits.size;
-            if nsize >= my_size { continue; }           // can't kill bigger/equal
-            // color check last (3-byte compare)
-            if nref.color.equals(&my_color) { continue; }
+            if my_size > nsize {
+                self.grid[my_cell].health = self.grid[my_cell].health.saturating_add(nref.health);
+                let h_red = self.grid[my_cell].health / 10;
+                self.grid[my_cell].health = self.grid[my_cell].health.saturating_sub(h_red);
 
-            // kill: make neighbor blank, reduce my health
-            set_blank(&mut self.grid[n]);
-            let h_red = self.grid[my_cell].health / 10;
-            self.grid[my_cell].health = self.grid[my_cell].health.saturating_sub(h_red);
-            return true;
+                set_blank(&mut self.grid[n]);
+                return true;
+            }
         }
         false
     }
