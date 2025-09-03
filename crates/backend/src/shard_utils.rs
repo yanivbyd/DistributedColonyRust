@@ -74,6 +74,17 @@ impl ShardUtils {
                     ShardLayer::ExtraFood => {
                         data.extend(shard.grid[start..end].iter().map(|cell| cell.extra_food_per_tick as i32));
                     }
+                    ShardLayer::CanKill => {
+                        data.extend(shard.grid[start..end].iter().map(|cell| {
+                            if is_blank(cell) {
+                                0 // blank
+                            } else if cell.traits.can_kill {
+                                2 // can kill
+                            } else {
+                                1 // can't kill
+                            }
+                        }));
+                    }
                 }
             }
             Some(data)

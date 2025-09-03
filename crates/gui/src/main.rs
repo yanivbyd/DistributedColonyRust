@@ -19,6 +19,7 @@ enum Tab {
     Creatures,
     ExtraFood,
     Sizes,
+    CanKill,
 }
 
 #[derive(Clone)]
@@ -74,6 +75,7 @@ struct BEImageApp {
     creatures_color_data: Arc<Mutex<Vec<Option<Vec<shared::be_api::Color>>>>>,
     extra_food: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     sizes: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
+    can_kill: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     ctx: Option<egui::Context>,
     thread_started: bool,
     current_tab: Tab,
@@ -92,12 +94,14 @@ impl Default for BEImageApp {
         let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap())));
         let extra_food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
+        let can_kill = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let current_tab = Tab::Creatures;
         Self {
             creatures,
             creatures_color_data,
             extra_food,
             sizes,
+            can_kill,
             ctx: None,
             thread_started: false,
             current_tab,
@@ -116,6 +120,7 @@ impl App for BEImageApp {
             let creatures_color_data = self.creatures_color_data.clone();
             let extra_food = self.extra_food.clone();
             let sizes = self.sizes.clone();
+            let can_kill = self.can_kill.clone();
             let ctx_clone = ctx.clone();
             let shared_current_tab = self.shared_current_tab.clone();
             let shard_config = self.shard_config.clone();
@@ -151,6 +156,13 @@ impl App for BEImageApp {
                                 *locked = sizes_data;
                             }
                         }
+                        Tab::CanKill => {
+                            let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config);
+                            {
+                                let mut locked = can_kill.lock().unwrap();
+                                *locked = can_kill_data;
+                            }
+                        }
                     }
                     ctx_clone.request_repaint();
                     thread::sleep(Duration::from_millis(REFRESH_INTERVAL_MS));
@@ -166,6 +178,7 @@ impl App for BEImageApp {
                 ui.selectable_value(&mut self.current_tab, Tab::Creatures, "Creatures");
                 ui.selectable_value(&mut self.current_tab, Tab::ExtraFood, "Extra Food");
                 ui.selectable_value(&mut self.current_tab, Tab::Sizes, "Sizes");
+                ui.selectable_value(&mut self.current_tab, Tab::CanKill, "Can Kill");
                 
                 // Update shared tab if changed
                 if self.current_tab != old_tab {
@@ -180,6 +193,7 @@ impl App for BEImageApp {
                 Tab::Creatures => self.show_creatures_tab(ui),
                 Tab::ExtraFood => self.show_extra_food_tab(ui),
                 Tab::Sizes => self.show_sizes_tab(ui),
+                Tab::CanKill => self.show_can_kill_tab(ui),
             }
         });
     }
@@ -286,7 +300,7 @@ impl BEImageApp {
         self.show_layer_tab_with_legend(ui, data, None)
     }
 
-    fn show_layer_tab_with_legend(&self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>, legend_min_value_for_max: Option<i32>) {
+    fn show_layer_tab_with_legend(&self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>, legend_max_value: Option<i32>) {
         let locked = data.lock().unwrap();
         
         // Find global maximum across all shards for consistent normalization
@@ -297,11 +311,10 @@ impl BEImageApp {
             .copied()
             .unwrap_or(0);
 
-        // Make global_max no lower than legend_max, if legend_max is Some and greater
-        let global_max = match legend_min_value_for_max {
-            Some(legend) if legend > global_max => legend,
-            _ => global_max,
-        };
+        // Use provided legend values or calculate from data
+        let legend_min = 0;
+        let legend_max = legend_max_value.unwrap_or(global_max);
+        let global_max = legend_max.max(global_max);
 
         self.show_combined_image(ui, &locked, |shard_data| {
             if let Some(data) = shard_data {
@@ -310,7 +323,6 @@ impl BEImageApp {
                     let mut colors = Vec::new();
                     for &val in data {
                         if val == 0 {
-                            // Show white for zero values
                             colors.push(shared::be_api::Color { red: 255, green: 255, blue: 255, });
                         } else {
                             let normalized = val as f32 / global_max as f32;
@@ -323,11 +335,7 @@ impl BEImageApp {
                     // All values are 0, use white
                     let mut colors = Vec::new();
                     for _ in 0..data.len() {
-                        colors.push(shared::be_api::Color {
-                            red: 255,
-                            green: 255,
-                            blue: 255,
-                        });
+                        colors.push(shared::be_api::Color { red: 255, green: 255, blue: 255, });
                     }
                     Some(colors)
                 }
@@ -363,11 +371,11 @@ impl BEImageApp {
             // Add labels
             ui.add_space(legend_height + 5.0);
             ui.horizontal(|ui| {
-                ui.label(format!("0"));
+                ui.label(format!("{}", legend_min));
                 ui.add_space(legend_width / 2.0 - 30.0);
-                ui.label(format!("{}", global_max / 2));
+                ui.label(format!("{}", (legend_min + legend_max) / 2));
                 ui.add_space(legend_width / 2.0 - 30.0);
-                ui.label(format!("{}", global_max));
+                ui.label(format!("{}", legend_max));
             });
         }
     }
@@ -378,6 +386,39 @@ impl BEImageApp {
 
     fn show_sizes_tab(&self, ui: &mut egui::Ui) {
         self.show_layer_tab_with_legend(ui, &self.sizes, Some(MIN_CREATURE_SIZE_LEGEND_MAX));
+    }
+
+    fn show_can_kill_tab(&self, ui: &mut egui::Ui) {
+        self.show_layer_tab_boolean(ui, &self.can_kill);
+    }
+
+    fn show_layer_tab_boolean(&self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>) {
+        let locked = data.lock().unwrap();
+        
+        self.show_combined_image(ui, &locked, |shard_data| {
+            if let Some(data) = shard_data {
+                // Convert i32 data to colors using boolean mapping
+                let mut colors = Vec::new();
+                for &val in data {
+                    match val {
+                        1 => {
+                            let color = Self::terrain_color(0.0);
+                            colors.push(shared::be_api::Color { red: color.r(), green: color.g(), blue: color.b() });
+                        }
+                        2 => {
+                            let color = Self::terrain_color(1.0);
+                            colors.push(shared::be_api::Color { red: color.r(), green: color.g(), blue: color.b() });
+                        }
+                        _ => {
+                            colors.push(shared::be_api::Color { red: 255, green: 255, blue: 255 });
+                        }
+                    }
+                }
+                Some(colors)
+            } else {
+                None
+            }
+        });
     }
 }
 

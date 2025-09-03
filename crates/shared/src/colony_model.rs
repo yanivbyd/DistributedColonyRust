@@ -53,4 +53,5 @@ pub struct Shard {
 pub enum ShardLayer {
     CreatureSize,
     ExtraFood,
+    CanKill,
 } 
