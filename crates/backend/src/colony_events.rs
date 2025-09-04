@@ -18,17 +18,9 @@ pub struct Ellipse {
     pub radius_y: i32,
 }
 
-pub struct Rectangle {
-    pub x: i32,
-    pub y: i32,
-    pub width: i32,
-    pub height: i32,
-}
-
 pub enum Region {
     Circle(Circle),
     Ellipse(Ellipse),
-    Rectangle(Rectangle),
 }
 
 pub struct CreateCreatureParams {
@@ -76,9 +68,6 @@ fn point_inside_region(x: i32, y: i32, region: &Region) -> bool {
             
             left_side <= right_side
         }
-        Region::Rectangle(rect) => {
-            x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height
-        }
     }
 }
 
@@ -96,12 +85,6 @@ fn region_overlaps_shard(region: &Region, shard: &Shard) -> bool {
             let closest_x = ellipse.x.max(shard.x).min(shard_right);
             let closest_y = ellipse.y.max(shard.y).min(shard_bottom);
             point_inside_region(closest_x, closest_y, region)
-        },
-        Region::Rectangle(rect) => {
-            let rect_right = rect.x + rect.width;
-            let rect_bottom = rect.y + rect.height;
-            
-            rect.x < shard_right && rect_right > shard.x && rect.y < shard_bottom && rect_bottom > shard.y
         }
     }
 }
@@ -169,10 +152,6 @@ pub fn log_local_event(event: &ColonyEvent, region: &Region) {
         Region::Ellipse(ellipse) => {
             format!("(Ellipse) at ({:.1}, {:.1}) with radius ({:.1}, {:.1})", 
                 ellipse.x, ellipse.y, ellipse.radius_x, ellipse.radius_y)
-        },
-        Region::Rectangle(rect) => {
-            format!("(Rectangle) at ({:.1}, {:.1}) with size ({:.1}, {:.1})", 
-                rect.x, rect.y, rect.width, rect.height)
         }
     };
     
@@ -200,7 +179,7 @@ fn randomize_colony_event(colony: &Colony, rng: &mut SmallRng) -> ColonyEvent {
 }
 
 fn randomize_event_region(colony: &Colony, rng: &mut SmallRng) -> Region {
-    match rng.gen_range(0..3) {
+    match rng.gen_range(0..2) {
         0 => {
             Region::Circle(Circle {
                 x: (rng.gen_range(0..colony._width + 200) - 100) as i32,
@@ -208,20 +187,12 @@ fn randomize_event_region(colony: &Colony, rng: &mut SmallRng) -> Region {
                 radius: rng.gen_range(5..30) as i32,
             })
         },
-        1 => {
+        _ => {
             Region::Ellipse(Ellipse {
                 x: (rng.gen_range(0..colony._width + 200) - 100) as i32,
                 y: (rng.gen_range(0..colony._height + 200) - 100) as i32,
                 radius_x: rng.gen_range(15..40) as i32,
                 radius_y: rng.gen_range(15..40) as i32,
-            })
-        },
-        _ => {
-            Region::Rectangle(Rectangle {
-                x: (rng.gen_range(0..colony._width + 200) - 100) as i32,
-                y: (rng.gen_range(0..colony._height + 200) - 100) as i32,
-                width: rng.gen_range(5..40) as i32,
-                height: rng.gen_range(5..40) as i32,
             })
         }
     }
