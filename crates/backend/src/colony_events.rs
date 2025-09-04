@@ -3,6 +3,8 @@ use crate::{colony::Colony, colony_shard::{WHITE_COLOR}};
 use rand::{rngs::SmallRng, Rng};
 use shared::{be_api::{Color, Shard, Traits}, log, utils::{random_chance, random_color}};
 
+const RANDOM_EVENT_CHANCE: u32 = 10;
+
 pub struct Circle {
     pub x: i32,
     pub y: i32,
@@ -161,14 +163,14 @@ fn randomize_colony_event(rng: &mut SmallRng) -> ColonyEvent {
         },
         1 => {
             ColonyEvent::RandomTrait(RandomTraitParams {
-                size: rng.gen_range(1..20),
+                size: rng.gen_range(1..30),
             })
         },
         _ => {
             ColonyEvent::CreateCreature(CreateCreatureParams {
                 color: random_color(rng),
-                traits: Traits { size: rng.gen_range(1..20), can_kill: rng.gen_bool(0.5) },
-                starting_health: 200,
+                traits: Traits { size: rng.gen_range(1..30), can_kill: rng.gen_bool(0.5) },
+                starting_health: 250,
             })
         }
     }
@@ -187,8 +189,8 @@ fn randomize_event_region(colony: &Colony, rng: &mut SmallRng) -> Region {
             Region::Ellipse(Ellipse {
                 x: (rng.gen_range(0..colony._width + 200) - 100) as i32,
                 y: (rng.gen_range(0..colony._height + 200) - 100) as i32,
-                radius_x: rng.gen_range(5..40) as i32,
-                radius_y: rng.gen_range(5..40) as i32,
+                radius_x: rng.gen_range(15..40) as i32,
+                radius_y: rng.gen_range(15..40) as i32,
             })
         },
         _ => {
@@ -203,10 +205,10 @@ fn randomize_event_region(colony: &Colony, rng: &mut SmallRng) -> Region {
 }
 
 pub fn randomize_event(colony: &Colony, rng: &mut SmallRng) -> Option<(ColonyEvent, Region)> {
-    if !random_chance(rng, 50) {
-        return None;
-    }        
-    Some((randomize_colony_event(rng), randomize_event_region(colony, rng)))
+    if random_chance(rng, RANDOM_EVENT_CHANCE) {
+        return Some((randomize_colony_event(rng), randomize_event_region(colony, rng)));
+    }    
+    None
 }
 
 pub fn apply_event(colony: &mut Colony, event: &ColonyEvent, region: &Region) {
