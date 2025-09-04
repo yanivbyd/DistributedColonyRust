@@ -44,7 +44,7 @@ pub fn start_ticker() {
                 let mut event_rng = new_random_generator();
                 if let Some(event) = randomize_event(&colony, &mut event_rng) {
                     log_event(&event);
-                    apply_event(&mut colony, &event);
+                    apply_event(&mut event_rng, &mut colony, &event);
                 }
 
                 if tick_count % 100 == 0 {

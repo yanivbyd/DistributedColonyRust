@@ -37,7 +37,8 @@ pub enum ColonyEvent {
     LocalDeath(Region),
     RandomTrait(Region, RandomTraitParams),
     CreateCreature(Region, CreateCreatureParams),
-    ChangeExtraFoodPerTick(i8)
+    ChangeExtraFoodPerTick(i8),
+    Extinction()
 }
 
 fn point_inside_region(x: i32, y: i32, region: &Region) -> bool {
@@ -127,6 +128,9 @@ pub fn log_event(event: &ColonyEvent) {
         },
         ColonyEvent::ChangeExtraFoodPerTick(amount) => {
             log!("Event: ChangeExtraFoodPerTick by {}", amount);
+        },
+        ColonyEvent::Extinction() => {
+            log!("Event: Extinction");
         }
     }
 }
@@ -138,9 +142,8 @@ pub fn log_local_event(event: &ColonyEvent, region: &Region) {
             params.traits),
         ColonyEvent::CreateCreature(_region, params) => format!("CreateCreature, color {:?}, traits {:?}, health {}", 
             params.color, params.traits, params.starting_health),
-        ColonyEvent::ChangeExtraFoodPerTick(_amount) => {
-            // This should not be called for ChangeExtraFoodPerTick events
-            "ChangeExtraFoodPerTick".to_string()
+        _ => {
+            panic!("should not be called");
         }
     };
     
@@ -199,6 +202,9 @@ fn randomize_event_region(colony: &Colony, rng: &mut SmallRng) -> Region {
 }
 
 pub fn randomize_event(colony: &Colony, rng: &mut SmallRng) -> Option<ColonyEvent> {
+    if random_chance(rng, 50000) {
+        return Some(ColonyEvent::Extinction());
+    }
     if random_chance(rng, 100) {
         let sign: i8 = if rng.gen_bool(0.5) { 1 } else { -1 };
         let amount = sign * rng.gen_range(1..5);
@@ -210,7 +216,7 @@ pub fn randomize_event(colony: &Colony, rng: &mut SmallRng) -> Option<ColonyEven
     None
 }
 
-pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
+pub fn apply_event(rng: &mut SmallRng, colony: &mut Colony, event: &ColonyEvent) {
     match event {
         ColonyEvent::LocalDeath(region) => {
             apply_local_event(colony, event, region);
@@ -231,6 +237,16 @@ pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
                     }
                 });
             }            
+        },
+        ColonyEvent::Extinction() => {
+            for shard in &mut colony.shards {
+                if rng.gen_bool(0.5) {
+                    shard.grid.iter_mut().for_each(|cell| {
+                        cell.color = WHITE_COLOR;
+                        cell.health = 0;
+                    });
+                }
+            }
         }
     } 
 }
