@@ -54,4 +54,5 @@ pub enum ShardLayer {
     CreatureSize,
     ExtraFood,
     CanKill,
+    Food,
 } 

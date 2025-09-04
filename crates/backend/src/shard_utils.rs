@@ -85,6 +85,9 @@ impl ShardUtils {
                             }
                         }));
                     }
+                    ShardLayer::Food => {
+                        data.extend(shard.grid[start..end].iter().map(|cell| cell.food as i32));
+                    }
                 }
             }
             Some(data)
