@@ -1,4 +1,4 @@
-use crate::{colony::Colony, colony_shard::{WHITE_COLOR}};
+use crate::{colony::Colony, colony_shard::WHITE_COLOR};
 
 use rand::{rngs::SmallRng, Rng};
 use shared::{be_api::{Color, Shard, Traits}, log, utils::{random_chance, random_color}};
@@ -45,6 +45,7 @@ pub enum ColonyEvent {
     LocalDeath(Region),
     RandomTrait(Region, RandomTraitParams),
     CreateCreature(Region, CreateCreatureParams),
+    ChangeExtraFoodPerTick(i8)
 }
 
 fn point_inside_region(x: i32, y: i32, region: &Region) -> bool {
@@ -140,6 +141,9 @@ pub fn log_event(event: &ColonyEvent) {
         },
         ColonyEvent::CreateCreature(region, _params) => {
             log_local_event(event, region);
+        },
+        ColonyEvent::ChangeExtraFoodPerTick(amount) => {
+            log!("Event: ChangeExtraFoodPerTick by {}", amount);
         }
     }
 }
@@ -151,6 +155,10 @@ pub fn log_local_event(event: &ColonyEvent, region: &Region) {
             params.traits),
         ColonyEvent::CreateCreature(_region, params) => format!("CreateCreature, color {:?}, traits {:?}, health {}", 
             params.color, params.traits, params.starting_health),
+        ColonyEvent::ChangeExtraFoodPerTick(_amount) => {
+            // This should not be called for ChangeExtraFoodPerTick events
+            "ChangeExtraFoodPerTick".to_string()
+        }
     };
     
     let region_details = match region {
@@ -220,6 +228,11 @@ fn randomize_event_region(colony: &Colony, rng: &mut SmallRng) -> Region {
 }
 
 pub fn randomize_event(colony: &Colony, rng: &mut SmallRng) -> Option<ColonyEvent> {
+    if random_chance(rng, 100) {
+        let sign: i8 = if rng.gen_bool(0.5) { 1 } else { -1 };
+        let amount = sign * rng.gen_range(1..5);
+        return Some(ColonyEvent::ChangeExtraFoodPerTick(amount));
+    }
     if random_chance(rng, RANDOM_EVENT_CHANCE) {
         return Some(randomize_colony_event(colony, rng));
     }    
@@ -236,6 +249,17 @@ pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
         },
         ColonyEvent::CreateCreature(region, _params) => {
             apply_local_event(colony, event, region);
+        }
+        ColonyEvent::ChangeExtraFoodPerTick(amount) => {
+            for shard in &mut colony.shards {
+                shard.grid.iter_mut().for_each(|cell| {
+                    if *amount >= 0 {
+                        cell.extra_food_per_tick = cell.extra_food_per_tick.saturating_add(*amount as u8);
+                    } else {
+                        cell.extra_food_per_tick = cell.extra_food_per_tick.saturating_sub((-*amount) as u8);
+                    }
+                });
+            }            
         }
     } 
 }
@@ -266,6 +290,9 @@ pub fn apply_local_event(colony: &mut Colony, event: &ColonyEvent, region: &Regi
                     cell.traits = params.traits;
                     cell.health = params.starting_health;
                 });
+            },
+            _ => {
+                panic!("should not be called");
             }
         }
     }
