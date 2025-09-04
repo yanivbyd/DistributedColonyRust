@@ -3,8 +3,6 @@ use crate::{colony::Colony, colony_shard::WHITE_COLOR};
 use rand::{rngs::SmallRng, Rng};
 use shared::{be_api::{Color, Shard, Traits}, log, utils::{random_chance, random_color}};
 
-const RANDOM_EVENT_CHANCE: u32 = 10;
-
 pub struct Circle {
     pub x: i32,
     pub y: i32,
@@ -205,12 +203,12 @@ pub fn randomize_event(colony: &Colony, rng: &mut SmallRng) -> Option<ColonyEven
     if random_chance(rng, 50000) {
         return Some(ColonyEvent::Extinction());
     }
-    if random_chance(rng, 100) {
+    if random_chance(rng, 1000) {
         let sign: i8 = if rng.gen_bool(0.5) { 1 } else { -1 };
         let amount = sign * rng.gen_range(1..5);
         return Some(ColonyEvent::ChangeExtraFoodPerTick(amount));
     }
-    if random_chance(rng, RANDOM_EVENT_CHANCE) {
+    if random_chance(rng, 10) {
         return Some(randomize_colony_event(colony, rng));
     }    
     None

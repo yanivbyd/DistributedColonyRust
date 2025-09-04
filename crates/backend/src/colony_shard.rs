@@ -101,44 +101,21 @@ impl ColonyShard {
     }
 
     #[inline(always)]
-    fn move_to_highest_food_neighbor(
-        &mut self,
-        my_cell: usize,
-        neighbors: &[usize],
-        neighbor_count: usize,
-        next_bit: bool
-    ) -> bool {
-        // Snapshot my values once
-        let my_food = self.grid[my_cell].food;
-        let my_color = self.grid[my_cell].color;
-        let my_health = self.grid[my_cell].health;
-        let my_traits = self.grid[my_cell].traits;
-
-        // Track best candidate among blanks with strictly higher food
-        let mut best_idx: usize = usize::MAX;
-        let mut best_food = my_food;
-
-        // Scan neighbors (<= 8)
+    fn move_to_higher_food_neighbor(&mut self, my_cell: usize, neighbors: &[usize], 
+        neighbor_count: usize, next_bit: bool) -> bool 
+    {
+        let my_food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick);
         for i in 0..neighbor_count {
             let n = neighbors[i];
-            let nref = &self.grid[n];
-            // cheap rejects first
-            if nref.health != 0 { continue; }           // not blank
-            let nf = nref.food;
-            if nf <= best_food { continue; }            // not better
-            best_food = nf;
-            best_idx = n;
-        }
-
-        if best_idx != usize::MAX {
-            // write winner once
-            let dst = best_idx;
-            self.grid[dst].color = my_color;
-            self.grid[dst].health = my_health;
-            self.grid[dst].traits = my_traits;
-            self.grid[dst].tick_bit = next_bit;
-            set_blank(&mut self.grid[my_cell]);
-            return true;
+            let n_food = self.grid[n].food.saturating_add(self.grid[n].extra_food_per_tick);
+            if self.grid[n].health == 0 && n_food > my_food {
+                self.grid[n].color = self.grid[my_cell].color;
+                self.grid[n].health = self.grid[my_cell].health;
+                self.grid[n].traits = self.grid[my_cell].traits;
+                self.grid[n].tick_bit = next_bit;
+                set_blank(&mut self.grid[my_cell]);
+                return true;
+            }
         }
         false
     }
@@ -221,7 +198,7 @@ impl ColonyShard {
                     if self.breed(my_cell, &neighbors, neighbor_count, next_bit, rng) {
                         stats.breeds += 1;
                     } else {
-                        if self.move_to_highest_food_neighbor(my_cell, &neighbors, neighbor_count, next_bit) {
+                        if self.move_to_higher_food_neighbor(my_cell, &neighbors, neighbor_count, next_bit) {
                             stats.moves += 1;
                         }
                     }

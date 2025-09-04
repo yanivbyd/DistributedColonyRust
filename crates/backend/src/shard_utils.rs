@@ -7,6 +7,12 @@ use rand::rngs::SmallRng;
 pub struct ShardUtils;
 
 impl ShardUtils {
+    fn copy_cell_creature_data(dst: &mut Cell, src: &Cell, tick_bit: bool) {
+        dst.color = src.color;
+        dst.health = src.health;
+        dst.traits = src.traits;
+        dst.tick_bit = tick_bit;
+    }
 
     pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo, rng: &mut SmallRng) -> ColonyShard {
         let white_color = Color { red: 255, green: 255, blue: 255 };
@@ -140,22 +146,18 @@ impl ShardUtils {
         if other.x == my.x && other.y + other.height == my.y && other.width == my.width {
             // Update top shadow lane (row 0, columns 1..=width) with the bottom border of the above shard
             let start = 1;
-            let end = start + width;
-            my_shard.grid[start..end].clone_from_slice(&updated_shard_req.bottom);
-            // Set the tick_bit of the updated cells to match the current tick_bit
-            for cell in &mut my_shard.grid[start..end] {
-                cell.tick_bit = tick_bit;
+            for i in 0..width {
+                let idx = start + i;
+                Self::copy_cell_creature_data(&mut my_shard.grid[idx], &updated_shard_req.bottom[i], tick_bit);
             }
         }
         // Check if the other shard is directly below
         else if other.x == my.x && my.y + my.height == other.y && other.width == my.width {
             // Update bottom shadow lane (row height+1, columns 1..=width) with the top border of the below shard
             let start = (height + 1) * row_size + 1;
-            let end = start + width;
-            my_shard.grid[start..end].clone_from_slice(&updated_shard_req.top);
-            // Set the tick_bit of the updated cells to match the current tick_bit
-            for cell in &mut my_shard.grid[start..end] {
-                cell.tick_bit = tick_bit;
+            for i in 0..width {
+                let idx = start + i;
+                Self::copy_cell_creature_data(&mut my_shard.grid[idx], &updated_shard_req.top[i], tick_bit);
             }
         }
         // Check if the other shard is directly to the left
@@ -163,8 +165,7 @@ impl ShardUtils {
             // Update left shadow lane (col 0, rows 1..=height) with the right border of the left shard
             for row in 1..=height {
                 let idx = row * row_size;
-                my_shard.grid[idx] = updated_shard_req.right[row - 1];
-                my_shard.grid[idx].tick_bit = tick_bit;
+                Self::copy_cell_creature_data(&mut my_shard.grid[idx], &updated_shard_req.right[row - 1], tick_bit);
             }
         }
         // Check if the other shard is directly to the right
@@ -172,8 +173,7 @@ impl ShardUtils {
             // Update right shadow lane (col width+1, rows 1..=height) with the left border of the right shard
             for row in 1..=height {
                 let idx = row * row_size + (width + 1);
-                my_shard.grid[idx] = updated_shard_req.left[row - 1];
-                my_shard.grid[idx].tick_bit = tick_bit;
+                Self::copy_cell_creature_data(&mut my_shard.grid[idx], &updated_shard_req.left[row - 1], tick_bit);
             }
         }
     }
