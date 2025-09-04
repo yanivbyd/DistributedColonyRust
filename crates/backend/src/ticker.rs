@@ -42,9 +42,9 @@ pub fn start_ticker() {
 
                 // Randomize event and apply it (locally)
                 let mut event_rng = new_random_generator();
-                if let Some((event, region)) = randomize_event(&colony, &mut event_rng) {
-                    log_event(&event, &region);
-                    apply_event(&mut colony, &event, &region);
+                if let Some(event) = randomize_event(&colony, &mut event_rng) {
+                    log_event(&event);
+                    apply_event(&mut colony, &event);
                 }
 
                 if tick_count % 100 == 0 {

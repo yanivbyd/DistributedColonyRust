@@ -38,13 +38,13 @@ pub struct CreateCreatureParams {
 }
 
 pub struct RandomTraitParams {
-    pub size: u8,
+    pub traits: Traits,
 }
 
 pub enum ColonyEvent {
-    LocalDeath,
-    RandomTrait(RandomTraitParams),
-    CreateCreature(CreateCreatureParams),
+    LocalDeath(Region),
+    RandomTrait(Region, RandomTraitParams),
+    CreateCreature(Region, CreateCreatureParams),
 }
 
 fn point_inside_region(x: i32, y: i32, region: &Region) -> bool {
@@ -130,11 +130,26 @@ where
     }    
 }
 
-pub fn log_event(event: &ColonyEvent, region: &Region) {
+pub fn log_event(event: &ColonyEvent) {
+    match event {
+        ColonyEvent::LocalDeath(region) => {
+            log_local_event(event, region);
+        },
+        ColonyEvent::RandomTrait(region, _params) => {
+            log_local_event(event, region);
+        },
+        ColonyEvent::CreateCreature(region, _params) => {
+            log_local_event(event, region);
+        }
+    }
+}
+
+pub fn log_local_event(event: &ColonyEvent, region: &Region) {
     let event_details = match event {
-        ColonyEvent::LocalDeath => "LocalDeath".to_string(),
-        ColonyEvent::RandomTrait(params) => format!("RandomTrait, size {}", params.size),
-        ColonyEvent::CreateCreature(params) => format!("CreateCreature, color {:?}, traits {:?}, health {}", 
+        ColonyEvent::LocalDeath(_region) => "LocalDeath".to_string(),
+        ColonyEvent::RandomTrait(_region, params) => format!("RandomTrait, traits {:?}", 
+            params.traits),
+        ColonyEvent::CreateCreature(_region, params) => format!("CreateCreature, color {:?}, traits {:?}, health {}", 
             params.color, params.traits, params.starting_health),
     };
     
@@ -156,18 +171,18 @@ pub fn log_event(event: &ColonyEvent, region: &Region) {
     log!("Event: {} {}", event_details, region_details);
 }
 
-fn randomize_colony_event(rng: &mut SmallRng) -> ColonyEvent {
+fn randomize_colony_event(colony: &Colony, rng: &mut SmallRng) -> ColonyEvent {
     match rng.gen_range(0..3) {
         0 => {
-            ColonyEvent::LocalDeath
+            ColonyEvent::LocalDeath(randomize_event_region(colony, rng))
         },
         1 => {
-            ColonyEvent::RandomTrait(RandomTraitParams {
-                size: rng.gen_range(1..30),
+            ColonyEvent::RandomTrait(randomize_event_region(colony, rng), RandomTraitParams {
+                traits: Traits { size: rng.gen_range(1..30), can_kill: rng.gen_bool(0.5) },
             })
         },
         _ => {
-            ColonyEvent::CreateCreature(CreateCreatureParams {
+            ColonyEvent::CreateCreature(randomize_event_region(colony, rng), CreateCreatureParams {
                 color: random_color(rng),
                 traits: Traits { size: rng.gen_range(1..30), can_kill: rng.gen_bool(0.5) },
                 starting_health: 250,
@@ -204,34 +219,48 @@ fn randomize_event_region(colony: &Colony, rng: &mut SmallRng) -> Region {
     }
 }
 
-pub fn randomize_event(colony: &Colony, rng: &mut SmallRng) -> Option<(ColonyEvent, Region)> {
+pub fn randomize_event(colony: &Colony, rng: &mut SmallRng) -> Option<ColonyEvent> {
     if random_chance(rng, RANDOM_EVENT_CHANCE) {
-        return Some((randomize_colony_event(rng), randomize_event_region(colony, rng)));
+        return Some(randomize_colony_event(colony, rng));
     }    
     None
 }
 
-pub fn apply_event(colony: &mut Colony, event: &ColonyEvent, region: &Region) {
+pub fn apply_event(colony: &mut Colony, event: &ColonyEvent) {
+    match event {
+        ColonyEvent::LocalDeath(region) => {
+            apply_local_event(colony, event, region);
+        },
+        ColonyEvent::RandomTrait(region, _params) => {
+            apply_local_event(colony, event, region);
+        },
+        ColonyEvent::CreateCreature(region, _params) => {
+            apply_local_event(colony, event, region);
+        }
+    } 
+}
+
+pub fn apply_local_event(colony: &mut Colony, event: &ColonyEvent, region: &Region) {
     for shard in &mut colony.shards {
         if !region_overlaps_shard(region, &shard.shard) {
             continue;
         }
         
         match event {
-            ColonyEvent::LocalDeath => {
+            ColonyEvent::LocalDeath(_region) => {
                 apply_region_to_shard(shard, region, |cell| {
                     cell.color = WHITE_COLOR;
                     cell.health = 0;
                 });
             },
-            ColonyEvent::RandomTrait(params) => {
+            ColonyEvent::RandomTrait(_region, params) => {
                 apply_region_to_shard(shard, region, |cell| {
                     if cell.health > 0 {
-                        cell.traits.size = params.size;
+                        cell.traits = params.traits.clone();
                     }
                 });
             },
-            ColonyEvent::CreateCreature(params) => {
+            ColonyEvent::CreateCreature(_region, params) => {
                 apply_region_to_shard(shard, region, |cell| {
                     cell.color = params.color;
                     cell.traits = params.traits;
