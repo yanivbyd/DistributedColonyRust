@@ -175,6 +175,8 @@ impl ColonyShard {
         let mut neighbors = [0usize; 8];
         let mut stats = TickStats::new(tick_bit);
         
+        let mut cells_until_next_perm_change = 2;
+        
         ShardUtils::set_shadow_margin_tick_bits(self, tick_bit);
 
         for y in 0..height {
@@ -197,9 +199,11 @@ impl ColonyShard {
                     continue;
                 }
 
-                // Cheap cadence for neighbor offset randomization (every 64 cells)
-                if (my_cell & 63) == 0 {
+                if cells_until_next_perm_change == 0 {
                     offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
+                    cells_until_next_perm_change = rng.gen_range(32..96); // Set next random interval
+                } else {
+                    cells_until_next_perm_change -= 1;
                 }
 
                 let neighbor_count = Self::get_neighbors(x, y, width, height, offsets, my_cell, &mut neighbors);
