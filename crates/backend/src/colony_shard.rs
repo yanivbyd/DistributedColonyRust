@@ -215,16 +215,16 @@ impl ColonyShard {
                     continue;
                 }
 
-                if self.breed(my_cell, &neighbors, neighbor_count, next_bit, rng) {
-                    stats.breeds += 1;
-                }
-
                 if self.kill_neighbour(my_cell, &neighbors, neighbor_count, next_bit) {
                     stats.kills += 1;
-                }
-
-                if self.move_to_highest_food_neighbor(my_cell, &neighbors, neighbor_count, next_bit) {
-                    stats.moves += 1;
+                } else {
+                    if self.breed(my_cell, &neighbors, neighbor_count, next_bit, rng) {
+                        stats.breeds += 1;
+                    } else {
+                        if self.move_to_highest_food_neighbor(my_cell, &neighbors, neighbor_count, next_bit) {
+                            stats.moves += 1;
+                        }
+                    }
                 }
             }
         }
@@ -280,22 +280,18 @@ impl ColonyShard {
         if !self.grid[my_cell].traits.can_kill {
             return false;
         }
-
         let my_size  = self.grid[my_cell].traits.size;
 
         for i in 0..neighbor_count {
             let n = neighbors[i];
             let nref = &self.grid[n];
-            // cheapest rejects first
-            if nref.tick_bit == next_bit { continue; }  // already processed this epoch
-            if nref.health == 0 { continue; }           // blank
-            let nsize = nref.traits.size;
-            if my_size > nsize {
-                self.grid[my_cell].health = self.grid[my_cell].health.saturating_add(nref.health);
-                let h_red = self.grid[my_cell].health / 10;
-                self.grid[my_cell].health = self.grid[my_cell].health.saturating_sub(h_red);
+            if my_size > nref.traits.size && nref.health > 0 {
+                self.grid[n].health = self.grid[my_cell].health.saturating_add(nref.health);
+                self.grid[n].color = self.grid[my_cell].color;
+                self.grid[n].traits = self.grid[my_cell].traits;
+                self.grid[n].tick_bit = next_bit;
 
-                set_blank(&mut self.grid[n]);
+                set_blank(&mut self.grid[my_cell]);
                 return true;
             }
         }
