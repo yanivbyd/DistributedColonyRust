@@ -90,12 +90,12 @@ impl ColonyShard {
     }
 
     fn eat_food(&mut self, cell_idx: usize) {
-        let food_eaten = min(
+        let food_eaten: u16 = min(
             self.grid[cell_idx].food,
-            self.grid[cell_idx].traits.size.saturating_mul(self.colony_life_info.eat_capacity_per_size_unit),
+            (self.grid[cell_idx].traits.size as u16).saturating_mul(self.colony_life_info.eat_capacity_per_size_unit as u16),
         );
-        let health_cost = self.grid[cell_idx].traits.size.saturating_mul(self.colony_life_info.health_cost_per_size_unit)
-            + if self.grid[cell_idx].traits.can_kill { self.colony_life_info.health_cost_if_can_kill } else { 0 };
+        let health_cost: u16 = (self.grid[cell_idx].traits.size as u16).saturating_mul(self.colony_life_info.health_cost_per_size_unit as u16)
+            + if self.grid[cell_idx].traits.can_kill { self.colony_life_info.health_cost_if_can_kill as u16 } else { 0 };
         self.grid[cell_idx].health = self.grid[cell_idx].health.saturating_add(food_eaten).saturating_sub(health_cost);
         self.grid[cell_idx].food = self.grid[cell_idx].food.saturating_sub(food_eaten);
     }
@@ -104,11 +104,11 @@ impl ColonyShard {
     fn move_to_higher_food_neighbor(&mut self, my_cell: usize, neighbors: &[usize], 
         neighbor_count: usize, next_bit: bool) -> bool 
     {
-        let my_food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick);
+        let my_food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick as u16);
 
         for i in 0..neighbor_count {
             let n = neighbors[i];
-            let n_food = self.grid[n].food.saturating_add(self.grid[n].extra_food_per_tick);
+            let n_food = self.grid[n].food.saturating_add(self.grid[n].extra_food_per_tick as u16);
             if self.grid[n].health == 0 && n_food > my_food {
                 self.grid[n].color = self.grid[my_cell].color;
                 self.grid[n].health = self.grid[my_cell].health;
@@ -149,11 +149,9 @@ impl ColonyShard {
         let tick_bit = self.grid[width+4].tick_bit;
         let next_bit = !tick_bit;
         let neighbor_perms = get_neighbor_permutations();
-        let mut offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
+        let mut offsets: &[(isize, isize); 8];
         let mut neighbors = [0usize; 8];
-        let mut stats = TickStats::new(tick_bit);
-        
-        let mut cells_until_next_perm_change = 2;
+        let mut stats = TickStats::new(tick_bit);        
         
         ShardUtils::set_shadow_margin_tick_bits(self, tick_bit);
 
@@ -164,7 +162,7 @@ impl ColonyShard {
 
                 // Increment food (fast)
                 let cell = &mut self.grid[my_cell];
-                cell.food = cell.food.saturating_add(cell.extra_food_per_tick);
+                cell.food = cell.food.saturating_add(cell.extra_food_per_tick as u16);
 
                 // Handle tick bit
                 if cell.tick_bit == next_bit {
@@ -177,12 +175,7 @@ impl ColonyShard {
                     continue;
                 }
 
-                if cells_until_next_perm_change == 0 {
-                    offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
-                    cells_until_next_perm_change = rng.gen_range(32..96); // Set next random interval
-                } else {
-                    cells_until_next_perm_change -= 1;
-                }
+                offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
 
                 let neighbor_count = Self::get_neighbors(x, y, width, height, offsets, my_cell, &mut neighbors);
 
@@ -215,7 +208,7 @@ impl ColonyShard {
     }
     
     fn breed(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool, rng: &mut SmallRng) -> bool {
-        let cost_per_tick = self.colony_life_info.health_cost_per_size_unit.saturating_mul(self.grid[my_cell].traits.size);
+        let cost_per_tick: u16 = (self.colony_life_info.health_cost_per_size_unit as u16).saturating_mul(self.grid[my_cell].traits.size as u16);
         if self.grid[my_cell].health <= cost_per_tick {
             return false;
         }

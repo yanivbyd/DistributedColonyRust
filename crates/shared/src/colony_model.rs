@@ -18,12 +18,12 @@ pub struct Cell {
     pub tick_bit: bool,
 
     // Cell itself
-    pub food: u8,
+    pub food: u16,
     pub extra_food_per_tick: u8,
 
     // Creature 
     pub color: Color,
-    pub health: u8,
+    pub health: u16,
 
     pub traits: Traits,
 }

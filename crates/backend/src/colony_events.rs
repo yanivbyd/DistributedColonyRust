@@ -24,7 +24,7 @@ pub enum Region {
 pub struct CreateCreatureParams {
     pub color: Color,
     pub traits: Traits,
-    pub starting_health: u8,
+    pub starting_health: u16,
 }
 
 pub struct RandomTraitParams {

@@ -30,7 +30,7 @@ impl ShardTopography {
                 
                 if data_idx < topography_data.len() && grid_idx < shard.grid.len() {
                     let value = topography_data[data_idx];
-                    shard.grid[grid_idx].food = value;
+                    shard.grid[grid_idx].food = 200;
                     shard.grid[grid_idx].extra_food_per_tick = value;
                 }
             }
