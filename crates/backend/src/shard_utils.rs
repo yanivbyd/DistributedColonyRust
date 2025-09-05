@@ -11,7 +11,9 @@ impl ShardUtils {
         dst.color = src.color;
         dst.health = src.health;
         dst.traits = src.traits;
-        dst.tick_bit = tick_bit;
+        dst.food = src.food;
+        dst.extra_food_per_tick = src.extra_food_per_tick;
+        dst.tick_bit = tick_bit;        
     }
 
     pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo, rng: &mut SmallRng) -> ColonyShard {

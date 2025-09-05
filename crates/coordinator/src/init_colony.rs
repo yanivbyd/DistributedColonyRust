@@ -10,7 +10,7 @@ use bincode;
 use crate::coordinator_storage::{CoordinatorStorage, CoordinatorInfo, ColonyStatus};
 
 const COLONY_LIFE_INFO: ColonyLifeInfo = ColonyLifeInfo { 
-    health_cost_per_size_unit: 3,
+    health_cost_per_size_unit: 2,
     eat_capacity_per_size_unit: 5,
     health_cost_if_can_kill: 5,
 };
