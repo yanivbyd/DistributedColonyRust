@@ -105,6 +105,7 @@ impl ColonyShard {
         neighbor_count: usize, next_bit: bool) -> bool 
     {
         let my_food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick);
+
         for i in 0..neighbor_count {
             let n = neighbors[i];
             let n_food = self.grid[n].food.saturating_add(self.grid[n].extra_food_per_tick);
@@ -214,7 +215,8 @@ impl ColonyShard {
     }
     
     fn breed(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool, rng: &mut SmallRng) -> bool {
-        if self.grid[my_cell].health < 200 {
+        let cost_per_tick = self.colony_life_info.health_cost_per_size_unit.saturating_mul(self.grid[my_cell].traits.size);
+        if self.grid[my_cell].health <= cost_per_tick {
             return false;
         }
         
