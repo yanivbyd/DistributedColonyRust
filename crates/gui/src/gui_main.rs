@@ -4,8 +4,8 @@ use egui_extras::RetainedImage;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use std::collections::HashMap;
 use shared::be_api::ShardLayer;
+use shared::cluster_topology::ClusterTopology;
 mod call_be;
 
 const REFRESH_INTERVAL_MS: u64 = 100;
@@ -85,7 +85,7 @@ struct BEImageApp {
     current_tab: Tab,
     shared_current_tab: Arc<Mutex<Tab>>,
     shard_config: Arc<Mutex<ShardConfig>>,
-    routing_table: Arc<HashMap<shared::be_api::Shard, (String, u16)>>,
+    cluster_topology: Arc<ClusterTopology>,
 }
 
 impl Default for BEImageApp {
@@ -96,10 +96,10 @@ impl Default for BEImageApp {
             config_guard.total_shards()
         };
         
-        // Initialize routing table first
-        let routing_table = Arc::new(call_be::fetch_routing_table_from_coordinator());
-        let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images(&shard_config.lock().unwrap(), &routing_table)));
-        let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap(), &routing_table)));
+        // Initialize cluster topology
+        let cluster_topology = Arc::new(call_be::get_cluster_topology());
+        let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images(&shard_config.lock().unwrap(), &cluster_topology)));
+        let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap(), &cluster_topology)));
         let extra_food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let can_kill = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
@@ -117,7 +117,7 @@ impl Default for BEImageApp {
             current_tab,
             shared_current_tab: Arc::new(Mutex::new(current_tab)),
             shard_config,
-            routing_table,
+            cluster_topology,
         }
     }
 }
@@ -136,7 +136,7 @@ impl App for BEImageApp {
             let ctx_clone = ctx.clone();
             let shared_current_tab = self.shared_current_tab.clone();
             let shard_config = self.shard_config.clone();
-            let routing_table = self.routing_table.clone();
+            let cluster_topology = self.cluster_topology.clone();
             thread::spawn(move || {
                 loop {
                     // Look at the selected tab and get only the info required for the current Tab
@@ -144,8 +144,8 @@ impl App for BEImageApp {
                     let config = shard_config.lock().unwrap().clone();
                     match tab {
                         Tab::Creatures => {
-                            let images = call_be::get_all_shard_retained_images(&config, &routing_table);
-                            let color_data = call_be::get_all_shard_color_data(&config, &routing_table);
+                            let images = call_be::get_all_shard_retained_images(&config, &cluster_topology);
+                            let color_data = call_be::get_all_shard_color_data(&config, &cluster_topology);
                             {
                                 let mut locked = creatures.lock().unwrap();
                                 *locked = images;
@@ -156,28 +156,28 @@ impl App for BEImageApp {
                             }
                         }
                         Tab::ExtraFood => {
-                            let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config, &routing_table);
+                            let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config, &cluster_topology);
                             {
                                 let mut locked = extra_food.lock().unwrap();
                                 *locked = extra_food_data;
                             }
                         }
                         Tab::Sizes => {
-                            let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config, &routing_table);
+                            let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config, &cluster_topology);
                             {
                                 let mut locked = sizes.lock().unwrap();
                                 *locked = sizes_data;
                             }
                         }
                         Tab::CanKill => {
-                            let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config, &routing_table);
+                            let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config, &cluster_topology);
                             {
                                 let mut locked = can_kill.lock().unwrap();
                                 *locked = can_kill_data;
                             }
                         }
                         Tab::Food => {
-                            let food_data = call_be::get_all_shard_layer_data(ShardLayer::Food, &config, &routing_table);
+                            let food_data = call_be::get_all_shard_layer_data(ShardLayer::Food, &config, &cluster_topology);
                             {
                                 let mut locked = food.lock().unwrap();
                                 *locked = food_data;

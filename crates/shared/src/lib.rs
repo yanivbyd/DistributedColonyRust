@@ -3,6 +3,7 @@ pub mod colony_events;
 pub mod colony_event_shared;
 pub mod colony_model;
 pub mod coordinator_api;
+pub mod cluster_topology;
 pub mod logging;
 pub mod metrics;
 pub mod storage;
