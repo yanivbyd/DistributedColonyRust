@@ -1,6 +1,9 @@
 mod init_colony;
 mod global_topography;
 mod coordinator_storage;
+mod coordinator_ticker;
+mod backend_client;
+mod tick_monitor;
 
 use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry};
 use shared::colony_model::Shard;
@@ -83,6 +86,8 @@ async fn main() {
     init_logging("output/logs/coordinator.log");
     log_startup("COORDINATOR");
     set_panic_hook();
+    
+    coordinator_ticker::start_coordinator_ticker();
     
     // Make initialize_colony blocking by using spawn_blocking
     task::spawn_blocking(|| {

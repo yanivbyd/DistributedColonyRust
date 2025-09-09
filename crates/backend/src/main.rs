@@ -10,7 +10,7 @@ use shared::{log_error};
 use rand::{SeedableRng, rngs::SmallRng};
 
 mod colony;
-mod ticker;
+mod be_ticker;
 mod colony_shard;
 mod shard_utils;
 mod shard_storage;
@@ -194,7 +194,7 @@ async fn main() {
     log_startup("BE");
     set_panic_hook();
     shared::metrics::start_metrics_endpoint();
-    ticker::start_ticker();
+    be_ticker::start_be_ticker();
     let addr = format!("127.0.0.1:{}", BACKEND_PORT);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
     log_debug!("[BE] Listening on {}", addr);

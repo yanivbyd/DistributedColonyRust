@@ -1,12 +1,31 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 Write simple, easy-to-read code.
 Avoid code repetition.
 Keep changes minimal and aligned with the prompt.
 Prioritize efficient yet readable code.
 Always build after doing changes, make sure no errors or warnings.
-Do not ask for chnages, always apply without asking.
+Do not ask for changes, always apply without asking.
 Logging error should be done via log_error.
+
+## Code Architecture Guidelines
+- **High-level functions** should focus on business logic and orchestration
+- **Low-level details** (TCP connections, serialization, file I/O, error handling) should be abstracted into separate helper functions
+- Functions should read like API calls, not implementation details
+- Abstract low-level operations into reusable helper functions
+
+## Rust-Specific Guidelines
+- Use the log! macro for logging in Rust code instead of crate::log!
+- Prefer using .expect over macros like log_expect for error handling
+- Use imports to refer to types like TCPStream and Request rather than fully qualified names
+- Import Request classes and refer to them by simple names instead of fully qualified shared::be_api::Request
+- Main.rs should be thin and shard-related logic should be placed in shard utils or colony modules
+- Always clean up compiler warnings in the code
+- Prefer passing random number generator objects (rng) to helper functions and using the random range function consistently
+- Place duplicate code and constants under the shared crate instead of copying code from one module to another
+- Avoid using global counters or global state
+- Include the region parameter when logging colony events in backend code
+- Do not include the [COORD] or [BE] prefix in log lines

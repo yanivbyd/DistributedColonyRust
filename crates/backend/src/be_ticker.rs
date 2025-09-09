@@ -5,7 +5,7 @@ use shared::metrics::LatencyMonitor;
 use shared::utils::new_random_generator;
 use rayon::prelude::*;
 
-pub fn start_ticker() {
+pub fn start_be_ticker() {
     std::thread::spawn(move || {
         loop {
             if Colony::is_initialized() {
@@ -49,4 +49,4 @@ pub fn start_ticker() {
             std::thread::sleep(std::time::Duration::from_millis(25));
         }
     });
-} 
+}
