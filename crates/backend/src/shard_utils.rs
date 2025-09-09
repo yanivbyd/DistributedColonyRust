@@ -105,37 +105,6 @@ impl ShardUtils {
         }
     }
 
-    pub fn are_shards_adjacent(shard1: &Shard, shard2: &Shard) -> bool {
-        // Check if shards are adjacent (share a border)
-        // Shards are adjacent if they share exactly one edge
-        
-        // Check if shards are directly above/below
-        if shard1.x == shard2.x && shard1.width == shard2.width {
-            // shard1 is above shard2
-            if shard1.y + shard1.height == shard2.y {
-                return true;
-            }
-            // shard2 is above shard1
-            if shard2.y + shard2.height == shard1.y {
-                return true;
-            }
-        }
-        
-        // Check if shards are directly left/right
-        if shard1.y == shard2.y && shard1.height == shard2.height {
-            // shard1 is to the left of shard2
-            if shard1.x + shard1.width == shard2.x {
-                return true;
-            }
-            // shard2 is to the left of shard1
-            if shard2.x + shard2.width == shard1.x {
-                return true;
-            }
-        }
-        
-        false
-    }
-
     pub fn updated_shard_contents(my_shard: &mut ColonyShard, updated_shard_req: &UpdatedShardContentsRequest) {
         let my = &my_shard.shard;
         let other = &updated_shard_req.updated_shard;

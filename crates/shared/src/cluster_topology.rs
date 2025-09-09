@@ -127,5 +127,50 @@ impl ClusterTopology {
     pub fn backend_host_count(&self) -> usize {
         self.backend_hosts.len()
     }
+    
+    pub fn get_single_backend_host(&self) -> &HostInfo {
+        if self.backend_hosts.is_empty() {
+            panic!("No backend hosts found in cluster topology");
+        }
+        &self.backend_hosts[0]
+    }
+    
+    /// Get all shards that are adjacent to the given shard
+    pub fn get_adjacent_shards(&self, shard: &Shard) -> Vec<Shard> {
+        let mut adjacent_shards = Vec::new();
+        
+        for other_shard in self.get_all_shards() {
+            if self.are_shards_adjacent(shard, &other_shard) {
+                adjacent_shards.push(other_shard);
+            }
+        }
+        
+        adjacent_shards
+    }
+    
+    fn are_shards_adjacent(&self, shard1: &Shard, shard2: &Shard) -> bool {
+        // Shards are adjacent if they share an edge
+        let left1 = shard1.x;
+        let right1 = shard1.x + shard1.width;
+        let top1 = shard1.y;
+        let bottom1 = shard1.y + shard1.height;
+        
+        let left2 = shard2.x;
+        let right2 = shard2.x + shard2.width;
+        let top2 = shard2.y;
+        let bottom2 = shard2.y + shard2.height;
+        
+        // Check for horizontal adjacency (left-right)
+        let horizontally_adjacent = (right1 == left2) || (right2 == left1);
+        
+        // Check for vertical adjacency (top-bottom)
+        let vertically_adjacent = (bottom1 == top2) || (bottom2 == top1);
+        
+        // Check for corner adjacency (diagonal)
+        let corner_adjacent = (right1 == left2 && (bottom1 == top2 || top1 == bottom2)) ||
+                             (left1 == right2 && (bottom1 == top2 || top1 == bottom2));
+        
+        horizontally_adjacent || vertically_adjacent || corner_adjacent
+    }
 }
 
