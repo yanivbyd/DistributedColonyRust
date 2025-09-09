@@ -38,7 +38,7 @@ fn call_label(response: &BackendResponse) -> &'static str {
         BackendResponse::GetShardLayer(_) => "GetShardLayer",
         BackendResponse::InitColonyShard(_) => "InitColonyShard",
         BackendResponse::GetColonyInfo(_) => "GetColonyInfo",
-        BackendResponse::UpdatedShardContents(_) => todo!(),
+        BackendResponse::UpdatedShardContents(_) => "UpdatedShardContents",
         BackendResponse::InitShardTopography(_) => "InitShardTopography",
         BackendResponse::GetShardCurrentTick(_) => "GetShardCurrentTick",
         BackendResponse::ApplyEvent(_) => "ApplyEvent",
@@ -153,9 +153,20 @@ async fn handle_get_colony_info(_req: GetColonyInfoRequest) -> BackendResponse {
     }
 }
 
-async fn handle_updated_shard_contents(_req: UpdatedShardContentsRequest) -> BackendResponse {
+async fn handle_updated_shard_contents(req: UpdatedShardContentsRequest) -> BackendResponse {
     log_debug!("UpdatedShardContents request: shard=({},{},{},{})", req.updated_shard.x, req.updated_shard.y, req.updated_shard.width, req.updated_shard.height);
-    // TODO: Implement shard content update logic
+    
+    if !Colony::is_initialized() {
+        return BackendResponse::UpdatedShardContents(UpdatedShardContentsResponse {});
+    }
+    
+    let mut colony = Colony::instance();    
+    for shard in colony.shards.iter_mut() {
+        if ShardUtils::is_adjacent_shard(&req.updated_shard, &shard.shard) {
+            ShardUtils::updated_shard_contents(shard, &req);
+        }
+    }
+    
     BackendResponse::UpdatedShardContents(UpdatedShardContentsResponse {})
 }
 

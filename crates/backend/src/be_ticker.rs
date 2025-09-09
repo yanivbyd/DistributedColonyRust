@@ -40,9 +40,9 @@ pub fn start_be_ticker() {
                     // Get this backend's host using actual hostname and port
                     let this_backend_host = HostInfo::new(get_backend_hostname().to_string(), get_backend_port());
                                             
-                    // Update local shards that are in the adjacent_shards list
+                    // Update local shards that are adjacent to the updated shard
                     for shard in colony.shards.iter_mut() {
-                        if adjacent_shards.contains(&shard.shard) {
+                        if ShardUtils::is_adjacent_shard(&req.updated_shard, &shard.shard) {
                             ShardUtils::updated_shard_contents(shard, req);
                         }
                     }

@@ -244,4 +244,24 @@ impl ShardUtils {
         (tick_bit_true_count, tick_bit_false_count)
     }
 
+    pub fn is_adjacent_shard(shard1: &Shard, shard2: &Shard) -> bool {
+        // Check if shard2 is directly above shard1
+        if shard2.x == shard1.x && shard2.y + shard2.height == shard1.y && shard2.width == shard1.width {
+            return true;
+        }
+        // Check if shard2 is directly below shard1
+        if shard2.x == shard1.x && shard1.y + shard1.height == shard2.y && shard2.width == shard1.width {
+            return true;
+        }
+        // Check if shard2 is directly to the left of shard1
+        if shard2.y == shard1.y && shard2.x + shard2.width == shard1.x && shard2.height == shard1.height {
+            return true;
+        }
+        // Check if shard2 is directly to the right of shard1
+        if shard2.y == shard1.y && shard1.x + shard1.width == shard2.x && shard2.height == shard1.height {
+            return true;
+        }
+        false
+    }
+
 } 
