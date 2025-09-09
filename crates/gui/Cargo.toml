@@ -3,6 +3,10 @@ name = "gui"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "gui"
+path = "src/gui_main.rs"
+
 [dependencies]
 eframe = "0.27"
 reqwest = { version = "0.12", features = ["json", "blocking"] }

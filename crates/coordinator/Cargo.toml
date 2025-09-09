@@ -3,6 +3,10 @@ name = "coordinator"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "coordinator"
+path = "src/coordinator_main.rs"
+
 [dependencies]
 shared = { path = "../shared" }
 tokio = { version = "1.0", features = ["full"] }

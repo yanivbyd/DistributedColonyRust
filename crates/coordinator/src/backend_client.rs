@@ -69,7 +69,7 @@ fn get_unique_backends() -> Vec<(String, u16)> {
 pub fn broadcast_event_to_backends(event: ColonyEvent) -> bool {
     let backends = get_unique_backends();
     let mut success_count = 0;
-    let total_count = backends.len();
+    let _total_count = backends.len();
     
     for (hostname, port) in backends {
         let addr = format!("{}:{}", hostname, port);
