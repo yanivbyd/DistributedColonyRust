@@ -1,23 +1,16 @@
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
 use crate::colony_events::{apply_event, log_event, randomize_event};
-use shared::log;
 use shared::metrics::LatencyMonitor;
 use shared::utils::new_random_generator;
 use rayon::prelude::*;
 
 pub fn start_ticker() {
     std::thread::spawn(move || {
-        let mut tick_count: u64 = 1;
         loop {
             if Colony::is_initialized() {
                 let mut colony = Colony::instance();
-                if tick_count == 1 || tick_count % 10 == 0 {
-                    log!("[BE] Ticker: tick {}", colony.shards[0].get_current_tick());
-                }
-                if !colony.shards.is_empty() {
-                    tick_count += 1;
-                }
+                let current_tick = colony.shards[0].get_current_tick();
 
                 // First phase: tick all shards in parallel
                 colony.shards.par_iter_mut().for_each(|shard| {
@@ -43,11 +36,11 @@ pub fn start_ticker() {
                 // Randomize event and apply it (locally)
                 let mut event_rng = new_random_generator();
                 if let Some(event) = randomize_event(&colony, &mut event_rng) {
-                    log_event(&event);
+                    log_event(&event, current_tick);
                     apply_event(&mut event_rng, &mut colony, &event);
                 }
 
-                if tick_count % 100 == 0 {
+                if current_tick % 250 == 0 {
                     for shard in &colony.shards {
                         ShardUtils::store_shard(&shard);
                     }

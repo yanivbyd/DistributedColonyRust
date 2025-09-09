@@ -113,27 +113,27 @@ where
     }    
 }
 
-pub fn log_event(event: &ColonyEvent) {
+pub fn log_event(event: &ColonyEvent, current_tick: u64) {
     match event {
         ColonyEvent::LocalDeath(region) => {
-            log_local_event(event, region);
+            log_local_event(event, region, current_tick);
         },
         ColonyEvent::RandomTrait(region, _params) => {
-            log_local_event(event, region);
+            log_local_event(event, region, current_tick);
         },
         ColonyEvent::CreateCreature(region, _params) => {
-            log_local_event(event, region);
+            log_local_event(event, region, current_tick);
         },
         ColonyEvent::ChangeExtraFoodPerTick(amount) => {
-            log!("Event: ChangeExtraFoodPerTick by {}", amount);
+            log!("[{}] Event: ChangeExtraFoodPerTick by {}", current_tick, amount);
         },
         ColonyEvent::Extinction() => {
-            log!("Event: Extinction");
+            log!("[{}] Event: Extinction", current_tick);
         }
     }
 }
 
-pub fn log_local_event(event: &ColonyEvent, region: &Region) {
+pub fn log_local_event(event: &ColonyEvent, region: &Region, current_tick: u64) {
     let event_details = match event {
         ColonyEvent::LocalDeath(_region) => "LocalDeath".to_string(),
         ColonyEvent::RandomTrait(_region, params) => format!("RandomTrait, traits {:?}", 
@@ -156,7 +156,7 @@ pub fn log_local_event(event: &ColonyEvent, region: &Region) {
         }
     };
     
-    log!("Event: {} {}", event_details, region_details);
+    log!("[{}] Event: {} {}", current_tick, event_details, region_details);
 }
 
 fn randomize_colony_event(colony: &Colony, rng: &mut SmallRng) -> ColonyEvent {

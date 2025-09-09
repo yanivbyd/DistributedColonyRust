@@ -1,10 +1,11 @@
 #!/bin/bash
 
-echo "🔄 Killing all backend and coordinator processes..."
+echo "🔄 Killing all backend, coordinator, and GUI processes..."
 
 # First try graceful termination
 pkill -x backend || true
 pkill -x coordinator || true
+pkill -x gui || true
 
 # Wait a moment for graceful termination
 sleep 2
@@ -12,6 +13,7 @@ sleep 2
 # Force kill any remaining processes
 pkill -9 -x backend || true
 pkill -9 -x coordinator || true
+pkill -9 -x gui || true
 
 # Also kill by port usage as a backup
 echo "🔫 Force killing processes by port usage..."
