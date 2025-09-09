@@ -1,6 +1,7 @@
 use serde::{Serialize, Deserialize};
 use crate::colony_model::Shard;
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostInfo {
@@ -40,14 +41,18 @@ pub struct ClusterTopology {
 }
 
 impl ClusterTopology {
-    pub fn new_fixed_topology() -> Self {
+    pub fn get_instance() -> &'static ClusterTopology {
+        static INSTANCE: OnceLock<ClusterTopology> = OnceLock::new();
+        INSTANCE.get_or_init(|| Self::new_fixed_topology())
+    }
+    
+    fn new_fixed_topology() -> Self {
         let coordinator_host = HostInfo::new("127.0.0.1".to_string(), 8083);
         let backend_host = HostInfo::new("127.0.0.1".to_string(), 8082);
         let shards = Self::create_fixed_shards();
         
         let mut shard_to_host = HashMap::new();
         
-        // All shards are hosted by the single backend
         for shard in &shards {
             shard_to_host.insert(*shard, backend_host.clone());
         }

@@ -1,7 +1,8 @@
 use shared::log;
-use shared::be_api::{BackendRequest, BackendResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse, GetColonyInfoRequest, GetColonyInfoResponse, BACKEND_PORT};
+use shared::be_api::{BackendRequest, BackendResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse, GetColonyInfoRequest, GetColonyInfoResponse};
 use shared::colony_events::ColonyEvent;
 use shared::colony_model::Shard;
+use shared::cluster_topology::ClusterTopology;
 use std::net::TcpStream;
 use std::io::{Read, Write};
 use bincode;
@@ -25,7 +26,9 @@ fn receive_response<T: serde::de::DeserializeOwned>(stream: &mut TcpStream) -> R
 }
 
 pub fn call_backend_for_tick_count(shard: Shard) -> Option<u64> {
-    let addr = format!("127.0.0.1:{}", BACKEND_PORT);
+    let topology = ClusterTopology::get_instance();
+    let host_info = topology.get_host_for_shard(&shard)?;
+    let addr = host_info.to_address();
     let mut stream = TcpStream::connect(&addr).ok()?;
     
     let request = BackendRequest::GetShardCurrentTick(GetShardCurrentTickRequest { shard });
@@ -51,19 +54,11 @@ pub fn call_backend_for_tick_count(shard: Shard) -> Option<u64> {
 }
 
 fn get_unique_backends() -> Vec<(String, u16)> {
-    const WIDTH_IN_SHARDS: i32 = 5;
-    const HEIGHT_IN_SHARDS: i32 = 3;
-    
-    let mut backends = std::collections::HashSet::new();
-    
-    // Currently all shards map to the same backend, but this structure supports multiple backends
-    for _y in 0..HEIGHT_IN_SHARDS {
-        for _x in 0..WIDTH_IN_SHARDS {
-            backends.insert(("127.0.0.1".to_string(), BACKEND_PORT));
-        }
-    }
-    
-    backends.into_iter().collect()
+    let topology = ClusterTopology::get_instance();
+    topology.get_all_backend_hosts()
+        .iter()
+        .map(|host_info| (host_info.hostname.clone(), host_info.port))
+        .collect()
 }
 
 pub fn broadcast_event_to_backends(event: ColonyEvent) -> bool {
@@ -112,7 +107,13 @@ pub fn broadcast_event_to_backends(event: ColonyEvent) -> bool {
 }
 
 pub fn call_backend_get_colony_info() -> Option<(i32, i32)> {
-    let addr = format!("127.0.0.1:{}", BACKEND_PORT);
+    let topology = ClusterTopology::get_instance();
+    let backend_hosts = topology.get_all_backend_hosts();
+    if backend_hosts.is_empty() {
+        return None;
+    }
+    let host_info = &backend_hosts[0];
+    let addr = host_info.to_address();
     let mut stream = TcpStream::connect(&addr).ok()?;
     
     let request = BackendRequest::GetColonyInfo(GetColonyInfoRequest);

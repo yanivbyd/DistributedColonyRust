@@ -7,8 +7,7 @@ mod tick_monitor;
 mod colony_event_generator;
 
 use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry};
-use shared::colony_model::Shard;
-use shared::be_api::BACKEND_PORT;
+use shared::cluster_topology::ClusterTopology;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -41,25 +40,16 @@ async fn send_response(framed: &mut FramedStream, response: CoordinatorResponse)
 }
 
 async fn handle_get_routing_table() -> CoordinatorResponse {
-    const WIDTH_IN_SHARDS: i32 = 5;
-    const HEIGHT_IN_SHARDS: i32 = 3;
-    const SHARD_WIDTH: i32 = 250;
-    const SHARD_HEIGHT: i32 = 250;
-    
+    let topology = ClusterTopology::get_instance();
     let mut entries = Vec::new();
-    for y in 0..HEIGHT_IN_SHARDS {
-        for x in 0..WIDTH_IN_SHARDS {
-            entries.push(RoutingEntry {
-                shard: Shard {
-                    x: x * SHARD_WIDTH,
-                    y: y * SHARD_HEIGHT,
-                    width: SHARD_WIDTH,
-                    height: SHARD_HEIGHT,
-                },
-                hostname: "127.0.0.1".to_string(),
-                port: BACKEND_PORT,
-            });
-        }
+    
+    for shard in topology.get_all_shards() {
+        let host_info = topology.get_host_for_shard(&shard).unwrap();
+        entries.push(RoutingEntry {
+            shard,
+            hostname: host_info.hostname.clone(),
+            port: host_info.port,
+        });
     }
 
     CoordinatorResponse::GetRoutingTableResponse { entries }

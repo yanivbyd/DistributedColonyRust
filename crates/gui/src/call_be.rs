@@ -7,8 +7,8 @@ use std::net::TcpStream;
 use std::io::{Read, Write};
 use bincode;
 
-pub fn get_cluster_topology() -> ClusterTopology {
-    ClusterTopology::new_fixed_topology()
+pub fn get_cluster_topology() -> &'static ClusterTopology {
+    ClusterTopology::get_instance()
 }
 
 fn get_shard_endpoint(topology: &ClusterTopology, shard: Shard) -> HostInfo {

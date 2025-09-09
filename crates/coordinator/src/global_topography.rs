@@ -1,9 +1,10 @@
 // Global topography module for the coordinator
 // This module will handle global topography-related functionality
 
-use shared::be_api::{Shard, BackendRequest, BackendResponse, InitShardTopographyRequest, InitShardTopographyResponse, BACKEND_PORT};
+use shared::be_api::{Shard, BackendRequest, BackendResponse, InitShardTopographyRequest, InitShardTopographyResponse};
 use shared::{log, log_error};
 use shared::utils::new_random_generator;
+use shared::cluster_topology::ClusterTopology;
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bincode;
@@ -44,7 +45,17 @@ impl GlobalTopography {
             topography_data,
         });
 
-        if let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{}", BACKEND_PORT)).await {
+        let topology = ClusterTopology::get_instance();
+        let host_info = match topology.get_host_for_shard(&shard) {
+            Some(host) => host,
+            None => {
+                log_error!("Shard not found in cluster topology: ({},{},{},{})", 
+                    shard.x, shard.y, shard.width, shard.height);
+                return;
+            }
+        };
+        
+        if let Ok(mut stream) = TcpStream::connect(host_info.to_address()).await {
             if let Err(e) = Self::send_message(&mut stream, &request).await {
                 log_error!("Failed to send topography to shard ({},{},{},{}): {}", 
                     shard.x, shard.y, shard.width, shard.height, e);
