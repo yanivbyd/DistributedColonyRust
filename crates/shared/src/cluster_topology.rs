@@ -128,13 +128,6 @@ impl ClusterTopology {
         self.backend_hosts.len()
     }
     
-    pub fn get_single_backend_host(&self) -> &HostInfo {
-        if self.backend_hosts.is_empty() {
-            panic!("No backend hosts found in cluster topology");
-        }
-        &self.backend_hosts[0]
-    }
-    
     /// Get all shards that are adjacent to the given shard
     pub fn get_adjacent_shards(&self, shard: &Shard) -> Vec<Shard> {
         let mut adjacent_shards = Vec::new();

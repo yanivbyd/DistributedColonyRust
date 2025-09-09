@@ -3,7 +3,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, GetShardLayerRequest, GetShardLayerResponse, InitShardTopographyRequest, InitShardTopographyResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse};
+use shared::be_api::{BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, GetShardLayerRequest, GetShardLayerResponse, InitShardTopographyRequest, InitShardTopographyResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
@@ -16,10 +16,12 @@ mod shard_utils;
 mod shard_storage;
 mod be_colony_events;
 mod shard_topography;
+mod backend_config;
 
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
 use crate::shard_topography::ShardTopography;
+
 
 // Debug logging macro that does nothing by default
 macro_rules! log_debug {
@@ -47,17 +49,17 @@ async fn send_response(framed: &mut FramedStream, response: BackendResponse) {
     let encoded = bincode::serialize(&response).expect("Failed to serialize BackendResponse");
     let label = call_label(&response);
     if let Err(e) = framed.send(encoded.into()).await {
-        log_error!("[BE] Failed to send {} response: {}", label, e);
+        log_error!("Failed to send {} response: {}", label, e);
     } else {
-        log_debug!("[BE] Sent {} response", label);
+        log_debug!("Sent {} response", label);
     }
 }
 
 async fn handle_client(socket: TcpStream) {
-    log_debug!("[BE] handle_client: new connection");
+    log_debug!("handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
     while let Some(Ok(bytes)) = framed.next().await {
-        log_debug!("[BE] handle_client: received bytes");
+        log_debug!("handle_client: received bytes");
         let response = match bincode::deserialize::<BackendRequest>(&bytes) {
             Ok(BackendRequest::Ping) => handle_ping().await,
             Ok(BackendRequest::InitColony(req)) => handle_init_colony(req).await,
@@ -70,13 +72,13 @@ async fn handle_client(socket: TcpStream) {
             Ok(BackendRequest::GetShardCurrentTick(req)) => handle_get_shard_current_tick(req).await,
             Ok(BackendRequest::ApplyEvent(req)) => handle_apply_event(req).await,
             Err(e) => {
-                log_error!("[BE] Failed to deserialize BackendRequest: {}", e);
+                log_error!("Failed to deserialize BackendRequest: {}", e);
                 continue;
             }
         };
         send_response(&mut framed, response).await;
     }
-    log_debug!("[BE] handle_client: connection closed");
+    log_debug!("handle_client: connection closed");
 }
 
 async fn handle_ping() -> BackendResponse {
@@ -107,7 +109,7 @@ async fn handle_init_colony_shard(req: InitColonyShardRequest) -> BackendRespons
 }
 
 async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {
-    log_debug!("[BE] GetShardImage request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
+    log_debug!("GetShardImage request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
     if ! Colony::is_initialized() {
         return BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable);
     }
@@ -123,7 +125,7 @@ async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {
 }
 
 async fn handle_get_shard_layer(req: GetShardLayerRequest) -> BackendResponse {
-    log_debug!("[BE] GetShardLayer request: shard=({},{},{},{}), layer={:?}", req.shard.x, req.shard.y, req.shard.width, req.shard.height, req.layer);
+    log_debug!("GetShardLayer request: shard=({},{},{},{}), layer={:?}", req.shard.x, req.shard.y, req.shard.width, req.shard.height, req.layer);
     if ! Colony::is_initialized() {
         return BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable);
     }
@@ -152,13 +154,13 @@ async fn handle_get_colony_info(_req: GetColonyInfoRequest) -> BackendResponse {
 }
 
 async fn handle_updated_shard_contents(_req: UpdatedShardContentsRequest) -> BackendResponse {
-    log_debug!("[BE] UpdatedShardContents request: shard=({},{},{},{})", req.updated_shard.x, req.updated_shard.y, req.updated_shard.width, req.updated_shard.height);
+    log_debug!("UpdatedShardContents request: shard=({},{},{},{})", req.updated_shard.x, req.updated_shard.y, req.updated_shard.width, req.updated_shard.height);
     // TODO: Implement shard content update logic
     BackendResponse::UpdatedShardContents(UpdatedShardContentsResponse {})
 }
 
 async fn handle_init_shard_topography(req: InitShardTopographyRequest) -> BackendResponse {
-    log_debug!("[BE] InitShardTopography request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
+    log_debug!("InitShardTopography request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
     
     if !Colony::is_initialized() {
         return BackendResponse::InitShardTopography(InitShardTopographyResponse::ShardNotInitialized);
@@ -203,23 +205,48 @@ async fn handle_apply_event(req: ApplyEventRequest) -> BackendResponse {
 
 #[tokio::main]
 async fn main() {
+    // Parse command line arguments
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() != 3 {
+        eprintln!("Usage: {} <hostname> <port>", args[0]);
+        eprintln!("Example: {} 127.0.0.1 8082", args[0]);
+        std::process::exit(1);
+    }
+    
+    let hostname = args[1].clone();
+    let port: u16 = args[2].parse().expect("Port must be a valid number");
+    
+    // Initialize global variables
+    backend_config::set_backend_hostname(hostname.clone());
+    backend_config::set_backend_port(port);
+    
+    // Validate that this backend's hostname and port are in the cluster topology
+    let topology = shared::cluster_topology::ClusterTopology::get_instance();
+    let backend_hosts = topology.get_all_backend_hosts();
+    let this_host = shared::cluster_topology::HostInfo::new(hostname.clone(), port);
+    
+    if !backend_hosts.contains(&this_host) {
+        panic!("Backend hostname '{}' and port '{}' not found in cluster topology. Available backend hosts: {:?}", 
+               hostname, port, backend_hosts.iter().map(|h| h.to_address()).collect::<Vec<_>>());
+    }
+    
     init_logging("output/logs/be.log");
     log_startup("BE");
     set_panic_hook();
     shared::metrics::start_metrics_endpoint();
     be_ticker::start_be_ticker();
-    let addr = format!("127.0.0.1:{}", BACKEND_PORT);
+    let addr = format!("{}:{}", hostname, port);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
-    log_debug!("[BE] Listening on {}", addr);
+    log_debug!("Listening on {}", addr);
 
     loop {
-        log_debug!("[BE] Waiting for connection...");
+        log_debug!("Waiting for connection...");
         match listener.accept().await {
             Ok((socket, _)) => {
-                log_debug!("[BE] Accepted connection");
+                log_debug!("Accepted connection");
                 tokio::spawn(handle_client(socket));
             }
-            Err(e) => log_error!("[BE] Connection failed: {}", e),
+            Err(e) => log_error!("Connection failed: {}", e),
         }
     }
 } 

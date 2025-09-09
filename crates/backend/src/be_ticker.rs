@@ -1,8 +1,10 @@
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
+// Import functions from backend_config
+use crate::backend_config::{get_backend_hostname, get_backend_port};
 use shared::metrics::LatencyMonitor;
 use shared::utils::new_random_generator;
-use shared::cluster_topology::ClusterTopology;
+use shared::cluster_topology::{ClusterTopology, HostInfo};
 use rayon::prelude::*;
 
 pub fn start_be_ticker() {
@@ -35,8 +37,8 @@ pub fn start_be_ticker() {
                     let adjacent_shards_vec: Vec<_> = adjacent_shards.iter().cloned().collect();
                     let all_hosts = topology.get_backend_hosts_for_shards(&adjacent_shards_vec);
                     
-                    // Get this backend's host (single backend host)
-                    let this_backend_host = topology.get_single_backend_host();
+                    // Get this backend's host using actual hostname and port
+                    let this_backend_host = HostInfo::new(get_backend_hostname().to_string(), get_backend_port());
                                             
                     // Update local shards that are in the adjacent_shards list
                     for shard in colony.shards.iter_mut() {
@@ -46,7 +48,7 @@ pub fn start_be_ticker() {
                     }
     
                     let external_hosts: Vec<_> = all_hosts.iter()
-                        .filter(|host| host != &this_backend_host)
+                        .filter(|host| **host != this_backend_host)
                         .collect();
                     if !external_hosts.is_empty() {
                         panic!("Not implemented yet");

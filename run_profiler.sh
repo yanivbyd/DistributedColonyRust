@@ -13,7 +13,8 @@ cargo flamegraph \
   --bin backend \
   --title "Backend CPU Profile" \
   --subtitle "Backend Performance Analysis" \
-  -o "${SVG_OUT}" &
+  -o "${SVG_OUT}" \
+  -- 127.0.0.1 8082 &
 FLAMEGRAPH_PID=$!
 
 # Wait for backend (launched by cargo-flamegraph) to open its port
