@@ -1,6 +1,5 @@
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
-use crate::colony_events::{apply_event, log_event, randomize_event};
 use shared::metrics::LatencyMonitor;
 use shared::utils::new_random_generator;
 use rayon::prelude::*;
@@ -31,13 +30,6 @@ pub fn start_be_ticker() {
                             ShardUtils::updated_shard_contents(shard, req);
                         }
                     }
-                }
-
-                // Randomize event and apply it (locally)
-                let mut event_rng = new_random_generator();
-                if let Some(event) = randomize_event(&colony, &mut event_rng) {
-                    log_event(&event, current_tick);
-                    apply_event(&mut event_rng, &mut colony, &event);
                 }
 
                 if current_tick % 250 == 0 {

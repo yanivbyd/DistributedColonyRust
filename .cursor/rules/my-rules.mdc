@@ -10,6 +10,7 @@ Prioritize efficient yet readable code.
 Always build after doing changes, make sure no errors or warnings.
 Do not ask for changes, always apply without asking.
 Logging error should be done via log_error.
+Do not run the crates - only check if they build without errors/warnings.
 
 ## Code Architecture Guidelines
 - **High-level functions** should focus on business logic and orchestration

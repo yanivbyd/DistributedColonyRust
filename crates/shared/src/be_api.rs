@@ -6,6 +6,7 @@ pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
 
 // Re-export colony model types for backward compatibility
 pub use crate::colony_model::{Color, Cell, ColonyLifeInfo, Shard, ShardLayer, Traits};
+pub use crate::colony_events::ColonyEvent;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum BackendRequest {
@@ -18,6 +19,7 @@ pub enum BackendRequest {
     UpdatedShardContents(UpdatedShardContentsRequest),
     InitShardTopography(InitShardTopographyRequest),
     GetShardCurrentTick(GetShardCurrentTickRequest),
+    ApplyEvent(ApplyEventRequest),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,6 +33,7 @@ pub enum BackendResponse {
     UpdatedShardContents(UpdatedShardContentsResponse),
     InitShardTopography(InitShardTopographyResponse),
     GetShardCurrentTick(GetShardCurrentTickResponse),
+    ApplyEvent(ApplyEventResponse),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -134,4 +137,15 @@ pub enum GetShardCurrentTickResponse {
     },
     ColonyNotInitialized,
     ShardNotAvailable,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ApplyEventRequest {
+    pub event: ColonyEvent,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum ApplyEventResponse {
+    Ok,
+    ColonyNotInitialized,
 }

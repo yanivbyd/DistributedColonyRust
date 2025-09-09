@@ -4,6 +4,7 @@ mod coordinator_storage;
 mod coordinator_ticker;
 mod backend_client;
 mod tick_monitor;
+mod colony_event_generator;
 
 use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry};
 use shared::colony_model::Shard;

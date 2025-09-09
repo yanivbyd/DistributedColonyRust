@@ -3,7 +3,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, GetShardLayerRequest, GetShardLayerResponse, InitShardTopographyRequest, InitShardTopographyResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse};
+use shared::be_api::{BACKEND_PORT, BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, GetShardLayerRequest, GetShardLayerResponse, InitShardTopographyRequest, InitShardTopographyResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
@@ -14,7 +14,7 @@ mod be_ticker;
 mod colony_shard;
 mod shard_utils;
 mod shard_storage;
-mod colony_events;
+mod be_colony_events;
 mod shard_topography;
 
 use crate::colony::Colony;
@@ -39,6 +39,7 @@ fn call_label(response: &BackendResponse) -> &'static str {
         BackendResponse::UpdatedShardContents(_) => todo!(),
         BackendResponse::InitShardTopography(_) => "InitShardTopography",
         BackendResponse::GetShardCurrentTick(_) => "GetShardCurrentTick",
+        BackendResponse::ApplyEvent(_) => "ApplyEvent",
     }
 }
 
@@ -67,6 +68,7 @@ async fn handle_client(socket: TcpStream) {
             Ok(BackendRequest::UpdatedShardContents(req)) => handle_updated_shard_contents(req).await,
             Ok(BackendRequest::InitShardTopography(req)) => handle_init_shard_topography(req).await,
             Ok(BackendRequest::GetShardCurrentTick(req)) => handle_get_shard_current_tick(req).await,
+            Ok(BackendRequest::ApplyEvent(req)) => handle_apply_event(req).await,
             Err(e) => {
                 log_error!("[BE] Failed to deserialize BackendRequest: {}", e);
                 continue;
@@ -185,6 +187,17 @@ async fn handle_get_shard_current_tick(req: GetShardCurrentTickRequest) -> Backe
         } else {
             BackendResponse::GetShardCurrentTick(GetShardCurrentTickResponse::ShardNotAvailable)
         }
+    }
+}
+
+async fn handle_apply_event(req: ApplyEventRequest) -> BackendResponse {
+    if !Colony::is_initialized() {
+        BackendResponse::ApplyEvent(ApplyEventResponse::ColonyNotInitialized)
+    } else {
+        let mut colony = Colony::instance();
+        let mut rng = shared::utils::new_random_generator();
+        crate::be_colony_events::apply_event(&mut rng, &mut colony, &req.event);
+        BackendResponse::ApplyEvent(ApplyEventResponse::Ok)
     }
 }
 

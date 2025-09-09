@@ -1,43 +1,7 @@
 use crate::{colony::Colony, colony_shard::WHITE_COLOR};
 
 use rand::{rngs::SmallRng, Rng};
-use shared::{be_api::{Color, Shard, Traits}, log, utils::{random_chance, random_color}};
-
-pub struct Circle {
-    pub x: i32,
-    pub y: i32,
-    pub radius: i32,
-}
-
-pub struct Ellipse {
-    pub x: i32,
-    pub y: i32,
-    pub radius_x: i32,
-    pub radius_y: i32,
-}
-
-pub enum Region {
-    Circle(Circle),
-    Ellipse(Ellipse),
-}
-
-pub struct CreateCreatureParams {
-    pub color: Color,
-    pub traits: Traits,
-    pub starting_health: u16,
-}
-
-pub struct RandomTraitParams {
-    pub traits: Traits,
-}
-
-pub enum ColonyEvent {
-    LocalDeath(Region),
-    RandomTrait(Region, RandomTraitParams),
-    CreateCreature(Region, CreateCreatureParams),
-    ChangeExtraFoodPerTick(i8),
-    Extinction()
-}
+use shared::{be_api::Shard, colony_events::{ColonyEvent, Region}};
 
 fn point_inside_region(x: i32, y: i32, region: &Region) -> bool {
     match region {
@@ -113,106 +77,7 @@ where
     }    
 }
 
-pub fn log_event(event: &ColonyEvent, current_tick: u64) {
-    match event {
-        ColonyEvent::LocalDeath(region) => {
-            log_local_event(event, region, current_tick);
-        },
-        ColonyEvent::RandomTrait(region, _params) => {
-            log_local_event(event, region, current_tick);
-        },
-        ColonyEvent::CreateCreature(region, _params) => {
-            log_local_event(event, region, current_tick);
-        },
-        ColonyEvent::ChangeExtraFoodPerTick(amount) => {
-            log!("[{}] Event: ChangeExtraFoodPerTick by {}", current_tick, amount);
-        },
-        ColonyEvent::Extinction() => {
-            log!("[{}] Event: Extinction", current_tick);
-        }
-    }
-}
 
-pub fn log_local_event(event: &ColonyEvent, region: &Region, current_tick: u64) {
-    let event_details = match event {
-        ColonyEvent::LocalDeath(_region) => "LocalDeath".to_string(),
-        ColonyEvent::RandomTrait(_region, params) => format!("RandomTrait, traits {:?}", 
-            params.traits),
-        ColonyEvent::CreateCreature(_region, params) => format!("CreateCreature, color {:?}, traits {:?}, health {}", 
-            params.color, params.traits, params.starting_health),
-        _ => {
-            panic!("should not be called");
-        }
-    };
-    
-    let region_details = match region {
-        Region::Circle(circle) => {
-            format!("(Circle) at ({:.1}, {:.1}) with radius {:.1}", 
-                circle.x, circle.y, circle.radius)
-        },
-        Region::Ellipse(ellipse) => {
-            format!("(Ellipse) at ({:.1}, {:.1}) with radius ({:.1}, {:.1})", 
-                ellipse.x, ellipse.y, ellipse.radius_x, ellipse.radius_y)
-        }
-    };
-    
-    log!("[{}] Event: {} {}", current_tick, event_details, region_details);
-}
-
-fn randomize_colony_event(colony: &Colony, rng: &mut SmallRng) -> ColonyEvent {
-    match rng.gen_range(0..3) {
-        0 => {
-            ColonyEvent::LocalDeath(randomize_event_region(colony, rng))
-        },
-        1 => {
-            ColonyEvent::RandomTrait(randomize_event_region(colony, rng), RandomTraitParams {
-                traits: Traits { size: rng.gen_range(1..30), can_kill: rng.gen_bool(0.5) },
-            })
-        },
-        _ => {
-            ColonyEvent::CreateCreature(randomize_event_region(colony, rng), CreateCreatureParams {
-                color: random_color(rng),
-                traits: Traits { size: rng.gen_range(1..30), can_kill: rng.gen_bool(0.5) },
-                starting_health: 250,
-            })
-        }
-    }
-}
-
-fn randomize_event_region(colony: &Colony, rng: &mut SmallRng) -> Region {
-    match rng.gen_range(0..2) {
-        0 => {
-            Region::Circle(Circle {
-                x: (rng.gen_range(0..colony._width + 200) - 100) as i32,
-                y: (rng.gen_range(0..colony._height + 200) - 100) as i32,
-                radius: rng.gen_range(5..30) as i32,
-            })
-        },
-        _ => {
-            Region::Ellipse(Ellipse {
-                x: (rng.gen_range(0..colony._width + 200) - 100) as i32,
-                y: (rng.gen_range(0..colony._height + 200) - 100) as i32,
-                radius_x: rng.gen_range(15..40) as i32,
-                radius_y: rng.gen_range(15..40) as i32,
-            })
-        }
-    }
-}
-
-pub fn randomize_event(colony: &Colony, rng: &mut SmallRng) -> Option<ColonyEvent> {
-    if random_chance(rng, 50000) {
-        return Some(ColonyEvent::Extinction());
-    }
-    if random_chance(rng, 1000) {
-        let sign: i8 = if rng.gen_bool(0.5) { 1 } else { -1 };
-        let amount = sign * rng.gen_range(1..5);
-        return Some(ColonyEvent::ChangeExtraFoodPerTick(amount));
-    }
-    if random_chance(rng, 10) {
-        return Some(randomize_colony_event(colony, rng));
-    }    
-    None
-}
 
 pub fn apply_event(rng: &mut SmallRng, colony: &mut Colony, event: &ColonyEvent) {
     match event {
