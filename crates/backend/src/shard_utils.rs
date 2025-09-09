@@ -21,6 +21,7 @@ impl ShardUtils {
         let mut colony_shard = ColonyShard {
             shard: shard.clone(),
             colony_life_info: colony_life_info.clone(),
+            current_tick: 0,
             grid: (0..((shard.width as usize + 2) * (shard.height as usize + 2))).map(|_| {
                 Cell { 
                     color: white_color, 

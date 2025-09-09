@@ -11,10 +11,10 @@ pub fn start_ticker() {
         let mut tick_count: u64 = 1;
         loop {
             if Colony::is_initialized() {
-                if tick_count == 1 || tick_count % 10 == 0 {
-                    log!("[BE] Ticker: tick {}", tick_count);
-                }
                 let mut colony = Colony::instance();
+                if tick_count == 1 || tick_count % 10 == 0 {
+                    log!("[BE] Ticker: tick {}", colony.shards[0].get_current_tick());
+                }
                 if !colony.shards.is_empty() {
                     tick_count += 1;
                 }

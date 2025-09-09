@@ -1,5 +1,5 @@
 use serde::{Serialize, Deserialize};
-use std::time::Duration;
+use std::time::{Duration};
 
 pub const BACKEND_PORT: u16 = 8082;
 pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -17,6 +17,7 @@ pub enum BackendRequest {
     GetColonyInfo(GetColonyInfoRequest),
     UpdatedShardContents(UpdatedShardContentsRequest),
     InitShardTopography(InitShardTopographyRequest),
+    GetShardCurrentTick(GetShardCurrentTickRequest),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -29,6 +30,7 @@ pub enum BackendResponse {
     GetColonyInfo(GetColonyInfoResponse),
     UpdatedShardContents(UpdatedShardContentsResponse),
     InitShardTopography(InitShardTopographyResponse),
+    GetShardCurrentTick(GetShardCurrentTickResponse),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -118,4 +120,18 @@ pub enum InitShardTopographyResponse {
     Ok,
     ShardNotInitialized,
     InvalidTopographyData,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetShardCurrentTickRequest {
+    pub shard: Shard,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum GetShardCurrentTickResponse {
+    Ok {
+        current_tick: u64,
+    },
+    ColonyNotInitialized,
+    ShardNotAvailable,
 }

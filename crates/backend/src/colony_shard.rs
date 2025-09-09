@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits};
 use shared::log;
 use shared::utils::{new_random_generator, random_chance, random_color};
@@ -63,15 +64,19 @@ pub fn get_neighbor_permutations() -> &'static Vec<[ (isize, isize); 8 ]> {
     })
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ColonyShard {
     pub shard: Shard,
-    #[allow(dead_code)]
     pub colony_life_info: ColonyLifeInfo,    
     pub grid: Vec<Cell>,
+    pub current_tick: u64, 
 }
 
 impl ColonyShard {
+    pub fn get_current_tick(&self) -> u64 {
+        self.current_tick
+    }
+
     #[inline(always)]
     fn get_neighbors(x: usize, y: usize, width: usize, height: usize, offsets: &[(isize, isize)], my_cell: usize, neighbors: &mut [usize]) -> usize {
         let mut count = 0;
@@ -143,7 +148,7 @@ impl ColonyShard {
 
     #[inline(never)]
     pub fn tick(&mut self, rng: &mut SmallRng) {
-        if self.grid.is_empty() { return; }
+        if self.grid.is_empty() { return; }        
         let width = (self.shard.width + 2) as usize;
         let height = (self.shard.height + 2) as usize;
         let tick_bit = self.grid[width+4].tick_bit;
@@ -205,6 +210,7 @@ impl ColonyShard {
             log!("Shard_{}_{}_{}_{}: {:?}", 
                 self.shard.x, self.shard.y, self.shard.width, self.shard.height, stats);
         }
+        self.current_tick += 1;
     }
     
     fn breed(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool, rng: &mut SmallRng) -> bool {
