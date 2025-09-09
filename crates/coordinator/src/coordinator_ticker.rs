@@ -15,7 +15,7 @@ const EVENT_FREQUENCIES: [EventFrequency; 3] = [
 ];
 
 fn log_tick(tick_count: u64, tick_monitor: &Mutex<TickMonitor>) {
-    log!("Tick: {}, pace: {:.2} ticks/sec", 
+    log!("[{}] Tick pace: {:.2} ticks/sec", 
         tick_count, 
         tick_monitor.lock().unwrap().calculate_pace(tick_count));
 }
