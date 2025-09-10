@@ -20,6 +20,7 @@ enum Tab {
     Food,
     Sizes,
     CanKill,
+    Health,
 }
 
 #[derive(Clone)]
@@ -85,6 +86,7 @@ struct BEImageApp {
     sizes: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     can_kill: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     food: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
+    health: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     ctx: Option<egui::Context>,
     thread_started: bool,
     current_tab: Tab,
@@ -110,6 +112,7 @@ impl Default for BEImageApp {
         let sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let can_kill = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
+        let health = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let current_tab = Tab::Creatures;
         Self {
             creatures,
@@ -118,6 +121,7 @@ impl Default for BEImageApp {
             sizes,
             can_kill,
             food,
+            health,
             ctx: None,
             thread_started: false,
             current_tab,
@@ -140,6 +144,7 @@ impl App for BEImageApp {
             let sizes = self.sizes.clone();
             let can_kill = self.can_kill.clone();
             let food = self.food.clone();
+            let health = self.health.clone();
             let ctx_clone = ctx.clone();
             let shared_current_tab = self.shared_current_tab.clone();
             let shard_config = self.shard_config.clone();
@@ -202,6 +207,15 @@ impl App for BEImageApp {
                                 *last_update_time.lock().unwrap() = Instant::now();
                             }
                         }
+                        Tab::Health => {
+                            let health_data = call_be::get_all_shard_layer_data(ShardLayer::Health, &config, cluster_topology);
+                            // Only update if we got valid data (don't overwrite with None on backend failures)
+                            if !health_data.iter().all(|data| data.is_none()) {
+                                let mut locked = health.lock().unwrap();
+                                *locked = health_data;
+                                *last_update_time.lock().unwrap() = Instant::now();
+                            }
+                        }
                     }
                     ctx_clone.request_repaint();
                     thread::sleep(Duration::from_millis(REFRESH_INTERVAL_MS));
@@ -219,6 +233,7 @@ impl App for BEImageApp {
                 ui.selectable_value(&mut self.current_tab, Tab::Food, "Food");
                 ui.selectable_value(&mut self.current_tab, Tab::Sizes, "Sizes");
                 ui.selectable_value(&mut self.current_tab, Tab::CanKill, "Can Kill");
+                ui.selectable_value(&mut self.current_tab, Tab::Health, "Health");
                 
                 // Update shared tab if changed
                 if self.current_tab != old_tab {
@@ -247,6 +262,7 @@ impl App for BEImageApp {
                 Tab::Food => self.show_food_tab(ui),
                 Tab::Sizes => self.show_sizes_tab(ui),
                 Tab::CanKill => self.show_can_kill_tab(ui),
+                Tab::Health => self.show_health_tab(ui),
             }
         });
     }
@@ -447,6 +463,10 @@ impl BEImageApp {
 
     fn show_food_tab(&self, ui: &mut egui::Ui) {
         self.show_layer_tab_with_legend(ui, &self.food, Some(FOOD_VALUE_LEGEND_MAX));
+    }
+
+    fn show_health_tab(&self, ui: &mut egui::Ui) {
+        self.show_layer_tab_with_legend(ui, &self.health, Some(10)); 
     }
 
     fn show_layer_tab_boolean(&self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>) {

@@ -56,4 +56,5 @@ pub enum ShardLayer {
     ExtraFood,
     CanKill,
     Food,
+    Health,
 } 

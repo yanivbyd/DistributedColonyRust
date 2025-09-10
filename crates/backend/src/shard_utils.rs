@@ -97,6 +97,9 @@ impl ShardUtils {
                     ShardLayer::Food => {
                         data.extend(shard.grid[start..end].iter().map(|cell| cell.food as i32));
                     }
+                    ShardLayer::Health => {
+                        data.extend(shard.grid[start..end].iter().map(|cell| cell.health as i32));
+                    }
                 }
             }
             Some(data)
