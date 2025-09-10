@@ -82,39 +82,42 @@ where
 pub fn apply_event(rng: &mut SmallRng, colony: &Colony, event: &ColonyEvent) {
     match event {
         ColonyEvent::LocalDeath(region) => {
-            apply_local_event(colony, event, region);
-        },
+                        apply_local_event(colony, event, region);
+            },
         ColonyEvent::RandomTrait(region, _params) => {
-            apply_local_event(colony, event, region);
-        },
+                apply_local_event(colony, event, region);
+            },
         ColonyEvent::CreateCreature(region, _params) => {
-            apply_local_event(colony, event, region);
-        }
+                apply_local_event(colony, event, region);
+            }
         ColonyEvent::ChangeExtraFoodPerTick(amount) => {
-            let (_, shard_arcs) = colony.get_hosted_shards();
-            for shard_arc in shard_arcs {
-                let mut shard = shard_arc.lock().unwrap();
-                shard.grid.iter_mut().for_each(|cell| {
-                    if *amount >= 0 {
-                        cell.extra_food_per_tick = cell.extra_food_per_tick.saturating_add(*amount as u8);
-                    } else {
-                        cell.extra_food_per_tick = cell.extra_food_per_tick.saturating_sub((-*amount) as u8);
-                    }
-                });
-            }            
-        },
-        ColonyEvent::Extinction() => {
-            let (_, shard_arcs) = colony.get_hosted_shards();
-            for shard_arc in shard_arcs {
-                if rng.gen_bool(0.5) {
+                let (_, shard_arcs) = colony.get_hosted_shards();
+                for shard_arc in shard_arcs {
                     let mut shard = shard_arc.lock().unwrap();
                     shard.grid.iter_mut().for_each(|cell| {
-                        cell.color = WHITE_COLOR;
-                        cell.health = 0;
+                        if *amount >= 0 {
+                            cell.extra_food_per_tick = cell.extra_food_per_tick.saturating_add(*amount as u8);
+                        } else {
+                            cell.extra_food_per_tick = cell.extra_food_per_tick.saturating_sub((-*amount) as u8);
+                        }
                     });
+                }            
+            },
+        ColonyEvent::Extinction() => {
+                let (_, shard_arcs) = colony.get_hosted_shards();
+                for shard_arc in shard_arcs {
+                    if rng.gen_bool(0.5) {
+                        let mut shard = shard_arc.lock().unwrap();
+                        shard.grid.iter_mut().for_each(|cell| {
+                            cell.color = WHITE_COLOR;
+                            cell.health = 0;
+                        });
+                    }
                 }
             }
-        }
+        ColonyEvent::NewTopography() => {
+            panic!("NewTopography should not be applied to the backend");
+        },
     } 
 }
 

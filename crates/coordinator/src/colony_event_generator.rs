@@ -8,6 +8,7 @@ pub enum EventFrequency {
     Normal,
     Rare,
     Extinction,
+    Topography,
 }
 
 pub fn randomize_colony_event(colony_width: i32, colony_height: i32, rng: &mut SmallRng) -> ColonyEvent {
@@ -62,6 +63,9 @@ pub fn randomize_event_by_frequency(frequency: EventFrequency, colony_width: i32
         },
         EventFrequency::Extinction => {
             ColonyEvent::Extinction()
+        },
+        EventFrequency::Topography => {
+            ColonyEvent::NewTopography()
         }
     }
 }
@@ -72,10 +76,13 @@ pub fn get_next_event_tick_by_frequency(frequency: EventFrequency, rng: &mut Sma
             rng.gen_range(5..20)
         },
         EventFrequency::Rare => {
-            rng.gen_range(1000..5000)
+            rng.gen_range(1000..2000)
         },
         EventFrequency::Extinction => {
             rng.gen_range(10000..50000)
+        },
+        EventFrequency::Topography => {
+            rng.gen_range(5000..8000) 
         }
     }
 }

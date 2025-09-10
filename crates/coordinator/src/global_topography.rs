@@ -5,9 +5,8 @@ use shared::be_api::{Shard, BackendRequest, BackendResponse, InitShardTopography
 use shared::{log, log_error};
 use shared::utils::new_random_generator;
 use shared::cluster_topology::ClusterTopology;
+use shared::backend_communication::{send_request_async, receive_response_async};
 use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use bincode;
 
 #[derive(Debug)]
 struct RiverPath {
@@ -56,60 +55,41 @@ impl GlobalTopography {
         };
         
         if let Ok(mut stream) = TcpStream::connect(host_info.to_address()).await {
-            if let Err(e) = Self::send_message(&mut stream, &request).await {
+            if let Err(e) = send_request_async(&mut stream, &request).await {
                 log_error!("Failed to send topography to shard ({},{},{},{}): {}", 
                     shard.x, shard.y, shard.width, shard.height, e);
                 return;
             }
 
-            if let Some(response) = Self::receive_message::<BackendResponse>(&mut stream).await {
-                match response {
-                    BackendResponse::InitShardTopography(InitShardTopographyResponse::Ok) => {
-                        log!("Topography sent to shard ({},{},{},{})", 
-                            shard.x, shard.y, shard.width, shard.height);
-                    },
-                    BackendResponse::InitShardTopography(InitShardTopographyResponse::ShardNotInitialized) => {
-                        log_error!("Shard not initialized for topography: ({},{},{},{})", 
-                            shard.x, shard.y, shard.width, shard.height);
-                    },
-                    BackendResponse::InitShardTopography(InitShardTopographyResponse::InvalidTopographyData) => {
-                        log_error!("Invalid topography data for shard: ({},{},{},{})", 
-                            shard.x, shard.y, shard.width, shard.height);
-                    },
-                    _ => {
-                        log_error!("Unexpected response for topography request");
+            match receive_response_async::<BackendResponse>(&mut stream).await {
+                Ok(response) => {
+                    match response {
+                        BackendResponse::InitShardTopography(InitShardTopographyResponse::Ok) => {
+                            log!("Topography sent to shard ({},{},{},{})", 
+                                shard.x, shard.y, shard.width, shard.height);
+                        },
+                        BackendResponse::InitShardTopography(InitShardTopographyResponse::ShardNotInitialized) => {
+                            log_error!("Shard not initialized for topography: ({},{},{},{})", 
+                                shard.x, shard.y, shard.width, shard.height);
+                        },
+                        BackendResponse::InitShardTopography(InitShardTopographyResponse::InvalidTopographyData) => {
+                            log_error!("Invalid topography data for shard: ({},{},{},{})", 
+                                shard.x, shard.y, shard.width, shard.height);
+                        },
+                        _ => {
+                            log_error!("Unexpected response for topography request");
+                        }
                     }
+                },
+                Err(e) => {
+                    log_error!("Failed to receive response for topography request: {}", e);
                 }
-            } else {
-                log_error!("Failed to receive response for topography request");
             }
         } else {
             log_error!("Failed to connect to backend for topography request");
         }
     }
 
-    async fn send_message<T: serde::Serialize>(stream: &mut TcpStream, msg: &T) -> Result<(), Box<dyn std::error::Error>> {
-        let encoded = bincode::serialize(msg)?;
-        let len = (encoded.len() as u32).to_be_bytes();
-        stream.write_all(&len).await?;
-        stream.write_all(&encoded).await?;
-        Ok(())
-    }
-
-    async fn receive_message<T: serde::de::DeserializeOwned>(stream: &mut TcpStream) -> Option<T> {
-        let mut len_buf = [0u8; 4];
-        if stream.read_exact(&mut len_buf).await.is_err() {
-            log_error!("Failed to read message length");
-            return None;
-        }
-        let len = u32::from_be_bytes(len_buf) as usize;
-        let mut buf = vec![0u8; len];
-        if stream.read_exact(&mut buf).await.is_err() {
-            log_error!("Failed to read message body");
-            return None;
-        }
-        bincode::deserialize(&buf).ok()
-    }
 
     pub async fn generate_topography(&self) {
         log!("Generating global topography for colony {}x{}", self.info.total_width, self.info.total_height);

@@ -40,5 +40,6 @@ pub enum ColonyEvent {
     RandomTrait(Region, RandomTraitParams),
     CreateCreature(Region, CreateCreatureParams),
     ChangeExtraFoodPerTick(i8),
-    Extinction()
+    Extinction(),
+    NewTopography()
 }

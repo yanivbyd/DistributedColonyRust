@@ -18,6 +18,9 @@ pub fn log_event(event: &ColonyEvent, current_tick: u64) {
         },
         ColonyEvent::Extinction() => {
             log!("[{}] Event: Extinction", current_tick);
+        },
+        ColonyEvent::NewTopography() => {
+            log!("[{}] Event: NewTopography", current_tick);
         }
     }
 }
