@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Configuration - matches cluster topology
+BACKEND_PORTS=(8082 8084 8085 8086)
+COORDINATOR_PORT=8083
+
 echo "🔄 Killing all backend, coordinator, and GUI processes..."
 
 # First try graceful termination
@@ -17,9 +21,14 @@ pkill -9 -x gui || true
 
 # Also kill by port usage as a backup
 echo "🔫 Force killing processes by port usage..."
-lsof -ti :8082 | xargs kill -9 2>/dev/null || true
-lsof -ti :8083 | xargs kill -9 2>/dev/null || true
-lsof -ti :8084 | xargs kill -9 2>/dev/null || true
+
+# Kill backend ports
+for port in "${BACKEND_PORTS[@]}"; do
+    lsof -ti :$port | xargs kill -9 2>/dev/null || true
+done
+
+# Kill coordinator port
+lsof -ti :$COORDINATOR_PORT | xargs kill -9 2>/dev/null || true
 
 # Wait for forceful termination
 sleep 1
@@ -27,46 +36,35 @@ sleep 1
 # Check if ports are still in use and wait for them to be released
 echo "🔍 Checking if ports are still in use..."
 
-# Check backend port (8082) with timeout
 timeout=30
+
+# Check backend ports with timeout
+for port in "${BACKEND_PORTS[@]}"; do
+    counter=0
+    while lsof -i :$port >/dev/null 2>&1 && [ $counter -lt $timeout ]; do
+        echo "⏳ Port $port still in use, waiting for release... ($counter/$timeout)"
+        sleep 1
+        counter=$((counter + 1))
+    done
+
+    if [ $counter -eq $timeout ]; then
+        echo "❌ Timeout waiting for port $port to be released. Force killing..."
+        lsof -ti :$port | xargs kill -9 2>/dev/null || true
+        sleep 2
+    fi
+done
+
+# Check coordinator port with timeout
 counter=0
-while lsof -i :8082 >/dev/null 2>&1 && [ $counter -lt $timeout ]; do
-    echo "⏳ Port 8082 still in use, waiting for release... ($counter/$timeout)"
+while lsof -i :$COORDINATOR_PORT >/dev/null 2>&1 && [ $counter -lt $timeout ]; do
+    echo "⏳ Port $COORDINATOR_PORT still in use, waiting for release... ($counter/$timeout)"
     sleep 1
     counter=$((counter + 1))
 done
 
 if [ $counter -eq $timeout ]; then
-    echo "❌ Timeout waiting for port 8082 to be released. Force killing..."
-    lsof -ti :8082 | xargs kill -9 2>/dev/null || true
-    sleep 2
-fi
-
-# Check coordinator port (8083) with timeout
-counter=0
-while lsof -i :8083 >/dev/null 2>&1 && [ $counter -lt $timeout ]; do
-    echo "⏳ Port 8083 still in use, waiting for release... ($counter/$timeout)"
-    sleep 1
-    counter=$((counter + 1))
-done
-
-if [ $counter -eq $timeout ]; then
-    echo "❌ Timeout waiting for port 8083 to be released. Force killing..."
-    lsof -ti :8083 | xargs kill -9 2>/dev/null || true
-    sleep 2
-fi
-
-# Check backend port 2 (8084) with timeout
-counter=0
-while lsof -i :8084 >/dev/null 2>&1 && [ $counter -lt $timeout ]; do
-    echo "⏳ Port 8084 still in use, waiting for release... ($counter/$timeout)"
-    sleep 1
-    counter=$((counter + 1))
-done
-
-if [ $counter -eq $timeout ]; then
-    echo "❌ Timeout waiting for port 8084 to be released. Force killing..."
-    lsof -ti :8084 | xargs kill -9 2>/dev/null || true
+    echo "❌ Timeout waiting for port $COORDINATOR_PORT to be released. Force killing..."
+    lsof -ti :$COORDINATOR_PORT | xargs kill -9 2>/dev/null || true
     sleep 2
 fi
 

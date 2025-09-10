@@ -3,6 +3,11 @@ use crate::colony_model::Shard;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
+// Configuration constants
+const COORDINATOR_PORT: u16 = 8083;
+const BACKEND_PORTS: &[u16] = &[8082, 8084, 8085, 8086];
+const HOSTNAME: &str = "127.0.0.1";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostInfo {
     pub hostname: String,
@@ -46,29 +51,42 @@ impl ClusterTopology {
         INSTANCE.get_or_init(|| Self::new_fixed_topology())
     }
     
+    /// Get the configured backend ports
+    pub fn get_backend_ports() -> &'static [u16] {
+        BACKEND_PORTS
+    }
+    
+    /// Get the coordinator port
+    pub fn get_coordinator_port() -> u16 {
+        COORDINATOR_PORT
+    }
+    
+    /// Get the hostname used for all services
+    pub fn get_hostname() -> &'static str {
+        HOSTNAME
+    }
+    
     fn new_fixed_topology() -> Self {
-        let coordinator_host = HostInfo::new("127.0.0.1".to_string(), 8083);
-        let backend_host_1 = HostInfo::new("127.0.0.1".to_string(), 8082);
-        let backend_host_2 = HostInfo::new("127.0.0.1".to_string(), 8084);
-        let shards = Self::create_fixed_shards();
+        let coordinator_host = HostInfo::new(HOSTNAME.to_string(), COORDINATOR_PORT);
         
+        // Create backend hosts from the configured ports
+        let backend_hosts: Vec<HostInfo> = BACKEND_PORTS.iter()
+            .map(|&port| HostInfo::new(HOSTNAME.to_string(), port))
+            .collect();
+        
+        let shards = Self::create_fixed_shards();
         let mut shard_to_host = HashMap::new();
         
-        // Split shards between the two backends
-        // Backend 1 (8082) gets shards 0, 2, 4, 6, 8, 10, 12, 14 (even indices)
-        // Backend 2 (8084) gets shards 1, 3, 5, 7, 9, 11, 13 (odd indices)
+        // Distribute shards evenly across all backends
         for (index, shard) in shards.iter().enumerate() {
-            let host = if index % 2 == 0 {
-                backend_host_1.clone()
-            } else {
-                backend_host_2.clone()
-            };
+            let backend_index = index % backend_hosts.len();
+            let host = backend_hosts[backend_index].clone();
             shard_to_host.insert(*shard, host);
         }
         
         Self {
             coordinator_host,
-            backend_hosts: vec![backend_host_1, backend_host_2],
+            backend_hosts,
             shard_to_host
         }
     }

@@ -1,16 +1,25 @@
 #!/bin/bash
 set -e
 
+# Configuration - matches cluster topology
+BACKEND_PORTS=(8082 8084 8085 8086)
+HOSTNAME="127.0.0.1"
+
 ./kill_all.sh
 rm -rf output
 
-cargo run --profile=balanced -p backend -- 127.0.0.1 8082 &
-sleep 1
+echo "🚀 Starting ${#BACKEND_PORTS[@]} backend instances..."
 
-cargo run --profile=balanced -p backend -- 127.0.0.1 8084 &
-sleep 1
+# Start all backends
+for port in "${BACKEND_PORTS[@]}"; do
+    echo "🔥 Starting backend on port $port..."
+    cargo run --profile=balanced -p backend -- $HOSTNAME $port &
+done
+sleep 3
 
+echo "📡 Starting coordinator..."
 cargo run --profile=balanced -p coordinator &
 sleep 1
 
+echo "🖥️  Starting GUI..."
 cargo run --profile=balanced -p gui
