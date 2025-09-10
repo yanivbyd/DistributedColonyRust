@@ -79,7 +79,7 @@ where
 
 
 
-pub fn apply_event(rng: &mut SmallRng, colony: &mut Colony, event: &ColonyEvent) {
+pub fn apply_event(rng: &mut SmallRng, colony: &Colony, event: &ColonyEvent) {
     match event {
         ColonyEvent::LocalDeath(region) => {
             apply_local_event(colony, event, region);
@@ -91,7 +91,9 @@ pub fn apply_event(rng: &mut SmallRng, colony: &mut Colony, event: &ColonyEvent)
             apply_local_event(colony, event, region);
         }
         ColonyEvent::ChangeExtraFoodPerTick(amount) => {
-            for shard in &mut colony.shards {
+            let (_, shard_arcs) = colony.get_all_shards();
+            for shard_arc in shard_arcs {
+                let mut shard = shard_arc.lock().unwrap();
                 shard.grid.iter_mut().for_each(|cell| {
                     if *amount >= 0 {
                         cell.extra_food_per_tick = cell.extra_food_per_tick.saturating_add(*amount as u8);
@@ -102,8 +104,10 @@ pub fn apply_event(rng: &mut SmallRng, colony: &mut Colony, event: &ColonyEvent)
             }            
         },
         ColonyEvent::Extinction() => {
-            for shard in &mut colony.shards {
+            let (_, shard_arcs) = colony.get_all_shards();
+            for shard_arc in shard_arcs {
                 if rng.gen_bool(0.5) {
+                    let mut shard = shard_arc.lock().unwrap();
                     shard.grid.iter_mut().for_each(|cell| {
                         cell.color = WHITE_COLOR;
                         cell.health = 0;
@@ -114,28 +118,30 @@ pub fn apply_event(rng: &mut SmallRng, colony: &mut Colony, event: &ColonyEvent)
     } 
 }
 
-pub fn apply_local_event(colony: &mut Colony, event: &ColonyEvent, region: &Region) {
-    for shard in &mut colony.shards {
+pub fn apply_local_event(colony: &Colony, event: &ColonyEvent, region: &Region) {
+    let (_, shard_arcs) = colony.get_all_shards();
+    for shard_arc in shard_arcs {
+        let mut shard = shard_arc.lock().unwrap();
         if !region_overlaps_shard(region, &shard.shard) {
             continue;
         }
         
         match event {
             ColonyEvent::LocalDeath(_region) => {
-                apply_region_to_shard(shard, region, |cell| {
+                apply_region_to_shard(&mut shard, region, |cell| {
                     cell.color = WHITE_COLOR;
                     cell.health = 0;
                 });
             },
             ColonyEvent::RandomTrait(_region, params) => {
-                apply_region_to_shard(shard, region, |cell| {
+                apply_region_to_shard(&mut shard, region, |cell| {
                     if cell.health > 0 {
                         cell.traits = params.traits.clone();
                     }
                 });
             },
             ColonyEvent::CreateCreature(_region, params) => {
-                apply_region_to_shard(shard, region, |cell| {
+                apply_region_to_shard(&mut shard, region, |cell| {
                     cell.color = params.color;
                     cell.traits = params.traits;
                     cell.health = params.starting_health;

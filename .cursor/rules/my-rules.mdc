@@ -12,6 +12,8 @@ Do not ask for changes, always apply without asking.
 Logging error should be done via log_error.
 Do not run the crates - only check if they build without errors/warnings.
 No unit tests
+Do not use Rayon, always use tokio for parallelism
+Never clone large objects, such as ColonyShard
 
 ## Code Architecture Guidelines
 - **High-level functions** should focus on business logic and orchestration
@@ -27,6 +29,7 @@ No unit tests
 - Main.rs should be thin and shard-related logic should be placed in shard utils or colony modules
 - Always clean up compiler warnings in the code
 - Prefer passing random number generator objects (rng) to helper functions and using the random range function consistently
+- Always use `shared::utils::new_random_generator()` for random number generation, never use `SmallRng::from_entropy()` directly
 - Place duplicate code and constants under the shared crate instead of copying code from one module to another
 - Avoid using global counters or global state
 - Include the region parameter when logging colony events in backend code

@@ -1,4 +1,5 @@
 pub mod be_api;
+pub mod backend_communication;
 pub mod colony_events;
 pub mod colony_event_shared;
 pub mod colony_model;

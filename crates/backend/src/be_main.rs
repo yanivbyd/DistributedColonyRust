@@ -7,7 +7,6 @@ use shared::be_api::{BackendRequest, BackendResponse, GetShardImageResponse, Ini
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
-use rand::{SeedableRng, rngs::SmallRng};
 
 mod colony;
 mod be_ticker;
@@ -17,6 +16,7 @@ mod shard_storage;
 mod be_colony_events;
 mod shard_topography;
 mod backend_config;
+mod backend_client;
 
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
@@ -102,7 +102,7 @@ async fn handle_init_colony_shard(req: InitColonyShardRequest) -> BackendRespons
     } else if !Colony::instance().is_valid_shard_dimensions(&req.shard) {
         BackendResponse::InitColonyShard(InitColonyShardResponse::InvalidShardDimensions)
     } else {
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = shared::utils::new_random_generator();
         Colony::instance().add_shard(ShardUtils::new_colony_shard(&req.shard, &req.colony_life_info, &mut rng));
         BackendResponse::InitColonyShard(InitColonyShardResponse::Ok)
     }
@@ -114,8 +114,9 @@ async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {
         return BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable);
     }
     let colony = Colony::instance();
-    if let Some(shard) = &colony.get_colony_shard(&req.shard) {
-        match ShardUtils::get_shard_image(shard, &req.shard) {
+    if let Some(shard_arc) = colony.get_colony_shard_arc(&req.shard) {
+        let shard = shard_arc.lock().unwrap();
+        match ShardUtils::get_shard_image(&shard, &req.shard) {
             Some(image) => BackendResponse::GetShardImage(GetShardImageResponse::Image { image }),
             None => BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable),
         }
@@ -130,8 +131,9 @@ async fn handle_get_shard_layer(req: GetShardLayerRequest) -> BackendResponse {
         return BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable);
     }
     let colony = Colony::instance();
-    if let Some(shard) = &colony.get_colony_shard(&req.shard) {
-        match ShardUtils::get_shard_layer(shard, &req.shard, &req.layer) {
+    if let Some(shard_arc) = colony.get_colony_shard_arc(&req.shard) {
+        let shard = shard_arc.lock().unwrap();
+        match ShardUtils::get_shard_layer(&shard, &req.shard, &req.layer) {
             Some(data) => BackendResponse::GetShardLayer(GetShardLayerResponse::Ok { data }),
             None => BackendResponse::GetShardLayer(GetShardLayerResponse::ShardNotAvailable),
         }
@@ -145,10 +147,11 @@ async fn handle_get_colony_info(_req: GetColonyInfoRequest) -> BackendResponse {
         BackendResponse::GetColonyInfo(GetColonyInfoResponse::ColonyNotInitialized)
     } else {
         let colony = Colony::instance();
+        let (shards, _) = colony.get_all_shards();
         BackendResponse::GetColonyInfo(GetColonyInfoResponse::Ok {
             width: colony._width,
             height: colony._height,
-            shards: colony.shards.iter().map(|cs| cs.shard).collect(),
+            shards,
         })
     }
 }
@@ -160,10 +163,12 @@ async fn handle_updated_shard_contents(req: UpdatedShardContentsRequest) -> Back
         return BackendResponse::UpdatedShardContents(UpdatedShardContentsResponse {});
     }
     
-    let mut colony = Colony::instance();    
-    for shard in colony.shards.iter_mut() {
+    let colony = Colony::instance();    
+    let (_, shard_arcs) = colony.get_all_shards();
+    for shard_arc in shard_arcs {
+        let mut shard = shard_arc.lock().unwrap();
         if ShardUtils::is_adjacent_shard(&req.updated_shard, &shard.shard) {
-            ShardUtils::updated_shard_contents(shard, &req);
+            ShardUtils::updated_shard_contents(&mut shard, &req);
         }
     }
     
@@ -177,9 +182,10 @@ async fn handle_init_shard_topography(req: InitShardTopographyRequest) -> Backen
         return BackendResponse::InitShardTopography(InitShardTopographyResponse::ShardNotInitialized);
     }
     
-    let mut colony = Colony::instance();
-    if let Some(shard) = colony.get_colony_shard_mut(&req.shard) {
-        match ShardTopography::init_shard_topography_from_data(shard, &req.topography_data) {
+    let colony = Colony::instance();
+    if let Some(shard_arc) = colony.get_colony_shard_arc(&req.shard) {
+        let mut shard = shard_arc.lock().unwrap();
+        match ShardTopography::init_shard_topography_from_data(&mut shard, &req.topography_data) {
             Ok(()) => BackendResponse::InitShardTopography(InitShardTopographyResponse::Ok),
             Err(_) => BackendResponse::InitShardTopography(InitShardTopographyResponse::InvalidTopographyData),
         }
@@ -193,7 +199,8 @@ async fn handle_get_shard_current_tick(req: GetShardCurrentTickRequest) -> Backe
         BackendResponse::GetShardCurrentTick(GetShardCurrentTickResponse::ColonyNotInitialized)
     } else {
         let colony = Colony::instance();
-        if let Some(shard) = colony.get_colony_shard(&req.shard) {
+        if let Some(shard_arc) = colony.get_colony_shard_arc(&req.shard) {
+            let shard = shard_arc.lock().unwrap();
             BackendResponse::GetShardCurrentTick(GetShardCurrentTickResponse::Ok {
                 current_tick: shard.get_current_tick(),
             })
@@ -207,9 +214,9 @@ async fn handle_apply_event(req: ApplyEventRequest) -> BackendResponse {
     if !Colony::is_initialized() {
         BackendResponse::ApplyEvent(ApplyEventResponse::ColonyNotInitialized)
     } else {
-        let mut colony = Colony::instance();
+        let colony = Colony::instance();
         let mut rng = shared::utils::new_random_generator();
-        crate::be_colony_events::apply_event(&mut rng, &mut colony, &req.event);
+        crate::be_colony_events::apply_event(&mut rng, &colony, &req.event);
         BackendResponse::ApplyEvent(ApplyEventResponse::Ok)
     }
 }
