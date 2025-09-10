@@ -36,9 +36,10 @@ pub struct Traits {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct ColonyLifeInfo {
-    pub health_cost_per_size_unit: u8,
-    pub eat_capacity_per_size_unit: u8,
-    pub health_cost_if_can_kill: u8,
+    pub health_cost_per_size_unit: u32,
+    pub eat_capacity_per_size_unit: u32,
+    pub health_cost_if_can_kill: u32,
+    pub mutation_chance: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

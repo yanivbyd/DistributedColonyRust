@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits};
+use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard};
 use shared::log;
 use shared::utils::{new_random_generator, random_chance, random_color};
 use rand::{Rng, rngs::SmallRng};
@@ -186,7 +186,7 @@ impl ColonyShard {
                 let neighbor_count = Self::get_neighbors(x, y, width, height, offsets, my_cell, &mut neighbors);
 
                 self.eat_food(my_cell);
-                if self.grid[my_cell].health == 0 {
+                if self.grid[my_cell].health == 0 || random_chance(rng, 5000) {
                     set_blank(&mut self.grid[my_cell]);
                     stats.deaths += 1;
                     continue;
@@ -223,18 +223,16 @@ impl ColonyShard {
         for i in 0..neighbor_count {
             let neighbor = neighbors[i];
             if is_blank(&self.grid[neighbor]) {
-                if random_chance(rng, 5) { return false; }        
-
-                // Calculate half health for the new creature
+                if random_chance(rng, 5) { return false; }  
                 let half_health = self.grid[my_cell].health / 2;
-                
-                // Create new creature with half health
+
                 self.grid[neighbor].color = self.grid[my_cell].color;
                 self.grid[neighbor].health = half_health;
-                self.grid[neighbor].traits = self.copy_traits_with_mutation(&self.grid[my_cell].traits, rng);
+                self.grid[neighbor].traits = self.grid[my_cell].traits;
                 self.grid[neighbor].tick_bit = next_bit;
-                
-                // Reduce parent's health by half
+                if random_chance(rng, self.colony_life_info.mutation_chance) {
+                    self.grid[neighbor] = self.mutate_cell(&self.grid[neighbor], rng);
+                }
                 self.grid[my_cell].health = self.grid[my_cell].health.saturating_sub(half_health);
                 
                 return true;
@@ -244,16 +242,21 @@ impl ColonyShard {
         false
     }
     
-    fn copy_traits_with_mutation(&self, parent_traits: &Traits, rng: &mut SmallRng) -> Traits {
-        // 1% chance to mutate size
-        if rng.gen_bool(0.01) {
-            let size_change = if rng.gen_bool(0.5) { 1 } else { -1 };
-            let new_size = parent_traits.size.saturating_add_signed(size_change);
-            let new_can_kill = if random_chance(rng, 100) { parent_traits.can_kill } else { ! parent_traits.can_kill };
-            Traits { size: new_size, can_kill: new_can_kill }
-        } else {
-            *parent_traits
-        }
+    fn mutate_cell(&self, cell: &Cell, rng: &mut SmallRng) -> Cell {        
+        let mut new_cell = *cell;
+        let size_change = if rng.gen_bool(0.5) { 1 } else { -1 };
+        new_cell.traits.size = cell.traits.size.saturating_add_signed(size_change);
+        new_cell.traits.can_kill = if random_chance(rng, 100) { cell.traits.can_kill } else { !cell.traits.can_kill };
+
+        let color_mutation_range = 3; 
+        let red_change = rng.gen_range(-color_mutation_range..=color_mutation_range);
+        let green_change = rng.gen_range(-color_mutation_range..=color_mutation_range);
+        let blue_change = rng.gen_range(-color_mutation_range..=color_mutation_range);
+        
+        new_cell.color.red = (cell.color.red as i16 + red_change).clamp(0, 255) as u8;
+        new_cell.color.green = (cell.color.green as i16 + green_change).clamp(0, 255) as u8;
+        new_cell.color.blue = (cell.color.blue as i16 + blue_change).clamp(0, 255) as u8;     
+        new_cell   
     }
     
     #[inline(always)]
