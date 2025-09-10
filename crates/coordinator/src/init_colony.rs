@@ -13,7 +13,7 @@ use crate::coordinator_storage::{CoordinatorStorage, CoordinatorInfo, ColonyStat
 const COLONY_LIFE_INFO: ColonyLifeInfo = ColonyLifeInfo { 
     health_cost_per_size_unit: 2,
     eat_capacity_per_size_unit: 5,
-    health_cost_if_can_kill: 7,
+    health_cost_if_can_kill: 10,
 };
 const WIDTH_IN_SHARDS: i32 = 5;
 const HEIGHT_IN_SHARDS: i32 = 3;
