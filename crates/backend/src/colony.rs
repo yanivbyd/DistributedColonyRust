@@ -32,25 +32,25 @@ impl Colony {
         COLONY.set(colony).expect("Failed to init Colony");
     }
 
-    pub fn add_shard(&self, colony_shard: ColonyShard) -> bool {
+    pub fn add_hosted_shard(&self, colony_shard: ColonyShard) -> bool {
         let mut w = self.shards.write().unwrap();
         if w.contains_key(&colony_shard.shard) { return false; }
         w.insert(colony_shard.shard, Arc::new(Mutex::new(colony_shard)));
         true
     }
 
-    pub fn has_shard(&self, shard: Shard) -> bool {
+    pub fn is_hosting_shard(&self, shard: Shard) -> bool {
         self.shards.read().unwrap().contains_key(&shard)
     }
 
-    pub fn get_all_shards(&self) -> (Vec<Shard>, Vec<Arc<Mutex<ColonyShard>>>) {
+    pub fn get_hosted_shards(&self) -> (Vec<Shard>, Vec<Arc<Mutex<ColonyShard>>>) {
         let shards = self.shards.read().unwrap();
         let keys: Vec<Shard> = shards.keys().cloned().collect();
         let values: Vec<Arc<Mutex<ColonyShard>>> = shards.values().cloned().collect();
         (keys, values)
     }
 
-    pub fn get_colony_shard_arc(&self, shard: &Shard) -> Option<Arc<Mutex<ColonyShard>>> {
+    pub fn get_hosted_colony_shard_arc(&self, shard: &Shard) -> Option<Arc<Mutex<ColonyShard>>> {
         let r = self.shards.read().unwrap();
         r.get(shard).cloned()
     }

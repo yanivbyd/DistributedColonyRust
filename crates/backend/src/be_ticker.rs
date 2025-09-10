@@ -13,7 +13,7 @@ pub fn start_be_ticker() {
                 let colony = Colony::instance();
 
                 // Get a snapshot of shard keys and Arc handles (cheap clones)
-                let (hosted_shards, hosted_colony_shards) = colony.get_all_shards();
+                let (hosted_shards, hosted_colony_shards) = colony.get_hosted_shards();
 
                 // Optional: read current tick from any shard
                 let current_tick = {
@@ -40,7 +40,7 @@ pub fn start_be_ticker() {
                 for req in &exported {
                     for shard_key in &hosted_shards {
                         if ShardUtils::is_adjacent_shard(&req.updated_shard, shard_key) {
-                            let shard_arc = colony.get_colony_shard_arc(shard_key).unwrap();
+                            let shard_arc = colony.get_hosted_colony_shard_arc(shard_key).unwrap();
                             let mut shard = shard_arc.lock().unwrap();
                             ShardUtils::updated_shard_contents(&mut shard, req);
                         }

@@ -91,7 +91,7 @@ pub fn apply_event(rng: &mut SmallRng, colony: &Colony, event: &ColonyEvent) {
             apply_local_event(colony, event, region);
         }
         ColonyEvent::ChangeExtraFoodPerTick(amount) => {
-            let (_, shard_arcs) = colony.get_all_shards();
+            let (_, shard_arcs) = colony.get_hosted_shards();
             for shard_arc in shard_arcs {
                 let mut shard = shard_arc.lock().unwrap();
                 shard.grid.iter_mut().for_each(|cell| {
@@ -104,7 +104,7 @@ pub fn apply_event(rng: &mut SmallRng, colony: &Colony, event: &ColonyEvent) {
             }            
         },
         ColonyEvent::Extinction() => {
-            let (_, shard_arcs) = colony.get_all_shards();
+            let (_, shard_arcs) = colony.get_hosted_shards();
             for shard_arc in shard_arcs {
                 if rng.gen_bool(0.5) {
                     let mut shard = shard_arc.lock().unwrap();
@@ -119,7 +119,7 @@ pub fn apply_event(rng: &mut SmallRng, colony: &Colony, event: &ColonyEvent) {
 }
 
 pub fn apply_local_event(colony: &Colony, event: &ColonyEvent, region: &Region) {
-    let (_, shard_arcs) = colony.get_all_shards();
+    let (_, shard_arcs) = colony.get_hosted_shards();
     for shard_arc in shard_arcs {
         let mut shard = shard_arc.lock().unwrap();
         if !region_overlaps_shard(region, &shard.shard) {
