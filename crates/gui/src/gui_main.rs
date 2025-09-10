@@ -3,10 +3,11 @@ use eframe::{egui, App};
 use egui_extras::RetainedImage;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use shared::be_api::ShardLayer;
 use shared::cluster_topology::ClusterTopology;
 mod call_be;
+mod connection_pool;
 
 const REFRESH_INTERVAL_MS: u64 = 100;
 const WIDTH_IN_SHARDS: i32 = 5;
@@ -86,6 +87,7 @@ struct BEImageApp {
     shared_current_tab: Arc<Mutex<Tab>>,
     shard_config: Arc<Mutex<ShardConfig>>,
     cluster_topology: &'static ClusterTopology,
+    last_update_time: Arc<Mutex<Instant>>,
 }
 
 impl Default for BEImageApp {
@@ -118,6 +120,7 @@ impl Default for BEImageApp {
             shared_current_tab: Arc::new(Mutex::new(current_tab)),
             shard_config,
             cluster_topology,
+            last_update_time: Arc::new(Mutex::new(Instant::now())),
         }
     }
 }
@@ -137,50 +140,62 @@ impl App for BEImageApp {
             let shared_current_tab = self.shared_current_tab.clone();
             let shard_config = self.shard_config.clone();
             let cluster_topology = self.cluster_topology;
+            let last_update_time = self.last_update_time.clone();
             thread::spawn(move || {
                 loop {
                     // Look at the selected tab and get only the info required for the current Tab
                     let tab = *shared_current_tab.lock().unwrap();
                     let config = shard_config.lock().unwrap().clone();
+                    
                     match tab {
                         Tab::Creatures => {
                             let images = call_be::get_all_shard_retained_images(&config, cluster_topology);
                             let color_data = call_be::get_all_shard_color_data(&config, cluster_topology);
-                            {
+                            // Only update if we got valid data (don't overwrite with None on backend failures)
+                            if !images.iter().all(|img| img.is_none()) {
                                 let mut locked = creatures.lock().unwrap();
                                 *locked = images;
+                                *last_update_time.lock().unwrap() = Instant::now();
                             }
-                            {
+                            if !color_data.iter().all(|data| data.is_none()) {
                                 let mut locked = creatures_color_data.lock().unwrap();
                                 *locked = color_data;
                             }
                         }
                         Tab::ExtraFood => {
                             let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config, cluster_topology);
-                            {
+                            // Only update if we got valid data (don't overwrite with None on backend failures)
+                            if !extra_food_data.iter().all(|data| data.is_none()) {
                                 let mut locked = extra_food.lock().unwrap();
                                 *locked = extra_food_data;
+                                *last_update_time.lock().unwrap() = Instant::now();
                             }
                         }
                         Tab::Sizes => {
                             let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config, cluster_topology);
-                            {
+                            // Only update if we got valid data (don't overwrite with None on backend failures)
+                            if !sizes_data.iter().all(|data| data.is_none()) {
                                 let mut locked = sizes.lock().unwrap();
                                 *locked = sizes_data;
+                                *last_update_time.lock().unwrap() = Instant::now();
                             }
                         }
                         Tab::CanKill => {
                             let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config, cluster_topology);
-                            {
+                            // Only update if we got valid data (don't overwrite with None on backend failures)
+                            if !can_kill_data.iter().all(|data| data.is_none()) {
                                 let mut locked = can_kill.lock().unwrap();
                                 *locked = can_kill_data;
+                                *last_update_time.lock().unwrap() = Instant::now();
                             }
                         }
                         Tab::Food => {
                             let food_data = call_be::get_all_shard_layer_data(ShardLayer::Food, &config, cluster_topology);
-                            {
+                            // Only update if we got valid data (don't overwrite with None on backend failures)
+                            if !food_data.iter().all(|data| data.is_none()) {
                                 let mut locked = food.lock().unwrap();
                                 *locked = food_data;
+                                *last_update_time.lock().unwrap() = Instant::now();
                             }
                         }
                     }
@@ -207,6 +222,18 @@ impl App for BEImageApp {
                         *shared_tab = self.current_tab;
                     }
                 }
+                
+                // Show status indicator only when there are issues
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let last_update = *self.last_update_time.lock().unwrap();
+                    let time_since_update = last_update.elapsed();
+                    if time_since_update.as_secs() > 5 {
+                        ui.colored_label(egui::Color32::RED, "⚠️ Backend Unresponsive");
+                    } else if time_since_update.as_millis() > 1000 {
+                        ui.colored_label(egui::Color32::YELLOW, "🔄 Slow Response");
+                    }
+                    // Don't show anything when all is well (time_since_update <= 1000ms)
+                });
             });
             ui.separator();
             

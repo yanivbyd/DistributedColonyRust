@@ -5,7 +5,16 @@ use shared::be_api::{BackendRequest, BackendResponse, GetShardImageRequest, GetS
 use shared::cluster_topology::{ClusterTopology, HostInfo};
 use std::net::TcpStream;
 use std::io::{Read, Write};
+use std::time::Duration;
 use bincode;
+use crate::connection_pool::ConnectionPool;
+use std::sync::OnceLock;
+
+static CONNECTION_POOL: OnceLock<ConnectionPool> = OnceLock::new();
+
+fn get_connection_pool() -> &'static ConnectionPool {
+    CONNECTION_POOL.get_or_init(|| ConnectionPool::new())
+}
 
 pub fn get_cluster_topology() -> &'static ClusterTopology {
     ClusterTopology::get_instance()
@@ -13,6 +22,46 @@ pub fn get_cluster_topology() -> &'static ClusterTopology {
 
 fn get_shard_endpoint(topology: &ClusterTopology, shard: Shard) -> HostInfo {
     topology.get_host_for_shard(&shard).cloned().expect("Shard not found in cluster topology")
+}
+
+fn send_request_with_pool<T>(host_info: &HostInfo, request: &BackendRequest) -> Option<T>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    let pool = get_connection_pool();
+    let conn_info = pool.get_connection(host_info)?;
+    let mut conn = conn_info.lock().unwrap();
+    
+    // Get the stream, creating a new connection if needed
+    let stream = if let Some(ref mut stream) = conn.stream {
+        stream
+    } else {
+        // Recreate connection if it was closed
+        let new_stream = TcpStream::connect_timeout(&host_info.to_address().parse().ok()?, Duration::from_millis(500)).ok()?;
+        new_stream.set_read_timeout(Some(Duration::from_millis(1000))).ok()?;
+        new_stream.set_write_timeout(Some(Duration::from_millis(500))).ok()?;
+        conn.stream = Some(new_stream);
+        conn.is_healthy = true;
+        conn.stream.as_mut().unwrap()
+    };
+    
+    // Send request
+    let encoded = bincode::serialize(request).ok()?;
+    let len = (encoded.len() as u32).to_be_bytes();
+    stream.write_all(&len).ok()?;
+    stream.write_all(&encoded).ok()?;
+    
+    // Read response
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).ok()?;
+    let resp_len = u32::from_be_bytes(len_buf) as usize;
+    let mut buf = vec![0u8; resp_len];
+    stream.read_exact(&mut buf).ok()?;
+    
+    // Update last used time
+    conn.last_used = std::time::Instant::now();
+    
+    bincode::deserialize(&buf).ok()
 }
 
 pub fn get_all_shard_retained_images(config: &crate::ShardConfig, topology: &ClusterTopology) -> Vec<Option<RetainedImage>> {
@@ -24,19 +73,9 @@ pub fn get_all_shard_retained_images(config: &crate::ShardConfig, topology: &Clu
 
 fn get_shard_retained_image(shard: Shard, topology: &ClusterTopology) -> Option<RetainedImage> {
     let host_info = get_shard_endpoint(topology, shard);
-    let addr = host_info.to_address();
-    let mut stream = TcpStream::connect(&addr).ok()?;
     let req = BackendRequest::GetShardImage(GetShardImageRequest { shard });
-    let encoded = bincode::serialize(&req).ok()?;
-    let len = (encoded.len() as u32).to_be_bytes();
-    stream.write_all(&len).ok()?;
-    stream.write_all(&encoded).ok()?;
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).ok()?;
-    let resp_len = u32::from_be_bytes(len_buf) as usize;
-    let mut buf = vec![0u8; resp_len];
-    stream.read_exact(&mut buf).ok()?;
-    let response: BackendResponse = bincode::deserialize(&buf).ok()?;
+    
+    let response: BackendResponse = send_request_with_pool(&host_info, &req)?;
     if let BackendResponse::GetShardImage(GetShardImageResponse::Image { image }) = response {
         let img = color_vec_to_image(&image, shard.width as usize, shard.height as usize);
         Some(RetainedImage::from_color_image("colony_shard", img))
@@ -66,19 +105,9 @@ pub fn get_all_shard_layer_data(layer: ShardLayer, config: &crate::ShardConfig, 
 
 fn get_shard_layer_data(shard: Shard, layer: ShardLayer, topology: &ClusterTopology) -> Option<Vec<i32>> {
     let host_info = get_shard_endpoint(topology, shard);
-    let addr = host_info.to_address();
-    let mut stream = TcpStream::connect(&addr).ok()?;
     let req = BackendRequest::GetShardLayer(GetShardLayerRequest { shard, layer });
-    let encoded = bincode::serialize(&req).ok()?;
-    let len = (encoded.len() as u32).to_be_bytes();
-    stream.write_all(&len).ok()?;
-    stream.write_all(&encoded).ok()?;
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).ok()?;
-    let resp_len = u32::from_be_bytes(len_buf) as usize;
-    let mut buf = vec![0u8; resp_len];
-    stream.read_exact(&mut buf).ok()?;
-    let response: BackendResponse = bincode::deserialize(&buf).ok()?;
+    
+    let response: BackendResponse = send_request_with_pool(&host_info, &req)?;
     if let BackendResponse::GetShardLayer(GetShardLayerResponse::Ok { data }) = response {
         Some(data)
     } else {
@@ -95,19 +124,9 @@ pub fn get_all_shard_color_data(config: &crate::ShardConfig, topology: &ClusterT
 
 fn get_shard_color_data(shard: Shard, topology: &ClusterTopology) -> Option<Vec<Color>> {
     let host_info = get_shard_endpoint(topology, shard);
-    let addr = host_info.to_address();
-    let mut stream = TcpStream::connect(&addr).ok()?;
     let req = BackendRequest::GetShardImage(GetShardImageRequest { shard });
-    let encoded = bincode::serialize(&req).ok()?;
-    let len = (encoded.len() as u32).to_be_bytes();
-    stream.write_all(&len).ok()?;
-    stream.write_all(&encoded).ok()?;
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).ok()?;
-    let resp_len = u32::from_be_bytes(len_buf) as usize;
-    let mut buf = vec![0u8; resp_len];
-    stream.read_exact(&mut buf).ok()?;
-    let response: BackendResponse = bincode::deserialize(&buf).ok()?;
+    
+    let response: BackendResponse = send_request_with_pool(&host_info, &req)?;
     if let BackendResponse::GetShardImage(GetShardImageResponse::Image { image }) = response {
         Some(image)
     } else {

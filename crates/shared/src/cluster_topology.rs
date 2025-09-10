@@ -48,18 +48,27 @@ impl ClusterTopology {
     
     fn new_fixed_topology() -> Self {
         let coordinator_host = HostInfo::new("127.0.0.1".to_string(), 8083);
-        let backend_host = HostInfo::new("127.0.0.1".to_string(), 8082);
+        let backend_host_1 = HostInfo::new("127.0.0.1".to_string(), 8082);
+        let backend_host_2 = HostInfo::new("127.0.0.1".to_string(), 8084);
         let shards = Self::create_fixed_shards();
         
         let mut shard_to_host = HashMap::new();
         
-        for shard in &shards {
-            shard_to_host.insert(*shard, backend_host.clone());
+        // Split shards between the two backends
+        // Backend 1 (8082) gets shards 0, 2, 4, 6, 8, 10, 12, 14 (even indices)
+        // Backend 2 (8084) gets shards 1, 3, 5, 7, 9, 11, 13 (odd indices)
+        for (index, shard) in shards.iter().enumerate() {
+            let host = if index % 2 == 0 {
+                backend_host_1.clone()
+            } else {
+                backend_host_2.clone()
+            };
+            shard_to_host.insert(*shard, host);
         }
         
         Self {
             coordinator_host,
-            backend_hosts: vec![backend_host],
+            backend_hosts: vec![backend_host_1, backend_host_2],
             shard_to_host
         }
     }

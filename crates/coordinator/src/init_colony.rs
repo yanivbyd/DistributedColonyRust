@@ -1,8 +1,9 @@
 use shared::be_api::{
     BackendRequest, BackendResponse, ColonyLifeInfo, GetColonyInfoRequest, 
     GetColonyInfoResponse, InitColonyRequest, InitColonyResponse, 
-    InitColonyShardRequest, InitColonyShardResponse, Shard, BACKEND_PORT
+    InitColonyShardRequest, InitColonyShardResponse, Shard
 };
+use shared::cluster_topology::ClusterTopology;
 use shared::{log, log_error};
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -73,9 +74,9 @@ async fn get_colony_info(stream: &mut TcpStream) -> Option<GetColonyInfoResponse
     }
 }
 
-async fn connect_to_backend() -> TcpStream {
-    let addr = format!("127.0.0.1:{}", BACKEND_PORT);
-    let stream = TcpStream::connect(&addr).await.expect("Failed to connect to backend");
+async fn connect_to_backend(hostname: &str, port: u16) -> TcpStream {
+    let addr = format!("{}:{}", hostname, port);
+    let stream = TcpStream::connect(&addr).await.expect(&format!("Failed to connect to backend at {}", addr));
     stream
 }
 
@@ -121,11 +122,14 @@ pub async fn initialize_colony() {
     
     log!("Starting colony initialization with status: {:?}", coord_info.status);
     
-    let mut stream = connect_to_backend().await;
-
+    let topology = ClusterTopology::get_instance();
+    let backend_hosts = topology.get_all_backend_hosts();
+    
     // Step 1: Initialize colony if not already done - should ALWAYS be done
     log!("Step 1: Initializing colony");
     
+    // Try to get colony info from the first backend
+    let mut stream = connect_to_backend(&backend_hosts[0].hostname, backend_hosts[0].port).await;
     let colony_info = get_colony_info(&mut stream).await;
     log!("Colony info: {:?}", colony_info);
     
@@ -135,7 +139,11 @@ pub async fn initialize_colony() {
             coord_info.colony_height = Some(height);
         },
         Some(GetColonyInfoResponse::ColonyNotInitialized) | None => {
-            send_init_colony(&mut stream).await;
+            // Initialize colony on all backends
+            for backend_host in backend_hosts.iter() {
+                let mut stream = connect_to_backend(&backend_host.hostname, backend_host.port).await;
+                send_init_colony(&mut stream).await;
+            }
             coord_info.colony_width = Some(WIDTH_IN_SHARDS * SHARD_WIDTH);
             coord_info.colony_height = Some(HEIGHT_IN_SHARDS * SHARD_HEIGHT);
         }
@@ -146,8 +154,14 @@ pub async fn initialize_colony() {
     
     let all_shards = generate_shards();
     
+    // Initialize shards on their respective backends
     for shard in all_shards.iter() {
-        send_init_colony_shard(&mut stream, *shard).await;
+        if let Some(host_info) = topology.get_host_for_shard(shard) {
+            let mut stream = connect_to_backend(&host_info.hostname, host_info.port).await;
+            send_init_colony_shard(&mut stream, *shard).await;
+        } else {
+            log_error!("No backend found for shard {:?}", shard);
+        }
     }    
 
     // Step 3: Initialize topography

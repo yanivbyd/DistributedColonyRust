@@ -19,6 +19,7 @@ pkill -9 -x gui || true
 echo "🔫 Force killing processes by port usage..."
 lsof -ti :8082 | xargs kill -9 2>/dev/null || true
 lsof -ti :8083 | xargs kill -9 2>/dev/null || true
+lsof -ti :8084 | xargs kill -9 2>/dev/null || true
 
 # Wait for forceful termination
 sleep 1
@@ -52,6 +53,20 @@ done
 if [ $counter -eq $timeout ]; then
     echo "❌ Timeout waiting for port 8083 to be released. Force killing..."
     lsof -ti :8083 | xargs kill -9 2>/dev/null || true
+    sleep 2
+fi
+
+# Check backend port 2 (8084) with timeout
+counter=0
+while lsof -i :8084 >/dev/null 2>&1 && [ $counter -lt $timeout ]; do
+    echo "⏳ Port 8084 still in use, waiting for release... ($counter/$timeout)"
+    sleep 1
+    counter=$((counter + 1))
+done
+
+if [ $counter -eq $timeout ]; then
+    echo "❌ Timeout waiting for port 8084 to be released. Force killing..."
+    lsof -ti :8084 | xargs kill -9 2>/dev/null || true
     sleep 2
 fi
 

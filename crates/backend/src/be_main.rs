@@ -248,10 +248,9 @@ async fn main() {
                hostname, port, backend_hosts.iter().map(|h| h.to_address()).collect::<Vec<_>>());
     }
     
-    init_logging("output/logs/be.log");
+    init_logging(&format!("output/logs/be_{}.log", port));
     log_startup("BE");
     set_panic_hook();
-    shared::metrics::start_metrics_endpoint();
     be_ticker::start_be_ticker();
     let addr = format!("{}:{}", hostname, port);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");

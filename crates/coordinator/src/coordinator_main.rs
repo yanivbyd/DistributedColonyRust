@@ -74,7 +74,7 @@ async fn handle_client(socket: TcpStream) {
 
 #[tokio::main]
 async fn main() {
-    init_logging("output/logs/coordinator.log");
+    init_logging(&format!("output/logs/coordinator_{}.log", COORDINATOR_PORT));
     log_startup("COORDINATOR");
     set_panic_hook();
     
