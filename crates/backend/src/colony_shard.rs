@@ -107,7 +107,7 @@ impl ColonyShard {
 
     #[inline(always)]
     fn move_to_higher_food_neighbor(&mut self, my_cell: usize, neighbors: &[usize], 
-        neighbor_count: usize, next_bit: bool) -> bool 
+        neighbor_count: usize, next_bit: bool, rng: &mut SmallRng) -> bool 
     {
         let my_food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick as u16);
 
@@ -115,6 +115,8 @@ impl ColonyShard {
             let n = neighbors[i];
             let n_food = self.grid[n].food.saturating_add(self.grid[n].extra_food_per_tick as u16);
             if self.grid[n].health == 0 && n_food > my_food {
+                if random_chance(rng, 5) { return false; }
+
                 self.grid[n].color = self.grid[my_cell].color;
                 self.grid[n].health = self.grid[my_cell].health;
                 self.grid[n].traits = self.grid[my_cell].traits;
@@ -165,16 +167,15 @@ impl ColonyShard {
             for x in 0..width {
                 let my_cell = row_base + x;
 
-                // Increment food (fast)
+                // Increment food
                 let cell = &mut self.grid[my_cell];
                 cell.food = cell.food.saturating_add(cell.extra_food_per_tick as u16);
 
                 // Handle tick bit
                 if cell.tick_bit == next_bit {
                     continue;
-                } else {
-                    cell.tick_bit = next_bit;
-                }
+                } 
+                cell.tick_bit = next_bit;                
                 
                 if is_blank(cell) {
                     continue;
@@ -197,7 +198,7 @@ impl ColonyShard {
                     if self.breed(my_cell, &neighbors, neighbor_count, next_bit, rng) {
                         stats.breeds += 1;
                     } else {
-                        if self.move_to_higher_food_neighbor(my_cell, &neighbors, neighbor_count, next_bit) {
+                        if self.move_to_higher_food_neighbor(my_cell, &neighbors, neighbor_count, next_bit, rng) {
                             stats.moves += 1;
                         }
                     }
@@ -222,6 +223,8 @@ impl ColonyShard {
         for i in 0..neighbor_count {
             let neighbor = neighbors[i];
             if is_blank(&self.grid[neighbor]) {
+                if random_chance(rng, 5) { return false; }        
+
                 // Calculate half health for the new creature
                 let half_health = self.grid[my_cell].health / 2;
                 
