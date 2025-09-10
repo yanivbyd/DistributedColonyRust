@@ -192,7 +192,7 @@ impl ColonyShard {
                     continue;
                 }
 
-                if self.kill_neighbour(my_cell, &neighbors, neighbor_count, next_bit) {
+                if self.kill_neighbour(my_cell, &neighbors, neighbor_count, next_bit, rng) {
                     stats.kills += 1;
                 } else {
                     if self.breed(my_cell, &neighbors, neighbor_count, next_bit, rng) {
@@ -257,7 +257,9 @@ impl ColonyShard {
     }
     
     #[inline(always)]
-    fn kill_neighbour(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool) -> bool {
+    fn kill_neighbour(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, 
+            next_bit: bool, rng: &mut SmallRng) -> bool 
+    {
         if !self.grid[my_cell].traits.can_kill {
             return false;
         }
@@ -267,6 +269,7 @@ impl ColonyShard {
             let n = neighbors[i];
             let nref = &self.grid[n];
             if my_size > nref.traits.size && nref.health > 0 {
+                if nref.traits.can_kill && !random_chance(rng, 10) { continue }
                 self.grid[n].health = self.grid[my_cell].health.saturating_add(nref.health);
                 self.grid[n].color = self.grid[my_cell].color;
                 self.grid[n].traits = self.grid[my_cell].traits;
