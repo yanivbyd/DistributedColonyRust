@@ -16,27 +16,11 @@ const COLONY_LIFE_INFO: ColonyLifeInfo = ColonyLifeInfo {
     health_cost_if_can_kill: 10,
     mutation_chance: 100,
 };
-const WIDTH_IN_SHARDS: i32 = 5;
-const HEIGHT_IN_SHARDS: i32 = 3;
-
-const SHARD_WIDTH: i32 = 250;
-const SHARD_HEIGHT: i32 = 250;
 
 const COORDINATION_FILE: &str = "output/storage/colony.dat";
 
 fn generate_shards() -> Vec<Shard> {
-    let mut shards = Vec::new();
-    for y in 0..HEIGHT_IN_SHARDS {
-        for x in 0..WIDTH_IN_SHARDS {
-            shards.push(Shard {
-                x: x * SHARD_WIDTH,
-                y: y * SHARD_HEIGHT,
-                width: SHARD_WIDTH,
-                height: SHARD_HEIGHT,
-            });
-        }
-    }
-    shards
+    ClusterTopology::get_instance().get_all_shards()
 }
 
 async fn send_message<T: serde::Serialize>(stream: &mut TcpStream, msg: &T) {
@@ -82,7 +66,11 @@ async fn connect_to_backend(hostname: &str, port: u16) -> TcpStream {
 }
 
 async fn send_init_colony(stream: &mut TcpStream) {
-    let init = BackendRequest::InitColony(InitColonyRequest { width: WIDTH_IN_SHARDS * SHARD_WIDTH, height: HEIGHT_IN_SHARDS * SHARD_HEIGHT, colony_life_info: COLONY_LIFE_INFO });
+    let init = BackendRequest::InitColony(InitColonyRequest { 
+        width: ClusterTopology::get_width_in_shards() * ClusterTopology::get_shard_width(), 
+        height: ClusterTopology::get_height_in_shards() * ClusterTopology::get_shard_height(), 
+        colony_life_info: COLONY_LIFE_INFO 
+    });
     send_message(stream, &init).await;
 
     if let Some(response) = receive_message::<BackendResponse>(stream).await {
@@ -145,8 +133,8 @@ pub async fn initialize_colony() {
                 let mut stream = connect_to_backend(&backend_host.hostname, backend_host.port).await;
                 send_init_colony(&mut stream).await;
             }
-            coord_info.colony_width = Some(WIDTH_IN_SHARDS * SHARD_WIDTH);
-            coord_info.colony_height = Some(HEIGHT_IN_SHARDS * SHARD_HEIGHT);
+            coord_info.colony_width = Some(ClusterTopology::get_width_in_shards() * ClusterTopology::get_shard_width());
+            coord_info.colony_height = Some(ClusterTopology::get_height_in_shards() * ClusterTopology::get_shard_height());
         }
     }
     
@@ -171,10 +159,10 @@ pub async fn initialize_colony() {
         
         use crate::global_topography::{GlobalTopography, GlobalTopographyInfo};
         let topography_info = GlobalTopographyInfo {
-            total_width: (WIDTH_IN_SHARDS * SHARD_WIDTH) as usize,
-            total_height: (HEIGHT_IN_SHARDS * SHARD_HEIGHT) as usize,
-            shard_width: SHARD_WIDTH as usize,
-            shard_height: SHARD_HEIGHT as usize,
+            total_width: (ClusterTopology::get_width_in_shards() * ClusterTopology::get_shard_width()) as usize,
+            total_height: (ClusterTopology::get_height_in_shards() * ClusterTopology::get_shard_height()) as usize,
+            shard_width: ClusterTopology::get_shard_width() as usize,
+            shard_height: ClusterTopology::get_shard_height() as usize,
 
             base_elevation: 5,
             river_elevation_range: 45, 

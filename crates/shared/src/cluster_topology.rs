@@ -7,6 +7,10 @@ use std::sync::OnceLock;
 const COORDINATOR_PORT: u16 = 8083;
 const BACKEND_PORTS: &[u16] = &[8082, 8084, 8085, 8086];
 const HOSTNAME: &str = "127.0.0.1";
+const WIDTH_IN_SHARDS: i32 = 8;
+const HEIGHT_IN_SHARDS: i32 = 5;
+const SHARD_WIDTH: i32 = 250;
+const SHARD_HEIGHT: i32 = 250;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostInfo {
@@ -66,6 +70,26 @@ impl ClusterTopology {
         HOSTNAME
     }
     
+    /// Get the grid width in shards
+    pub fn get_width_in_shards() -> i32 {
+        WIDTH_IN_SHARDS
+    }
+    
+    /// Get the grid height in shards
+    pub fn get_height_in_shards() -> i32 {
+        HEIGHT_IN_SHARDS
+    }
+    
+    /// Get the individual shard width
+    pub fn get_shard_width() -> i32 {
+        SHARD_WIDTH
+    }
+    
+    /// Get the individual shard height
+    pub fn get_shard_height() -> i32 {
+        SHARD_HEIGHT
+    }
+    
     fn new_fixed_topology() -> Self {
         let coordinator_host = HostInfo::new(HOSTNAME.to_string(), COORDINATOR_PORT);
         
@@ -93,17 +117,15 @@ impl ClusterTopology {
     
     fn create_fixed_shards() -> Vec<Shard> {
         let mut shards = Vec::new();
-        let shard_width = 250;
-        let shard_height = 250;
         
-        // Create 5x3 grid of shards (5 columns, 3 rows)
-        for y in 0..3 {
-            for x in 0..5 {
+        // Create grid of shards using configured dimensions
+        for y in 0..HEIGHT_IN_SHARDS {
+            for x in 0..WIDTH_IN_SHARDS {
                 let shard = Shard {
-                    x: (x * shard_width) as i32,
-                    y: (y * shard_height) as i32,
-                    width: shard_width,
-                    height: shard_height,
+                    x: x * SHARD_WIDTH,
+                    y: y * SHARD_HEIGHT,
+                    width: SHARD_WIDTH,
+                    height: SHARD_HEIGHT,
                 };
                 shards.push(shard);
             }

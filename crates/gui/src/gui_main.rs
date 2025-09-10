@@ -10,10 +10,6 @@ mod call_be;
 mod connection_pool;
 
 const REFRESH_INTERVAL_MS: u64 = 100;
-const WIDTH_IN_SHARDS: i32 = 5;
-const HEIGHT_IN_SHARDS: i32 = 3;
-const SHARD_WIDTH: i32 = 250;
-const SHARD_HEIGHT: i32 = 250;
 const MIN_CREATURE_SIZE_LEGEND_MAX: i32 = 30;
 const FOOD_VALUE_LEGEND_MAX: i32 = 255;
 
@@ -36,22 +32,27 @@ pub struct ShardConfig {
 
 impl Default for ShardConfig {
     fn default() -> Self {
+        let width_in_shards = ClusterTopology::get_width_in_shards();
+        let height_in_shards = ClusterTopology::get_height_in_shards();
+        let shard_width = ClusterTopology::get_shard_width();
+        let shard_height = ClusterTopology::get_shard_height();
+        
         Self {
-            total_width: WIDTH_IN_SHARDS * SHARD_WIDTH,
-            total_height: HEIGHT_IN_SHARDS * SHARD_HEIGHT,
-            cols: WIDTH_IN_SHARDS as usize,
-            rows: HEIGHT_IN_SHARDS as usize,
+            total_width: width_in_shards * shard_width,
+            total_height: height_in_shards * shard_height,
+            cols: width_in_shards as usize,
+            rows: height_in_shards as usize,
         }
     }
 }
 
 impl ShardConfig {
     fn shard_width(&self) -> i32 {
-        SHARD_WIDTH
+        ClusterTopology::get_shard_width()
     }
     
     fn shard_height(&self) -> i32 {
-        SHARD_HEIGHT
+        ClusterTopology::get_shard_height()
     }
     
     fn total_shards(&self) -> usize {
@@ -62,14 +63,17 @@ impl ShardConfig {
         let row = index / self.cols;
         let col = index % self.cols;
         
-        let x = col as i32 * SHARD_WIDTH;
-        let y = row as i32 * SHARD_HEIGHT;
+        let shard_width = ClusterTopology::get_shard_width();
+        let shard_height = ClusterTopology::get_shard_height();
+        
+        let x = col as i32 * shard_width;
+        let y = row as i32 * shard_height;
         
         shared::be_api::Shard { 
             x, 
             y, 
-            width: SHARD_WIDTH, 
-            height: SHARD_HEIGHT 
+            width: shard_width, 
+            height: shard_height 
         }
     }
 }
