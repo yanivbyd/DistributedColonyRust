@@ -32,6 +32,7 @@ pub struct Cell {
 pub struct Traits {
     pub size: u8,
     pub can_kill: bool,
+    pub can_move: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -39,6 +40,7 @@ pub struct ColonyLifeInfo {
     pub health_cost_per_size_unit: u32,
     pub eat_capacity_per_size_unit: u32,
     pub health_cost_if_can_kill: u32,
+    pub health_cost_if_can_move: u32,
     pub mutation_chance: u32,
 }
 
@@ -55,6 +57,7 @@ pub enum ShardLayer {
     CreatureSize,
     ExtraFood,
     CanKill,
+    CanMove,
     Food,
     Health,
 } 

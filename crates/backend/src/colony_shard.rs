@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard};
+use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits};
 use shared::log;
 use shared::utils::{new_random_generator, random_chance, random_color};
 use rand::{Rng, rngs::SmallRng};
@@ -14,7 +14,7 @@ const LOG_TICK_STATS: bool = false;
 #[derive(Clone, Copy)]
 pub struct CreatureTemplate {
     pub color: Color,
-    pub size: u8,
+    pub traits: Traits,
 }
 
 #[derive(Debug)]
@@ -95,12 +95,14 @@ impl ColonyShard {
     }
 
     fn eat_food(&mut self, cell_idx: usize) {
-        let food_eaten: u16 = min(
-            self.grid[cell_idx].food,
-            (self.grid[cell_idx].traits.size as u16).saturating_mul(self.colony_life_info.eat_capacity_per_size_unit as u16),
-        );
-        let health_cost: u16 = (self.grid[cell_idx].traits.size as u16).saturating_mul(self.colony_life_info.health_cost_per_size_unit as u16)
-            + if self.grid[cell_idx].traits.can_kill { self.colony_life_info.health_cost_if_can_kill as u16 } else { 0 };
+        let size: u16 = self.grid[cell_idx].traits.size as u16;
+        let max_food_can_eat = size.saturating_mul(self.colony_life_info.eat_capacity_per_size_unit as u16);
+        let food_eaten: u16 = min(self.grid[cell_idx].food, max_food_can_eat);
+        let can_kill_cost = if self.grid[cell_idx].traits.can_kill { self.colony_life_info.health_cost_if_can_kill as u16 } else { 0 };
+        let can_move_cost = if self.grid[cell_idx].traits.can_move { self.colony_life_info.health_cost_if_can_move as u16 } else { 0 };
+        let health_cost: u16 = 
+            size.saturating_mul(self.colony_life_info.health_cost_per_size_unit as u16)
+            + can_kill_cost + can_move_cost;
         self.grid[cell_idx].health = self.grid[cell_idx].health.saturating_add(food_eaten).saturating_sub(health_cost);
         self.grid[cell_idx].food = self.grid[cell_idx].food.saturating_sub(food_eaten);
     }
@@ -109,6 +111,9 @@ impl ColonyShard {
     fn move_to_higher_food_neighbor(&mut self, my_cell: usize, neighbors: &[usize], 
         neighbor_count: usize, next_bit: bool, rng: &mut SmallRng) -> bool 
     {
+        if !self.grid[my_cell].traits.can_move {
+            return false;
+        }
         let my_food = self.grid[my_cell].food.saturating_add(self.grid[my_cell].extra_food_per_tick as u16);
 
         for i in 0..neighbor_count {
@@ -133,17 +138,16 @@ impl ColonyShard {
         let creature_templates: Vec<CreatureTemplate> = (0..NUM_RANDOM_CREATURES)
             .map(|_| CreatureTemplate {
                 color: random_color(rng),
-                size: 18,
+                traits: Traits { size: 18, can_move: true, can_kill: true },
             })
             .collect();
 
         for id in 0..self.grid.len() {
             if rng.gen_bool(0.1) {
-                // create creatures
                 let template = creature_templates[rng.gen_range(0..creature_templates.len())];
                 self.grid[id].color = template.color;
                 self.grid[id].health = 20;
-                self.grid[id].traits.size = template.size;
+                self.grid[id].traits = template.traits;
             }
         }
     }
@@ -247,6 +251,7 @@ impl ColonyShard {
         let size_change = if rng.gen_bool(0.5) { 1 } else { -1 };
         new_cell.traits.size = cell.traits.size.saturating_add_signed(size_change);
         new_cell.traits.can_kill = if random_chance(rng, 100) { cell.traits.can_kill } else { !cell.traits.can_kill };
+        new_cell.traits.can_move = if random_chance(rng, 100) { cell.traits.can_move } else { !cell.traits.can_move };
 
         let color_mutation_range = 3; 
         let red_change = rng.gen_range(-color_mutation_range..=color_mutation_range);

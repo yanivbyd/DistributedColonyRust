@@ -18,13 +18,13 @@ pub fn randomize_colony_event(colony_width: i32, colony_height: i32, rng: &mut S
         },
         1 => {
             ColonyEvent::RandomTrait(randomize_event_region(colony_width, colony_height, rng), RandomTraitParams {
-                traits: Traits { size: rng.gen_range(1..30), can_kill: rng.gen_bool(0.5) },
+                traits: Traits { size: rng.gen_range(1..30), can_kill: rng.gen_bool(0.5), can_move: rng.gen_bool(0.5) },
             })
         },
         _ => {
             ColonyEvent::CreateCreature(randomize_event_region(colony_width, colony_height, rng), CreateCreatureParams {
                 color: random_color(rng),
-                traits: Traits { size: rng.gen_range(1..30), can_kill: rng.gen_bool(0.5) },
+                traits: Traits { size: rng.gen_range(1..30), can_kill: rng.gen_bool(0.5), can_move: rng.gen_bool(0.5) },
                 starting_health: 250,
             })
         }

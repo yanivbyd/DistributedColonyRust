@@ -29,7 +29,7 @@ impl ShardUtils {
                     food: 50, 
                     extra_food_per_tick: 50,
                     health: 0,
-                    traits: Traits { size: 1, can_kill: true },
+                    traits: Traits { size: 1, can_kill: true, can_move: true },
                 }
             }).collect(),
         };
@@ -91,6 +91,17 @@ impl ShardUtils {
                                 2 // can kill
                             } else {
                                 1 // can't kill
+                            }
+                        }));
+                    }
+                    ShardLayer::CanMove => {
+                        data.extend(shard.grid[start..end].iter().map(|cell| {
+                            if is_blank(cell) {
+                                0 // blank
+                            } else if cell.traits.can_move {
+                                2 // can move
+                            } else {
+                                1 // can't move
                             }
                         }));
                     }

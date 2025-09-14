@@ -20,6 +20,7 @@ enum Tab {
     Food,
     Sizes,
     CanKill,
+    CanMove,
     Health,
 }
 
@@ -85,6 +86,7 @@ struct BEImageApp {
     extra_food: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     sizes: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     can_kill: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
+    can_move: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     food: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     health: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     ctx: Option<egui::Context>,
@@ -111,6 +113,7 @@ impl Default for BEImageApp {
         let extra_food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let can_kill = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
+        let can_move = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let health = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let current_tab = Tab::Creatures;
@@ -120,6 +123,7 @@ impl Default for BEImageApp {
             extra_food,
             sizes,
             can_kill,
+            can_move,
             food,
             health,
             ctx: None,
@@ -143,6 +147,7 @@ impl App for BEImageApp {
             let extra_food = self.extra_food.clone();
             let sizes = self.sizes.clone();
             let can_kill = self.can_kill.clone();
+            let can_move = self.can_move.clone();
             let food = self.food.clone();
             let health = self.health.clone();
             let ctx_clone = ctx.clone();
@@ -198,6 +203,15 @@ impl App for BEImageApp {
                                 *last_update_time.lock().unwrap() = Instant::now();
                             }
                         }
+                        Tab::CanMove => {
+                            let can_move_data = call_be::get_all_shard_layer_data(ShardLayer::CanMove, &config, cluster_topology);
+                            // Only update if we got valid data (don't overwrite with None on backend failures)
+                            if !can_move_data.iter().all(|data| data.is_none()) {
+                                let mut locked = can_move.lock().unwrap();
+                                *locked = can_move_data;
+                                *last_update_time.lock().unwrap() = Instant::now();
+                            }
+                        }
                         Tab::Food => {
                             let food_data = call_be::get_all_shard_layer_data(ShardLayer::Food, &config, cluster_topology);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
@@ -233,6 +247,7 @@ impl App for BEImageApp {
                 ui.selectable_value(&mut self.current_tab, Tab::Food, "Food");
                 ui.selectable_value(&mut self.current_tab, Tab::Sizes, "Sizes");
                 ui.selectable_value(&mut self.current_tab, Tab::CanKill, "Can Kill");
+                ui.selectable_value(&mut self.current_tab, Tab::CanMove, "Can Move");
                 ui.selectable_value(&mut self.current_tab, Tab::Health, "Health");
                 
                 // Update shared tab if changed
@@ -262,6 +277,7 @@ impl App for BEImageApp {
                 Tab::Food => self.show_food_tab(ui),
                 Tab::Sizes => self.show_sizes_tab(ui),
                 Tab::CanKill => self.show_can_kill_tab(ui),
+                Tab::CanMove => self.show_can_move_tab(ui),
                 Tab::Health => self.show_health_tab(ui),
             }
         });
@@ -459,6 +475,10 @@ impl BEImageApp {
 
     fn show_can_kill_tab(&self, ui: &mut egui::Ui) {
         self.show_layer_tab_boolean(ui, &self.can_kill);
+    }
+
+    fn show_can_move_tab(&self, ui: &mut egui::Ui) {
+        self.show_layer_tab_boolean(ui, &self.can_move);
     }
 
     fn show_food_tab(&self, ui: &mut egui::Ui) {
