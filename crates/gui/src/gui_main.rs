@@ -21,6 +21,7 @@ enum Tab {
     Sizes,
     CanKill,
     CanMove,
+    CostPerTurn,
     Health,
 }
 
@@ -87,6 +88,7 @@ struct BEImageApp {
     sizes: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     can_kill: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     can_move: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
+    cost_per_turn: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     food: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     health: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     ctx: Option<egui::Context>,
@@ -114,6 +116,7 @@ impl Default for BEImageApp {
         let sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let can_kill = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let can_move = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
+        let cost_per_turn = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let health = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let current_tab = Tab::Creatures;
@@ -124,6 +127,7 @@ impl Default for BEImageApp {
             sizes,
             can_kill,
             can_move,
+            cost_per_turn,
             food,
             health,
             ctx: None,
@@ -148,6 +152,7 @@ impl App for BEImageApp {
             let sizes = self.sizes.clone();
             let can_kill = self.can_kill.clone();
             let can_move = self.can_move.clone();
+            let cost_per_turn = self.cost_per_turn.clone();
             let food = self.food.clone();
             let health = self.health.clone();
             let ctx_clone = ctx.clone();
@@ -212,6 +217,15 @@ impl App for BEImageApp {
                                 *last_update_time.lock().unwrap() = Instant::now();
                             }
                         }
+                        Tab::CostPerTurn => {
+                            let cost_per_turn_data = call_be::get_all_shard_layer_data(ShardLayer::CostPerTurn, &config, cluster_topology);
+                            // Only update if we got valid data (don't overwrite with None on backend failures)
+                            if !cost_per_turn_data.iter().all(|data| data.is_none()) {
+                                let mut locked = cost_per_turn.lock().unwrap();
+                                *locked = cost_per_turn_data;
+                                *last_update_time.lock().unwrap() = Instant::now();
+                            }
+                        }
                         Tab::Food => {
                             let food_data = call_be::get_all_shard_layer_data(ShardLayer::Food, &config, cluster_topology);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
@@ -248,6 +262,7 @@ impl App for BEImageApp {
                 ui.selectable_value(&mut self.current_tab, Tab::Sizes, "Sizes");
                 ui.selectable_value(&mut self.current_tab, Tab::CanKill, "Can Kill");
                 ui.selectable_value(&mut self.current_tab, Tab::CanMove, "Can Move");
+                ui.selectable_value(&mut self.current_tab, Tab::CostPerTurn, "Cost Per Turn");
                 ui.selectable_value(&mut self.current_tab, Tab::Health, "Health");
                 
                 // Update shared tab if changed
@@ -278,6 +293,7 @@ impl App for BEImageApp {
                 Tab::Sizes => self.show_sizes_tab(ui),
                 Tab::CanKill => self.show_can_kill_tab(ui),
                 Tab::CanMove => self.show_can_move_tab(ui),
+                Tab::CostPerTurn => self.show_cost_per_turn_tab(ui),
                 Tab::Health => self.show_health_tab(ui),
             }
         });
@@ -479,6 +495,10 @@ impl BEImageApp {
 
     fn show_can_move_tab(&self, ui: &mut egui::Ui) {
         self.show_layer_tab_boolean(ui, &self.can_move);
+    }
+
+    fn show_cost_per_turn_tab(&self, ui: &mut egui::Ui) {
+        self.show_layer_tab(ui, &self.cost_per_turn);
     }
 
     fn show_food_tab(&self, ui: &mut egui::Ui) {

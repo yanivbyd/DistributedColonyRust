@@ -94,15 +94,19 @@ impl ColonyShard {
         count
     }
 
+    pub fn calculate_health_cost_for_cell(cell: &Cell, colony_life_info: &ColonyLifeInfo) -> u16 {
+        let size: u16 = cell.traits.size as u16;
+        let can_kill_cost = if cell.traits.can_kill { colony_life_info.health_cost_if_can_kill as u16 } else { 0 };
+        let can_move_cost = if cell.traits.can_move { colony_life_info.health_cost_if_can_move as u16 } else { 0 };
+        size.saturating_mul(colony_life_info.health_cost_per_size_unit as u16)
+            + can_kill_cost + can_move_cost
+    }
+
     fn eat_food(&mut self, cell_idx: usize) {
         let size: u16 = self.grid[cell_idx].traits.size as u16;
         let max_food_can_eat = size.saturating_mul(self.colony_life_info.eat_capacity_per_size_unit as u16);
         let food_eaten: u16 = min(self.grid[cell_idx].food, max_food_can_eat);
-        let can_kill_cost = if self.grid[cell_idx].traits.can_kill { self.colony_life_info.health_cost_if_can_kill as u16 } else { 0 };
-        let can_move_cost = if self.grid[cell_idx].traits.can_move { self.colony_life_info.health_cost_if_can_move as u16 } else { 0 };
-        let health_cost: u16 = 
-            size.saturating_mul(self.colony_life_info.health_cost_per_size_unit as u16)
-            + can_kill_cost + can_move_cost;
+        let health_cost = Self::calculate_health_cost_for_cell(&self.grid[cell_idx], &self.colony_life_info);
         self.grid[cell_idx].health = self.grid[cell_idx].health.saturating_add(food_eaten).saturating_sub(health_cost);
         self.grid[cell_idx].food = self.grid[cell_idx].food.saturating_sub(food_eaten);
     }

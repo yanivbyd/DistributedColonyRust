@@ -105,6 +105,15 @@ impl ShardUtils {
                             }
                         }));
                     }
+                    ShardLayer::CostPerTurn => {
+                        data.extend(shard.grid[start..end].iter().map(|cell| {
+                            if is_blank(cell) {
+                                0 // blank
+                            } else {
+                                ColonyShard::calculate_health_cost_for_cell(cell, &shard.colony_life_info) as i32
+                            }
+                        }));
+                    }
                     ShardLayer::Food => {
                         data.extend(shard.grid[start..end].iter().map(|cell| cell.food as i32));
                     }

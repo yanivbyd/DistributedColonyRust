@@ -58,6 +58,7 @@ pub enum ShardLayer {
     ExtraFood,
     CanKill,
     CanMove,
+    CostPerTurn,
     Food,
     Health,
 } 
