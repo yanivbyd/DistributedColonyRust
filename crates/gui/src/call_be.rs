@@ -1,7 +1,7 @@
 #![allow(deprecated)]
 use eframe::egui;
 use egui_extras::RetainedImage;
-use shared::be_api::{BackendRequest, BackendResponse, GetShardImageRequest, GetShardImageResponse, GetShardLayerRequest, GetShardLayerResponse, ShardLayer, Shard, Color};
+use shared::be_api::{BackendRequest, BackendResponse, GetShardImageRequest, GetShardImageResponse, GetShardLayerRequest, GetShardLayerResponse, GetColonyInfoRequest, GetColonyInfoResponse, ShardLayer, Shard, Color, ColonyLifeInfo};
 use shared::cluster_topology::{ClusterTopology, HostInfo};
 use std::net::TcpStream;
 use std::io::{Read, Write};
@@ -129,6 +129,24 @@ fn get_shard_color_data(shard: Shard, topology: &ClusterTopology) -> Option<Vec<
     let response: BackendResponse = send_request_with_pool(&host_info, &req)?;
     if let BackendResponse::GetShardImage(GetShardImageResponse::Image { image }) = response {
         Some(image)
+    } else {
+        None
+    }
+}
+
+pub fn get_colony_info(topology: &ClusterTopology) -> Option<(Option<ColonyLifeInfo>, Option<u64>)> {
+    // Get the first available backend host
+    let backend_hosts = topology.get_all_backend_hosts();
+    if backend_hosts.is_empty() {
+        return None;
+    }
+    
+    let host_info = &backend_hosts[0];
+    let req = BackendRequest::GetColonyInfo(GetColonyInfoRequest);
+    
+    let response: BackendResponse = send_request_with_pool(host_info, &req)?;
+    if let BackendResponse::GetColonyInfo(GetColonyInfoResponse::Ok { colony_life_info, current_tick, .. }) = response {
+        Some((colony_life_info, current_tick))
     } else {
         None
     }

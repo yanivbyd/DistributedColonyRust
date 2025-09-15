@@ -124,7 +124,7 @@ pub async fn initialize_colony() {
     log!("Colony info: {:?}", colony_info);
     
     match colony_info {
-        Some(GetColonyInfoResponse::Ok { width, height, shards: _ }) => {
+        Some(GetColonyInfoResponse::Ok { width, height, shards: _, .. }) => {
             coord_info.colony_width = Some(width);
             coord_info.colony_height = Some(height);
         },

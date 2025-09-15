@@ -95,6 +95,8 @@ pub enum GetColonyInfoResponse {
         width: i32,
         height: i32,
         shards: Vec<Shard>,
+        colony_life_info: Option<ColonyLifeInfo>,
+        current_tick: Option<u64>,
     },
     ColonyNotInitialized,
 }

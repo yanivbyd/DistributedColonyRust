@@ -23,6 +23,7 @@ enum Tab {
     CanMove,
     CostPerTurn,
     Health,
+    Info,
 }
 
 #[derive(Clone)]
@@ -91,6 +92,8 @@ struct BEImageApp {
     cost_per_turn: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     food: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     health: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
+    colony_info: Arc<Mutex<Option<(Option<shared::be_api::ColonyLifeInfo>, Option<u64>)>>>,
+    colony_info_last_update: Arc<Mutex<Instant>>,
     ctx: Option<egui::Context>,
     thread_started: bool,
     current_tab: Tab,
@@ -119,6 +122,8 @@ impl Default for BEImageApp {
         let cost_per_turn = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let health = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
+        let colony_info = Arc::new(Mutex::new(None));
+        let colony_info_last_update = Arc::new(Mutex::new(Instant::now()));
         let current_tab = Tab::Creatures;
         Self {
             creatures,
@@ -130,6 +135,8 @@ impl Default for BEImageApp {
             cost_per_turn,
             food,
             health,
+            colony_info,
+            colony_info_last_update,
             ctx: None,
             thread_started: false,
             current_tab,
@@ -155,6 +162,8 @@ impl App for BEImageApp {
             let cost_per_turn = self.cost_per_turn.clone();
             let food = self.food.clone();
             let health = self.health.clone();
+            let colony_info = self.colony_info.clone();
+            let colony_info_last_update = self.colony_info_last_update.clone();
             let ctx_clone = ctx.clone();
             let shared_current_tab = self.shared_current_tab.clone();
             let shard_config = self.shard_config.clone();
@@ -244,6 +253,18 @@ impl App for BEImageApp {
                                 *last_update_time.lock().unwrap() = Instant::now();
                             }
                         }
+                        Tab::Info => {
+                            // Update colony info every 1 second when Info tab is active
+                            let last_update = *colony_info_last_update.lock().unwrap();
+                            if last_update.elapsed().as_secs() >= 1 {
+                                if let Some(info) = call_be::get_colony_info(cluster_topology) {
+                                    let mut locked = colony_info.lock().unwrap();
+                                    *locked = Some(info);
+                                    *colony_info_last_update.lock().unwrap() = Instant::now();
+                                    *last_update_time.lock().unwrap() = Instant::now();
+                                }
+                            }
+                        }
                     }
                     ctx_clone.request_repaint();
                     thread::sleep(Duration::from_millis(REFRESH_INTERVAL_MS));
@@ -264,6 +285,7 @@ impl App for BEImageApp {
                 ui.selectable_value(&mut self.current_tab, Tab::CanMove, "Can Move");
                 ui.selectable_value(&mut self.current_tab, Tab::CostPerTurn, "Cost Per Turn");
                 ui.selectable_value(&mut self.current_tab, Tab::Health, "Health");
+                ui.selectable_value(&mut self.current_tab, Tab::Info, "Info");
                 
                 // Update shared tab if changed
                 if self.current_tab != old_tab {
@@ -295,6 +317,7 @@ impl App for BEImageApp {
                 Tab::CanMove => self.show_can_move_tab(ui),
                 Tab::CostPerTurn => self.show_cost_per_turn_tab(ui),
                 Tab::Health => self.show_health_tab(ui),
+                Tab::Info => self.show_info_tab(ui),
             }
         });
     }
@@ -536,6 +559,82 @@ impl BEImageApp {
                 None
             }
         });
+    }
+
+    fn format_number_with_commas(num: u64) -> String {
+        let num_str = num.to_string();
+        let mut result = String::new();
+        let chars: Vec<char> = num_str.chars().collect();
+        
+        for (i, &ch) in chars.iter().enumerate() {
+            if i > 0 && (chars.len() - i) % 3 == 0 {
+                result.push(',');
+            }
+            result.push(ch);
+        }
+        
+        result
+    }
+
+    fn show_info_tab(&self, ui: &mut egui::Ui) {
+        ui.heading("Colony Information");
+        ui.separator();
+        
+        // Get cached colony info (updated by background thread)
+        let colony_info_guard = self.colony_info.lock().unwrap();
+        if let Some((colony_life_info, current_tick)) = colony_info_guard.as_ref() {
+            ui.group(|ui| {
+                ui.heading("Current Status");
+                
+                // Display current tick
+                if let Some(tick) = current_tick {
+                    ui.horizontal(|ui| {
+                        ui.label("Current Tick:");
+                        ui.label(format!("{}", Self::format_number_with_commas(*tick)));
+                    });
+                } else {
+                    ui.label("Current Tick: Not available");
+                }
+            });
+            
+            ui.add_space(10.0);
+            
+            // Display ColonyLifeInfo in a table format
+            if let Some(life_info) = colony_life_info {
+                ui.group(|ui| {
+                    ui.heading("Colony Life Configuration");
+                    
+                    egui::Grid::new("colony_life_info_grid")
+                        .num_columns(2)
+                        .spacing([20.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("Health Cost Per Size Unit:");
+                            ui.label(format!("{}", life_info.health_cost_per_size_unit));
+                            ui.end_row();
+                            
+                            ui.label("Eat Capacity Per Size Unit:");
+                            ui.label(format!("{}", life_info.eat_capacity_per_size_unit));
+                            ui.end_row();
+                            
+                            ui.label("Health Cost If Can Kill:");
+                            ui.label(format!("{}", life_info.health_cost_if_can_kill));
+                            ui.end_row();
+                            
+                            ui.label("Health Cost If Can Move:");
+                            ui.label(format!("{}", life_info.health_cost_if_can_move));
+                            ui.end_row();
+                            
+                            ui.label("Mutation Chance:");
+                            ui.label(format!("{}", life_info.mutation_chance));
+                            ui.end_row();
+                        });
+                });
+            } else {
+                ui.label("Colony Life Configuration: Not available");
+            }
+        } else {
+            ui.colored_label(egui::Color32::YELLOW, "Loading colony information...");
+        }
     }
 }
 

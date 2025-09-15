@@ -147,11 +147,22 @@ async fn handle_get_colony_info(_req: GetColonyInfoRequest) -> BackendResponse {
         BackendResponse::GetColonyInfo(GetColonyInfoResponse::ColonyNotInitialized)
     } else {
         let colony = Colony::instance();
-        let (shards, _) = colony.get_hosted_shards();
+        let (shards, shard_arcs) = colony.get_hosted_shards();
+        
+        // Get ColonyLifeInfo and current_tick from the first available shard
+        let (colony_life_info, current_tick) = if let Some(first_shard_arc) = shard_arcs.first() {
+            let shard = first_shard_arc.lock().unwrap();
+            (Some(shard.colony_life_info), Some(shard.current_tick))
+        } else {
+            (None, None)
+        };
+        
         BackendResponse::GetColonyInfo(GetColonyInfoResponse::Ok {
             width: colony._width,
             height: colony._height,
             shards,
+            colony_life_info,
+            current_tick,
         })
     }
 }
