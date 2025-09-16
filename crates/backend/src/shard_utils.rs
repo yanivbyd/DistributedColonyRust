@@ -1,5 +1,5 @@
 use crate::colony_shard::{ColonyShard, is_blank};
-use shared::{be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits, UpdatedShardContentsRequest, ShardLayer}, log_error};
+use shared::{be_api::{Cell, ColonyLifeRules, Color, Shard, Traits, UpdatedShardContentsRequest, ShardLayer}, log_error};
 use crate::shard_storage::ShardStorage;
 use shared::log;
 use rand::rngs::SmallRng;
@@ -16,11 +16,11 @@ impl ShardUtils {
         dst.tick_bit = tick_bit;        
     }
 
-    pub fn new_colony_shard(shard: &Shard, colony_life_info: &ColonyLifeInfo, rng: &mut SmallRng) -> ColonyShard {
+    pub fn new_colony_shard(shard: &Shard, colony_life_rules: &ColonyLifeRules, rng: &mut SmallRng) -> ColonyShard {
         let white_color = Color { red: 255, green: 255, blue: 255 };
         let mut colony_shard = ColonyShard {
             shard: shard.clone(),
-            colony_life_info: colony_life_info.clone(),
+            colony_life_rules: colony_life_rules.clone(),
             current_tick: 0,
             grid: (0..((shard.width as usize + 2) * (shard.height as usize + 2))).map(|_| {
                 Cell { 
@@ -110,7 +110,7 @@ impl ShardUtils {
                             if is_blank(cell) {
                                 0 // blank
                             } else {
-                                ColonyShard::calculate_health_cost_for_cell(cell, &shard.colony_life_info) as i32
+                                ColonyShard::calculate_health_cost_for_cell(cell, &shard.colony_life_rules) as i32
                             }
                         }));
                     }

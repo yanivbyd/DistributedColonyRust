@@ -92,7 +92,7 @@ struct BEImageApp {
     cost_per_turn: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     food: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     health: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
-    colony_info: Arc<Mutex<Option<(Option<shared::be_api::ColonyLifeInfo>, Option<u64>)>>>,
+    colony_info: Arc<Mutex<Option<(Option<shared::be_api::ColonyLifeRules>, Option<u64>)>>>,
     colony_info_last_update: Arc<Mutex<Instant>>,
     ctx: Option<egui::Context>,
     thread_started: bool,
@@ -582,7 +582,7 @@ impl BEImageApp {
         
         // Get cached colony info (updated by background thread)
         let colony_info_guard = self.colony_info.lock().unwrap();
-        if let Some((colony_life_info, current_tick)) = colony_info_guard.as_ref() {
+        if let Some((colony_life_rules, current_tick)) = colony_info_guard.as_ref() {
             ui.group(|ui| {
                 ui.heading("Current Status");
                 
@@ -599,12 +599,12 @@ impl BEImageApp {
             
             ui.add_space(10.0);
             
-            // Display ColonyLifeInfo in a table format
-            if let Some(life_info) = colony_life_info {
+            // Display ColonyLifeRules in a table format
+            if let Some(life_info) = colony_life_rules {
                 ui.group(|ui| {
-                    ui.heading("Colony Life Configuration");
+                    ui.heading("Rules");
                     
-                    egui::Grid::new("colony_life_info_grid")
+                    egui::Grid::new("colony_life_rules_grid")
                         .num_columns(2)
                         .spacing([20.0, 4.0])
                         .show(ui, |ui| {

@@ -5,7 +5,7 @@ pub const BACKEND_PORT: u16 = 8082;
 pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
 
 // Re-export colony model types for backward compatibility
-pub use crate::colony_model::{Color, Cell, ColonyLifeInfo, Shard, ShardLayer, Traits};
+pub use crate::colony_model::{Color, Cell, ColonyLifeRules, Shard, ShardLayer, Traits};
 pub use crate::colony_events::ColonyEvent;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -40,13 +40,13 @@ pub enum BackendResponse {
 pub struct InitColonyRequest {
     pub width: i32,
     pub height: i32,
-    pub colony_life_info: ColonyLifeInfo,
+    pub colony_life_rules: ColonyLifeRules,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InitColonyShardRequest {
     pub shard: Shard,
-    pub colony_life_info: ColonyLifeInfo,
+    pub colony_life_rules: ColonyLifeRules,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -95,7 +95,7 @@ pub enum GetColonyInfoResponse {
         width: i32,
         height: i32,
         shards: Vec<Shard>,
-        colony_life_info: Option<ColonyLifeInfo>,
+        colony_life_rules: Option<ColonyLifeRules>,
         current_tick: Option<u64>,
     },
     ColonyNotInitialized,

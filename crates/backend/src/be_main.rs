@@ -103,7 +103,7 @@ async fn handle_init_colony_shard(req: InitColonyShardRequest) -> BackendRespons
         BackendResponse::InitColonyShard(InitColonyShardResponse::InvalidShardDimensions)
     } else {
         let mut rng = shared::utils::new_random_generator();
-        Colony::instance().add_hosted_shard(ShardUtils::new_colony_shard(&req.shard, &req.colony_life_info, &mut rng));
+        Colony::instance().add_hosted_shard(ShardUtils::new_colony_shard(&req.shard, &req.colony_life_rules, &mut rng));
         BackendResponse::InitColonyShard(InitColonyShardResponse::Ok)
     }
 }
@@ -149,10 +149,10 @@ async fn handle_get_colony_info(_req: GetColonyInfoRequest) -> BackendResponse {
         let colony = Colony::instance();
         let (shards, shard_arcs) = colony.get_hosted_shards();
         
-        // Get ColonyLifeInfo and current_tick from the first available shard
-        let (colony_life_info, current_tick) = if let Some(first_shard_arc) = shard_arcs.first() {
+        // Get ColonyLifeRules and current_tick from the first available shard
+        let (colony_life_rules, current_tick) = if let Some(first_shard_arc) = shard_arcs.first() {
             let shard = first_shard_arc.lock().unwrap();
-            (Some(shard.colony_life_info), Some(shard.current_tick))
+            (Some(shard.colony_life_rules), Some(shard.current_tick))
         } else {
             (None, None)
         };
@@ -161,7 +161,7 @@ async fn handle_get_colony_info(_req: GetColonyInfoRequest) -> BackendResponse {
             width: colony._width,
             height: colony._height,
             shards,
-            colony_life_info,
+            colony_life_rules,
             current_tick,
         })
     }

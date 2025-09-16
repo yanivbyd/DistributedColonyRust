@@ -1,5 +1,5 @@
 use shared::be_api::{
-    BackendRequest, BackendResponse, ColonyLifeInfo, GetColonyInfoRequest, 
+    BackendRequest, BackendResponse, ColonyLifeRules, GetColonyInfoRequest, 
     GetColonyInfoResponse, InitColonyRequest, InitColonyResponse, 
     InitColonyShardRequest, InitColonyShardResponse, Shard
 };
@@ -10,7 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bincode;
 use crate::coordinator_storage::{CoordinatorStorage, CoordinatorInfo, ColonyStatus};
 
-const COLONY_LIFE_INFO: ColonyLifeInfo = ColonyLifeInfo { 
+const COLONY_LIFE_RULES: ColonyLifeRules = ColonyLifeRules { 
     health_cost_per_size_unit: 2,
     eat_capacity_per_size_unit: 5,
     health_cost_if_can_kill: 10,
@@ -70,7 +70,7 @@ async fn send_init_colony(stream: &mut TcpStream) {
     let init = BackendRequest::InitColony(InitColonyRequest { 
         width: ClusterTopology::get_width_in_shards() * ClusterTopology::get_shard_width(), 
         height: ClusterTopology::get_height_in_shards() * ClusterTopology::get_shard_height(), 
-        colony_life_info: COLONY_LIFE_INFO 
+        colony_life_rules: COLONY_LIFE_RULES 
     });
     send_message(stream, &init).await;
 
@@ -84,7 +84,7 @@ async fn send_init_colony(stream: &mut TcpStream) {
 }
 
 async fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
-    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard, colony_life_info: COLONY_LIFE_INFO });
+    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard, colony_life_rules: COLONY_LIFE_RULES });
     send_message(stream, &req).await;
     if let Some(response) = receive_message::<BackendResponse>(stream).await {
         match response {

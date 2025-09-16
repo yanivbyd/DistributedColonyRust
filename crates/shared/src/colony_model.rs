@@ -36,7 +36,7 @@ pub struct Traits {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct ColonyLifeInfo {
+pub struct ColonyLifeRules {
     pub health_cost_per_size_unit: u32,
     pub eat_capacity_per_size_unit: u32,
     pub health_cost_if_can_kill: u32,

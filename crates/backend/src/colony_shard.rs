@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shared::be_api::{Cell, ColonyLifeInfo, Color, Shard, Traits};
+use shared::be_api::{Cell, ColonyLifeRules, Color, Shard, Traits};
 use shared::log;
 use shared::utils::{new_random_generator, random_chance, random_color};
 use rand::{Rng, rngs::SmallRng};
@@ -67,7 +67,7 @@ pub fn get_neighbor_permutations() -> &'static Vec<[ (isize, isize); 8 ]> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ColonyShard {
     pub shard: Shard,
-    pub colony_life_info: ColonyLifeInfo,    
+    pub colony_life_rules: ColonyLifeRules,    
     pub grid: Vec<Cell>,
     pub current_tick: u64, 
 }
@@ -94,19 +94,19 @@ impl ColonyShard {
         count
     }
 
-    pub fn calculate_health_cost_for_cell(cell: &Cell, colony_life_info: &ColonyLifeInfo) -> u16 {
+    pub fn calculate_health_cost_for_cell(cell: &Cell, colony_life_rules: &ColonyLifeRules) -> u16 {
         let size: u16 = cell.traits.size as u16;
-        let can_kill_cost = if cell.traits.can_kill { colony_life_info.health_cost_if_can_kill as u16 } else { 0 };
-        let can_move_cost = if cell.traits.can_move { colony_life_info.health_cost_if_can_move as u16 } else { 0 };
-        size.saturating_mul(colony_life_info.health_cost_per_size_unit as u16)
+        let can_kill_cost = if cell.traits.can_kill { colony_life_rules.health_cost_if_can_kill as u16 } else { 0 };
+        let can_move_cost = if cell.traits.can_move { colony_life_rules.health_cost_if_can_move as u16 } else { 0 };
+        size.saturating_mul(colony_life_rules.health_cost_per_size_unit as u16)
             + can_kill_cost + can_move_cost
     }
 
     fn eat_food(&mut self, cell_idx: usize) {
         let size: u16 = self.grid[cell_idx].traits.size as u16;
-        let max_food_can_eat = size.saturating_mul(self.colony_life_info.eat_capacity_per_size_unit as u16);
+        let max_food_can_eat = size.saturating_mul(self.colony_life_rules.eat_capacity_per_size_unit as u16);
         let food_eaten: u16 = min(self.grid[cell_idx].food, max_food_can_eat);
-        let health_cost = Self::calculate_health_cost_for_cell(&self.grid[cell_idx], &self.colony_life_info);
+        let health_cost = Self::calculate_health_cost_for_cell(&self.grid[cell_idx], &self.colony_life_rules);
         self.grid[cell_idx].health = self.grid[cell_idx].health.saturating_add(food_eaten).saturating_sub(health_cost);
         self.grid[cell_idx].food = self.grid[cell_idx].food.saturating_sub(food_eaten);
     }
@@ -223,7 +223,7 @@ impl ColonyShard {
     }
     
     fn breed(&mut self, my_cell: usize, neighbors: &[usize], neighbor_count: usize, next_bit: bool, rng: &mut SmallRng) -> bool {
-        let cost_per_tick: u16 = (self.colony_life_info.health_cost_per_size_unit as u16).saturating_mul(self.grid[my_cell].traits.size as u16);
+        let cost_per_tick: u16 = (self.colony_life_rules.health_cost_per_size_unit as u16).saturating_mul(self.grid[my_cell].traits.size as u16);
         if self.grid[my_cell].health <= cost_per_tick {
             return false;
         }
@@ -238,7 +238,7 @@ impl ColonyShard {
                 self.grid[neighbor].health = half_health;
                 self.grid[neighbor].traits = self.grid[my_cell].traits;
                 self.grid[neighbor].tick_bit = next_bit;
-                if random_chance(rng, self.colony_life_info.mutation_chance) {
+                if random_chance(rng, self.colony_life_rules.mutation_chance) {
                     self.grid[neighbor] = self.mutate_cell(&self.grid[neighbor], rng);
                 }
                 self.grid[my_cell].health = self.grid[my_cell].health.saturating_sub(half_health);

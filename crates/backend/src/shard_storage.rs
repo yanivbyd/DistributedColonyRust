@@ -13,7 +13,7 @@ impl ShardStorage {
     pub fn retrieve_shard(shard: &mut ColonyShard, filename: &str) -> bool {
         if let Some(loaded_shard) = StorageUtils::retrieve_with_checksum::<ColonyShard>(filename) {
             shard.grid = loaded_shard.grid;
-            shard.colony_life_info = loaded_shard.colony_life_info;
+            shard.colony_life_rules = loaded_shard.colony_life_rules;
             shard.current_tick = loaded_shard.current_tick;
             assert_eq!(shard.shard, loaded_shard.shard);
             true
