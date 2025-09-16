@@ -8,9 +8,10 @@ use shared::{log, log_error};
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bincode;
-use crate::coordinator_storage::{CoordinatorStorage, CoordinatorInfo, ColonyStatus};
+use crate::coordinator_storage::{CoordinatorStorage, CoordinatorStoredInfo, ColonyStatus};
+use crate::coordinator_context::CoordinatorContext;
 
-const COLONY_LIFE_RULES: ColonyLifeRules = ColonyLifeRules { 
+const COLONY_LIFE_INITIAL_RULES: ColonyLifeRules = ColonyLifeRules { 
     health_cost_per_size_unit: 2,
     eat_capacity_per_size_unit: 5,
     health_cost_if_can_kill: 10,
@@ -70,7 +71,7 @@ async fn send_init_colony(stream: &mut TcpStream) {
     let init = BackendRequest::InitColony(InitColonyRequest { 
         width: ClusterTopology::get_width_in_shards() * ClusterTopology::get_shard_width(), 
         height: ClusterTopology::get_height_in_shards() * ClusterTopology::get_shard_height(), 
-        colony_life_rules: COLONY_LIFE_RULES 
+        colony_life_rules: COLONY_LIFE_INITIAL_RULES 
     });
     send_message(stream, &init).await;
 
@@ -84,7 +85,7 @@ async fn send_init_colony(stream: &mut TcpStream) {
 }
 
 async fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
-    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard, colony_life_rules: COLONY_LIFE_RULES });
+    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard, colony_life_rules: COLONY_LIFE_INITIAL_RULES });
     send_message(stream, &req).await;
     if let Some(response) = receive_message::<BackendResponse>(stream).await {
         match response {
@@ -103,14 +104,17 @@ async fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
 }
 
 pub async fn initialize_colony() {
-    // Step 1: Retrieve coordination info
-    let mut coord_info = CoordinatorStorage::retrieve(COORDINATION_FILE)
+    // Step 1: Retrieve coordination info and initialize context
+    let stored_info = CoordinatorStorage::retrieve(COORDINATION_FILE)
         .unwrap_or_else(|| {
             log!("No existing coordination info found, starting fresh");
-            CoordinatorInfo::new()
+            CoordinatorStoredInfo::new()
         });
     
-    log!("Starting colony initialization with status: {:?}", coord_info.status);
+    CoordinatorContext::initialize_with_stored_info(stored_info);
+    let context = CoordinatorContext::get_instance();
+    
+    log!("Starting colony initialization with status: {:?}", context.get_coord_stored_info().status);
     
     let topology = ClusterTopology::get_instance();
     let backend_hosts = topology.get_all_backend_hosts();
@@ -124,9 +128,11 @@ pub async fn initialize_colony() {
     log!("Colony info: {:?}", colony_info);
     
     match colony_info {
-        Some(GetColonyInfoResponse::Ok { width, height, shards: _, .. }) => {
+        Some(GetColonyInfoResponse::Ok { width, height, shards: _, colony_life_rules, .. }) => {
+            let mut coord_info = context.get_coord_stored_info();
             coord_info.colony_width = Some(width);
             coord_info.colony_height = Some(height);
+            coord_info.colony_life_rules = colony_life_rules;
         },
         Some(GetColonyInfoResponse::ColonyNotInitialized) | None => {
             // Initialize colony on all backends
@@ -134,8 +140,10 @@ pub async fn initialize_colony() {
                 let mut stream = connect_to_backend(&backend_host.hostname, backend_host.port).await;
                 send_init_colony(&mut stream).await;
             }
+            let mut coord_info = context.get_coord_stored_info();
             coord_info.colony_width = Some(ClusterTopology::get_width_in_shards() * ClusterTopology::get_shard_width());
             coord_info.colony_height = Some(ClusterTopology::get_height_in_shards() * ClusterTopology::get_shard_height());
+            coord_info.colony_life_rules = Some(COLONY_LIFE_INITIAL_RULES);
         }
     }
     
@@ -155,7 +163,7 @@ pub async fn initialize_colony() {
     }    
 
     // Step 3: Initialize topography
-    if matches!(coord_info.status, ColonyStatus::NotInitialized) {
+    if matches!(context.get_coord_stored_info().status, ColonyStatus::NotInitialized) {
         log!("Step 3: Initializing topography");
         
         use crate::global_topography::{GlobalTopography, GlobalTopographyInfo};
@@ -176,13 +184,13 @@ pub async fn initialize_colony() {
         };
         GlobalTopography::new(topography_info).generate_topography().await;
         
-        coord_info.status = ColonyStatus::TopographyInitialized;
+        let mut coord_stored_info = context.get_coord_stored_info();
+        coord_stored_info.status = ColonyStatus::TopographyInitialized;
         
-        // Save coordination info after topography initialization
-        if let Err(e) = CoordinatorStorage::store(&coord_info, COORDINATION_FILE) {
+        if let Err(e) = CoordinatorStorage::store(&coord_stored_info, COORDINATION_FILE) {
             log_error!("Failed to save coordination info: {}", e);
         }
     }
     
-    log!("Colony initialization completed with status: {:?}", coord_info.status);
+    log!("Colony initialization completed with status: {:?}", context.get_coord_stored_info().status);
 } 

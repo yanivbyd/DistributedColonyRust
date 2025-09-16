@@ -1,6 +1,7 @@
 mod init_colony;
 mod global_topography;
 mod coordinator_storage;
+mod coordinator_context;
 mod coordinator_ticker;
 mod backend_client;
 mod tick_monitor;
