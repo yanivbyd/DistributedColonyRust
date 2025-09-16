@@ -16,7 +16,6 @@ use shared::coordinator_api::{COORDINATOR_PORT };
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error, log};
 use bincode;
-use tokio::task;
 use futures_util::SinkExt;
 
 use crate::init_colony::initialize_colony;
@@ -80,11 +79,7 @@ async fn main() {
     
     coordinator_ticker::start_coordinator_ticker();
     
-    // Make initialize_colony blocking by using spawn_blocking
-    task::spawn_blocking(|| {
-        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-        rt.block_on(initialize_colony())
-    }).await.expect("Failed to initialize colony");
+    tokio::spawn(initialize_colony()).await.expect("Failed to initialize colony");
 
     let addr = format!("127.0.0.1:{}", COORDINATOR_PORT);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
