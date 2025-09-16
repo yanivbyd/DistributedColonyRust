@@ -2,6 +2,7 @@
 use eframe::egui;
 use egui_extras::RetainedImage;
 use shared::be_api::{BackendRequest, BackendResponse, GetShardImageRequest, GetShardImageResponse, GetShardLayerRequest, GetShardLayerResponse, GetColonyInfoRequest, GetColonyInfoResponse, ShardLayer, Shard, Color, ColonyLifeRules};
+use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, ColonyEventDescription};
 use shared::cluster_topology::{ClusterTopology, HostInfo};
 use std::net::TcpStream;
 use std::io::{Read, Write};
@@ -147,6 +148,40 @@ pub fn get_colony_info(topology: &ClusterTopology) -> Option<(Option<ColonyLifeR
     let response: BackendResponse = send_request_with_pool(host_info, &req)?;
     if let BackendResponse::GetColonyInfo(GetColonyInfoResponse::Ok { colony_life_rules, current_tick, .. }) = response {
         Some((colony_life_rules, current_tick))
+    } else {
+        None
+    }
+}
+
+fn send_coordinator_request(request: &CoordinatorRequest) -> Option<CoordinatorResponse> {
+    let coordinator_port = shared::coordinator_api::COORDINATOR_PORT;
+    let addr = format!("127.0.0.1:{}", coordinator_port);
+    
+    let mut stream = TcpStream::connect_timeout(&addr.parse().ok()?, Duration::from_millis(500)).ok()?;
+    stream.set_read_timeout(Some(Duration::from_millis(1000))).ok()?;
+    stream.set_write_timeout(Some(Duration::from_millis(500))).ok()?;
+    
+    // Send request
+    let encoded = bincode::serialize(request).ok()?;
+    let len = (encoded.len() as u32).to_be_bytes();
+    stream.write_all(&len).ok()?;
+    stream.write_all(&encoded).ok()?;
+    
+    // Read response
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).ok()?;
+    let resp_len = u32::from_be_bytes(len_buf) as usize;
+    let mut buf = vec![0u8; resp_len];
+    stream.read_exact(&mut buf).ok()?;
+    
+    bincode::deserialize(&buf).ok()
+}
+
+pub fn get_colony_events(limit: usize) -> Option<Vec<ColonyEventDescription>> {
+    let req = CoordinatorRequest::GetColonyEvents { limit };
+    let response = send_coordinator_request(&req)?;
+    if let CoordinatorResponse::GetColonyEventsResponse { events } = response {
+        Some(events)
     } else {
         None
     }

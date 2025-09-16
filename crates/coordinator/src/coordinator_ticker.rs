@@ -1,6 +1,7 @@
 use shared::log;
 use shared::colony_model::Shard;
-use shared::colony_event_shared::log_event;
+use shared::colony_event_shared::{log_event, create_colony_event_description};
+use crate::coordinator_context::CoordinatorContext;
 use crate::colony_event_generator::{randomize_event_by_frequency, get_next_event_tick_by_frequency, EventFrequency};
 use shared::utils::new_random_generator;
 use crate::backend_client;
@@ -59,6 +60,10 @@ fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFre
             if tick_count >= next_tick {
                 let event = randomize_event_by_frequency(*frequency, colony_width, colony_height, &mut event_rng);
                 log_event(&event, tick_count);
+                
+                // Store event in CoordinatorContext
+                let event_description = create_colony_event_description(&event, tick_count);
+                CoordinatorContext::get_instance().add_colony_event(event_description);
                 
                 // Special handling for NewTopography event
                 if matches!(event, shared::colony_events::ColonyEvent::NewTopography()) {

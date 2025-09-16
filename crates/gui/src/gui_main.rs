@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use shared::be_api::ShardLayer;
 use shared::cluster_topology::ClusterTopology;
+use shared::coordinator_api::ColonyEventDescription;
 mod call_be;
 mod connection_pool;
 
@@ -93,7 +94,7 @@ struct BEImageApp {
     food: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     health: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     colony_info: Arc<Mutex<Option<(Option<shared::be_api::ColonyLifeRules>, Option<u64>)>>>,
-    colony_info_last_update: Arc<Mutex<Instant>>,
+    colony_events: Arc<Mutex<Option<Vec<ColonyEventDescription>>>>,
     ctx: Option<egui::Context>,
     thread_started: bool,
     current_tab: Tab,
@@ -123,7 +124,7 @@ impl Default for BEImageApp {
         let food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let health = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let colony_info = Arc::new(Mutex::new(None));
-        let colony_info_last_update = Arc::new(Mutex::new(Instant::now()));
+        let colony_events = Arc::new(Mutex::new(None));
         let current_tab = Tab::Creatures;
         Self {
             creatures,
@@ -136,7 +137,7 @@ impl Default for BEImageApp {
             food,
             health,
             colony_info,
-            colony_info_last_update,
+            colony_events,
             ctx: None,
             thread_started: false,
             current_tab,
@@ -162,8 +163,6 @@ impl App for BEImageApp {
             let cost_per_turn = self.cost_per_turn.clone();
             let food = self.food.clone();
             let health = self.health.clone();
-            let colony_info = self.colony_info.clone();
-            let colony_info_last_update = self.colony_info_last_update.clone();
             let ctx_clone = ctx.clone();
             let shared_current_tab = self.shared_current_tab.clone();
             let shard_config = self.shard_config.clone();
@@ -254,16 +253,7 @@ impl App for BEImageApp {
                             }
                         }
                         Tab::Info => {
-                            // Update colony info every 1 second when Info tab is active
-                            let last_update = *colony_info_last_update.lock().unwrap();
-                            if last_update.elapsed().as_secs() >= 1 {
-                                if let Some(info) = call_be::get_colony_info(cluster_topology) {
-                                    let mut locked = colony_info.lock().unwrap();
-                                    *locked = Some(info);
-                                    *colony_info_last_update.lock().unwrap() = Instant::now();
-                                    *last_update_time.lock().unwrap() = Instant::now();
-                                }
-                            }
+                            // No automatic polling for Info tab - data is loaded once when tab is first accessed
                         }
                     }
                     ctx_clone.request_repaint();
@@ -294,17 +284,19 @@ impl App for BEImageApp {
                     }
                 }
                 
-                // Show status indicator only when there are issues
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let last_update = *self.last_update_time.lock().unwrap();
-                    let time_since_update = last_update.elapsed();
-                    if time_since_update.as_secs() > 5 {
-                        ui.colored_label(egui::Color32::RED, "⚠️ Backend Unresponsive");
-                    } else if time_since_update.as_millis() > 1000 {
-                        ui.colored_label(egui::Color32::YELLOW, "🔄 Slow Response");
-                    }
-                    // Don't show anything when all is well (time_since_update <= 1000ms)
-                });
+                // Show status indicator only when there are issues and not on Info tab
+                if self.current_tab != Tab::Info {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let last_update = *self.last_update_time.lock().unwrap();
+                        let time_since_update = last_update.elapsed();
+                        if time_since_update.as_secs() > 5 {
+                            ui.colored_label(egui::Color32::RED, "⚠️ Backend Unresponsive");
+                        } else if time_since_update.as_millis() > 1000 {
+                            ui.colored_label(egui::Color32::YELLOW, "🔄 Slow Response");
+                        }
+                        // Don't show anything when all is well (time_since_update <= 1000ms)
+                    });
+                }
             });
             ui.separator();
             
@@ -577,14 +569,54 @@ impl BEImageApp {
     }
 
     fn show_info_tab(&self, ui: &mut egui::Ui) {
-        ui.heading("Colony Information");
+        
+        // Add refresh button at the top
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("🔄 Refresh").clicked() {
+                    // Reload colony info
+                    if let Some(info) = call_be::get_colony_info(self.cluster_topology) {
+                        let mut locked = self.colony_info.lock().unwrap();
+                        *locked = Some(info);
+                    }
+                    
+                    // Reload colony events
+                    if let Some(events) = call_be::get_colony_events(30) {
+                        let mut locked = self.colony_events.lock().unwrap();
+                        *locked = Some(events);
+                    }
+                }
+            });
+        });
         ui.separator();
         
-        // Get cached colony info (updated by background thread)
+        // Load data only if not already loaded (first time accessing the tab)
+        {
+            let colony_info_guard = self.colony_info.lock().unwrap();
+            if colony_info_guard.is_none() {
+                drop(colony_info_guard); // Release lock before making API call
+                if let Some(info) = call_be::get_colony_info(self.cluster_topology) {
+                    let mut locked = self.colony_info.lock().unwrap();
+                    *locked = Some(info);
+                }
+            }
+        }
+        
+        {
+            let colony_events_guard = self.colony_events.lock().unwrap();
+            if colony_events_guard.is_none() {
+                drop(colony_events_guard); // Release lock before making API call
+                if let Some(events) = call_be::get_colony_events(30) {
+                    let mut locked = self.colony_events.lock().unwrap();
+                    *locked = Some(events);
+                }
+            }
+        }
+        
+        // Get cached colony info
         let colony_info_guard = self.colony_info.lock().unwrap();
         if let Some((colony_life_rules, current_tick)) = colony_info_guard.as_ref() {
             ui.group(|ui| {
-                ui.heading("Current Status");
                 
                 // Display current tick
                 if let Some(tick) = current_tick {
@@ -602,7 +634,6 @@ impl BEImageApp {
             // Display ColonyLifeRules in a table format
             if let Some(life_info) = colony_life_rules {
                 ui.group(|ui| {
-                    ui.heading("Rules");
                     
                     egui::Grid::new("colony_life_rules_grid")
                         .num_columns(2)
@@ -632,6 +663,45 @@ impl BEImageApp {
             } else {
                 ui.label("Colony Life Configuration: Not available");
             }
+            
+            ui.add_space(20.0);
+            
+            // Display colony events
+            ui.group(|ui| {
+                
+                let events_guard = self.colony_events.lock().unwrap();
+                if let Some(events) = events_guard.as_ref() {
+                    if events.is_empty() {
+                        ui.label("No events recorded yet.");
+                    } else {
+                        egui::Grid::new("colony_events_grid")
+                            .num_columns(3)
+                            .spacing([20.0, 4.0])
+                            .show(ui, |ui| {
+                                // Header row
+                                ui.label("Tick");
+                                ui.label("Event Type");
+                                ui.label("Description");
+                                ui.end_row();
+                                
+                                ui.separator();
+                                ui.separator();
+                                ui.separator();
+                                ui.end_row();
+                                
+                                // Event rows
+                                for event in events.iter() {
+                                    ui.label(format!("{}", Self::format_number_with_commas(event.tick)));
+                                    ui.label(&event.event_type);
+                                    ui.label(&event.description);
+                                    ui.end_row();
+                                }
+                            });
+                    }
+                } else {
+                    ui.colored_label(egui::Color32::YELLOW, "Loading colony events...");
+                }
+            });
         } else {
             ui.colored_label(egui::Color32::YELLOW, "Loading colony information...");
         }
