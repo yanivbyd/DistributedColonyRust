@@ -1,5 +1,8 @@
 use serde::{Serialize, Deserialize};
 use shared::{be_api::ColonyLifeRules, storage::StorageUtils};
+use shared::coordinator_api::ColonyEventDescription;
+
+pub const COORDINATOR_STATE_FILE: &str = "output/storage/colony.dat";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ColonyStatus {
@@ -13,6 +16,7 @@ pub struct CoordinatorStoredInfo {
     pub colony_width: Option<i32>,
     pub colony_height: Option<i32>,
     pub colony_life_rules: Option<ColonyLifeRules>,
+    pub colony_events: Vec<ColonyEventDescription>,
 }
 
 impl CoordinatorStoredInfo {
@@ -22,7 +26,16 @@ impl CoordinatorStoredInfo {
             colony_width: None,
             colony_height: None,
             colony_life_rules: None,
+            colony_events: Vec::new(),
         }
+    }
+    
+    pub fn add_event(&mut self, event: ColonyEventDescription) {
+        self.colony_events.push(event);
+    }
+    
+    pub fn get_events(&self) -> &Vec<ColonyEventDescription> {
+        &self.colony_events
     }
 }
 

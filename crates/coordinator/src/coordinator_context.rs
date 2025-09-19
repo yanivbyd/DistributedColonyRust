@@ -5,7 +5,6 @@ use shared::coordinator_api::ColonyEventDescription;
 #[derive(Debug)]
 pub struct CoordinatorContext {
     coord_stored_info: Mutex<CoordinatorStoredInfo>,
-    colony_events: Mutex<Vec<ColonyEventDescription>>,
 }
 
 static COORDINATOR_CONTEXT: OnceLock<CoordinatorContext> = OnceLock::new();
@@ -15,7 +14,6 @@ impl CoordinatorContext {
         COORDINATOR_CONTEXT.get_or_init(|| {
             CoordinatorContext {
                 coord_stored_info: Mutex::new(CoordinatorStoredInfo::new()),
-                colony_events: Mutex::new(Vec::new()),
             }
         })
     }
@@ -23,7 +21,6 @@ impl CoordinatorContext {
     pub fn initialize_with_stored_info(stored_info: CoordinatorStoredInfo) {
         COORDINATOR_CONTEXT.set(CoordinatorContext {
             coord_stored_info: Mutex::new(stored_info),
-            colony_events: Mutex::new(Vec::new()),
         }).expect("CoordinatorContext should only be initialized once");
     }
 
@@ -32,11 +29,19 @@ impl CoordinatorContext {
     }
 
     pub fn add_colony_event(&self, event: ColonyEventDescription) {
-        let mut events = self.colony_events.lock().expect("Failed to acquire lock on colony_events");
-        events.push(event);
+        let mut stored_info = self.coord_stored_info.lock().expect("Failed to acquire lock on coord_stored_info");
+        stored_info.add_event(event);
+        drop(stored_info); // Release lock before calling storage
+        
+        // Store the updated info to disk
+        let stored_info = self.coord_stored_info.lock().expect("Failed to acquire lock on coord_stored_info");
+        if let Err(e) = crate::coordinator_storage::CoordinatorStorage::store(&stored_info, crate::coordinator_storage::COORDINATOR_STATE_FILE) {
+            shared::log_error!("Failed to save coordination info: {}", e);
+        }
     }
 
-    pub fn get_colony_events(&self) -> std::sync::MutexGuard<Vec<ColonyEventDescription>> {
-        self.colony_events.lock().expect("Failed to acquire lock on colony_events")
+    pub fn get_colony_events(&self) -> Vec<ColonyEventDescription> {
+        let stored_info = self.coord_stored_info.lock().expect("Failed to acquire lock on coord_stored_info");
+        stored_info.get_events().clone()
     }
 }

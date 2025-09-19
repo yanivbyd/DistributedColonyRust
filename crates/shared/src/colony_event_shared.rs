@@ -64,7 +64,11 @@ pub fn create_colony_event_description(event: &ColonyEvent, current_tick: u64) -
             ("Create Creature".to_string(), format_local_event_description(event, region))
         },
         ColonyEvent::ChangeExtraFoodPerTick(amount) => {
-            ("Change ExtraFoodPerTick".to_string(), format!("Changed extra food per tick by {}", amount))
+            if *amount >= 0 {
+                ("More Food".to_string(), format!("Extra food per tick by +{}", amount))
+            } else {
+                ("Less Food".to_string(), format!("Extra food per tick by {}", amount))
+            }
         },
         ColonyEvent::Extinction() => {
             ("Extinction".to_string(), "Colony extinction event occurred".to_string())

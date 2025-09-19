@@ -570,47 +570,16 @@ impl BEImageApp {
 
     fn show_info_tab(&self, ui: &mut egui::Ui) {
         
-        // Add refresh button at the top
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("🔄 Refresh").clicked() {
-                    // Reload colony info
-                    if let Some(info) = call_be::get_colony_info(self.cluster_topology) {
-                        let mut locked = self.colony_info.lock().unwrap();
-                        *locked = Some(info);
-                    }
-                    
-                    // Reload colony events
-                    if let Some(events) = call_be::get_colony_events(30) {
-                        let mut locked = self.colony_events.lock().unwrap();
-                        *locked = Some(events);
-                    }
-                }
-            });
-        });
-        ui.separator();
         
-        // Load data only if not already loaded (first time accessing the tab)
-        {
-            let colony_info_guard = self.colony_info.lock().unwrap();
-            if colony_info_guard.is_none() {
-                drop(colony_info_guard); // Release lock before making API call
-                if let Some(info) = call_be::get_colony_info(self.cluster_topology) {
-                    let mut locked = self.colony_info.lock().unwrap();
-                    *locked = Some(info);
-                }
-            }
+        // Always refresh data when Info tab is accessed
+        if let Some(info) = call_be::get_colony_info(self.cluster_topology) {
+            let mut locked = self.colony_info.lock().unwrap();
+            *locked = Some(info);
         }
         
-        {
-            let colony_events_guard = self.colony_events.lock().unwrap();
-            if colony_events_guard.is_none() {
-                drop(colony_events_guard); // Release lock before making API call
-                if let Some(events) = call_be::get_colony_events(30) {
-                    let mut locked = self.colony_events.lock().unwrap();
-                    *locked = Some(events);
-                }
-            }
+        if let Some(events) = call_be::get_colony_events(30) {
+            let mut locked = self.colony_events.lock().unwrap();
+            *locked = Some(events);
         }
         
         // Get cached colony info

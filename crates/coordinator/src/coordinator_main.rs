@@ -59,15 +59,13 @@ async fn handle_get_routing_table() -> CoordinatorResponse {
 
 async fn handle_get_colony_events(limit: usize) -> CoordinatorResponse {
     let context = CoordinatorContext::get_instance();
-    let events = context.get_colony_events();
-    let mut events_clone = events.clone();
-    drop(events); // Release the lock
+    let mut events = context.get_colony_events();
     
     // Sort by tick in descending order (most recent first)
-    events_clone.sort_by(|a, b| b.tick.cmp(&a.tick));
+    events.sort_by(|a, b| b.tick.cmp(&a.tick));
     
     // Take only the top K events
-    let limited_events = events_clone.into_iter().take(limit).collect();
+    let limited_events = events.into_iter().take(limit).collect();
     
     CoordinatorResponse::GetColonyEventsResponse { 
         events: limited_events

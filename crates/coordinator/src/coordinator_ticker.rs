@@ -61,9 +61,15 @@ fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFre
                 let event = randomize_event_by_frequency(*frequency, colony_width, colony_height, &mut event_rng);
                 log_event(&event, tick_count);
                 
-                // Store event in CoordinatorContext
+                // Store event in CoordinatorContext (excluding common events)
                 let event_description = create_colony_event_description(&event, tick_count);
-                CoordinatorContext::get_instance().add_colony_event(event_description);
+                if !matches!(event, 
+                    shared::colony_events::ColonyEvent::LocalDeath(_) |
+                    shared::colony_events::ColonyEvent::RandomTrait(_, _) |
+                    shared::colony_events::ColonyEvent::CreateCreature(_, _)
+                ) {
+                    CoordinatorContext::get_instance().add_colony_event(event_description);
+                }
                 
                 // Special handling for NewTopography event
                 if matches!(event, shared::colony_events::ColonyEvent::NewTopography()) {
