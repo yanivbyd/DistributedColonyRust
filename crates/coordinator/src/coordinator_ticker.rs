@@ -10,6 +10,25 @@ use crate::global_topography::{GlobalTopography, GlobalTopographyInfo};
 use std::sync::Mutex;
 use std::collections::HashMap;
 
+const TOPOGRAPHY_EVENT_PAUSE_TICKS: u64 = 2000;
+
+fn is_events_paused(tick_count: u64) -> bool {
+    let context = CoordinatorContext::get_instance();
+    let stored_info = context.get_coord_stored_info();
+    stored_info.is_events_paused(tick_count)
+}
+
+fn set_event_pause(tick_count: u64, pause_ticks: u64) {
+    let context = CoordinatorContext::get_instance();
+    let mut stored_info = context.get_coord_stored_info();
+    stored_info.set_pause_events_till(tick_count + pause_ticks);
+    
+    // Store the updated info to disk
+    if let Err(e) = crate::coordinator_storage::CoordinatorStorage::store(&stored_info, crate::coordinator_storage::COORDINATOR_STATE_FILE) {
+        shared::log_error!("Failed to save coordination info: {}", e);
+    }
+}
+
 const EVENT_FREQUENCIES: [EventFrequency; 4] = [
     EventFrequency::Normal,
     EventFrequency::Rare,
@@ -53,6 +72,10 @@ async fn handle_new_topography_event(colony_width: i32, colony_height: i32) {
 }
 
 fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFrequency, u64>, colony_width: i32, colony_height: i32) {
+    if is_events_paused(tick_count) {
+        return; 
+    }
+    
     for frequency in EVENT_FREQUENCIES.iter() {
         let mut event_rng = new_random_generator();
         
@@ -62,12 +85,12 @@ fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFre
                 log_event(&event, tick_count);
                 
                 // Store event in CoordinatorContext (excluding common events)
-                let event_description = create_colony_event_description(&event, tick_count);
                 if !matches!(event, 
                     shared::colony_events::ColonyEvent::LocalDeath(_) |
                     shared::colony_events::ColonyEvent::RandomTrait(_, _) |
                     shared::colony_events::ColonyEvent::CreateCreature(_, _)
                 ) {
+                    let event_description = create_colony_event_description(&event, tick_count);
                     CoordinatorContext::get_instance().add_colony_event(event_description);
                 }
                 
@@ -76,6 +99,8 @@ fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFre
                     // Run async function in a blocking context
                     let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
                     rt.block_on(handle_new_topography_event(colony_width, colony_height));
+                    
+                    set_event_pause(tick_count, TOPOGRAPHY_EVENT_PAUSE_TICKS);
                 } else {
                     backend_client::broadcast_event_to_backends(event);
                 }

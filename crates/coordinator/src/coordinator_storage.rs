@@ -17,6 +17,7 @@ pub struct CoordinatorStoredInfo {
     pub colony_height: Option<i32>,
     pub colony_life_rules: Option<ColonyLifeRules>,
     pub colony_events: Vec<ColonyEventDescription>,
+    pub pause_events_till: u64,
 }
 
 impl CoordinatorStoredInfo {
@@ -27,6 +28,7 @@ impl CoordinatorStoredInfo {
             colony_height: None,
             colony_life_rules: None,
             colony_events: Vec::new(),
+            pause_events_till: 0,
         }
     }
     
@@ -36,6 +38,14 @@ impl CoordinatorStoredInfo {
     
     pub fn get_events(&self) -> &Vec<ColonyEventDescription> {
         &self.colony_events
+    }
+    
+    pub fn set_pause_events_till(&mut self, tick: u64) {
+        self.pause_events_till = tick;
+    }
+    
+    pub fn is_events_paused(&self, current_tick: u64) -> bool {
+        current_tick < self.pause_events_till
     }
 }
 
