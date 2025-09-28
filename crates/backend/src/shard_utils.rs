@@ -8,6 +8,7 @@ pub struct ShardUtils;
 
 impl ShardUtils {
     fn copy_cell_creature_data(dst: &mut Cell, src: &Cell, tick_bit: bool) {
+        if dst.health == 0 && src.health > 0 { return; }
         dst.color = src.color;
         dst.health = src.health;
         dst.traits = src.traits;
