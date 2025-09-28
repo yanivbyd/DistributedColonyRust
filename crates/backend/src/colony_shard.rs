@@ -276,12 +276,13 @@ impl ColonyShard {
             return false;
         }
         let my_size  = self.grid[my_cell].traits.size;
+        let my_color = self.grid[my_cell].color;
 
         for i in 0..neighbor_count {
             let n = neighbors[i];
             let nref = &self.grid[n];
-            if my_size > nref.traits.size && nref.health > 0 {
-                if nref.traits.can_kill && !random_chance(rng, 10) { continue }
+            if my_size > nref.traits.size && nref.health > 0 && !my_color.equals(&nref.color) {
+                if !random_chance(rng, 10) { continue }
                 self.grid[n].health = self.grid[my_cell].health.saturating_add(nref.health);
                 self.grid[n].color = self.grid[my_cell].color;
                 self.grid[n].traits = self.grid[my_cell].traits;
