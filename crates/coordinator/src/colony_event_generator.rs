@@ -1,4 +1,4 @@
-use shared::colony_events::{ColonyEvent, Region, Circle, Ellipse, CreateCreatureParams, RandomTraitParams};
+use shared::colony_events::{ColonyEvent, Region, Ellipse, CreateCreatureParams};
 use shared::be_api::Traits;
 use shared::utils::random_color;
 use rand::{rngs::SmallRng, Rng};
@@ -12,43 +12,20 @@ pub enum EventFrequency {
 }
 
 pub fn randomize_colony_event(colony_width: i32, colony_height: i32, rng: &mut SmallRng) -> ColonyEvent {
-    match rng.gen_range(0..3) {
-        0 => {
-            ColonyEvent::LocalDeath(randomize_event_region(colony_width, colony_height, rng))
-        },
-        1 => {
-            ColonyEvent::RandomTrait(randomize_event_region(colony_width, colony_height, rng), RandomTraitParams {
-                traits: Traits { size: rng.gen_range(1..30), can_kill: rng.gen_bool(0.5), can_move: rng.gen_bool(0.5) },
-            })
-        },
-        _ => {
-            ColonyEvent::CreateCreature(randomize_event_region(colony_width, colony_height, rng), CreateCreatureParams {
-                color: random_color(rng),
-                traits: Traits { size: rng.gen_range(1..30), can_kill: rng.gen_bool(0.5), can_move: rng.gen_bool(0.5) },
-                starting_health: 250,
-            })
-        }
-    }
+    ColonyEvent::CreateCreature(randomize_event_region(colony_width, colony_height, rng), CreateCreatureParams {
+        color: random_color(rng),
+        traits: Traits { size: rng.gen_range(1..20), can_kill: rng.gen_bool(0.5), can_move: rng.gen_bool(0.5) },
+        starting_health: 600,
+    })
 }
 
 pub fn randomize_event_region(colony_width: i32, colony_height: i32, rng: &mut SmallRng) -> Region {
-    match rng.gen_range(0..2) {
-        0 => {
-            Region::Circle(Circle {
-                x: (rng.gen_range(0..colony_width + 200) - 100) as i32,
-                y: (rng.gen_range(0..colony_height + 200) - 100) as i32,
-                radius: rng.gen_range(5..30) as i32,
-            })
-        },
-        _ => {
-            Region::Ellipse(Ellipse {
-                x: (rng.gen_range(0..colony_width + 200) - 100) as i32,
-                y: (rng.gen_range(0..colony_height + 200) - 100) as i32,
-                radius_x: rng.gen_range(15..40) as i32,
-                radius_y: rng.gen_range(15..40) as i32,
-            })
-        }
-    }
+    Region::Ellipse(Ellipse {
+        x: (rng.gen_range(0..colony_width + 200) - 100) as i32,
+        y: (rng.gen_range(0..colony_height + 200) - 100) as i32,
+        radius_x: rng.gen_range(15..40) as i32,
+        radius_y: rng.gen_range(15..40) as i32,
+    })
 }
 
 pub fn randomize_event_by_frequency(frequency: EventFrequency, colony_width: i32, colony_height: i32, rng: &mut SmallRng) -> ColonyEvent {

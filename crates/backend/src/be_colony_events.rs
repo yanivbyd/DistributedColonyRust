@@ -5,15 +5,6 @@ use shared::{be_api::Shard, colony_events::{ColonyEvent, Region}};
 
 fn point_inside_region(x: i32, y: i32, region: &Region) -> bool {
     match region {
-        Region::Circle(circle) => {
-            let dx = x - circle.x;
-            let dy = y - circle.y;
-            // Use saturating operations to prevent overflow
-            let dx2 = dx.saturating_mul(dx);
-            let dy2 = dy.saturating_mul(dy);
-            let radius2 = circle.radius.saturating_mul(circle.radius);
-            dx2.saturating_add(dy2) <= radius2
-        }
         Region::Ellipse(ellipse) => {
             let dx = x - ellipse.x;
             let dy = y - ellipse.y;
@@ -39,11 +30,6 @@ fn region_overlaps_shard(region: &Region, shard: &Shard) -> bool {
     let shard_bottom = shard.y + shard.height;
     
     match region {
-        Region::Circle(circle) => {
-            let closest_x = circle.x.max(shard.x).min(shard_right);
-            let closest_y = circle.y.max(shard.y).min(shard_bottom);
-            point_inside_region(closest_x, closest_y, region)
-        },
         Region::Ellipse(ellipse) => {
             let closest_x = ellipse.x.max(shard.x).min(shard_right);
             let closest_y = ellipse.y.max(shard.y).min(shard_bottom);
@@ -81,12 +67,6 @@ where
 
 pub fn apply_event(rng: &mut SmallRng, colony: &Colony, event: &ColonyEvent) {
     match event {
-        ColonyEvent::LocalDeath(region) => {
-                        apply_local_event(colony, event, region);
-            },
-        ColonyEvent::RandomTrait(region, _params) => {
-                apply_local_event(colony, event, region);
-            },
         ColonyEvent::CreateCreature(region, _params) => {
                 apply_local_event(colony, event, region);
             }
@@ -130,19 +110,6 @@ pub fn apply_local_event(colony: &Colony, event: &ColonyEvent, region: &Region) 
         }
         
         match event {
-            ColonyEvent::LocalDeath(_region) => {
-                apply_region_to_shard(&mut shard, region, |cell| {
-                    cell.color = WHITE_COLOR;
-                    cell.health = 0;
-                });
-            },
-            ColonyEvent::RandomTrait(_region, params) => {
-                apply_region_to_shard(&mut shard, region, |cell| {
-                    if cell.health > 0 {
-                        cell.traits = params.traits.clone();
-                    }
-                });
-            },
             ColonyEvent::CreateCreature(_region, params) => {
                 apply_region_to_shard(&mut shard, region, |cell| {
                     cell.color = params.color;

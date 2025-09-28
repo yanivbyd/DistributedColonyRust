@@ -5,12 +5,6 @@ use crate::coordinator_api::ColonyEventDescription;
 
 pub fn log_event(event: &ColonyEvent, current_tick: u64) {
     match event {
-        ColonyEvent::LocalDeath(region) => {
-            log_local_event(event, region, current_tick);
-        },
-        ColonyEvent::RandomTrait(region, _params) => {
-            log_local_event(event, region, current_tick);
-        },
         ColonyEvent::CreateCreature(region, _params) => {
             log_local_event(event, region, current_tick);
         },
@@ -28,9 +22,6 @@ pub fn log_event(event: &ColonyEvent, current_tick: u64) {
 
 pub fn log_local_event(event: &ColonyEvent, region: &Region, current_tick: u64) {
     let event_details = match event {
-        ColonyEvent::LocalDeath(_region) => "LocalDeath".to_string(),
-        ColonyEvent::RandomTrait(_region, params) => format!("RandomTrait, traits {:?}", 
-            params.traits),
         ColonyEvent::CreateCreature(_region, params) => format!("CreateCreature, color {:?}, traits {:?}, health {}", 
             params.color, params.traits, params.starting_health),
         _ => {
@@ -39,10 +30,6 @@ pub fn log_local_event(event: &ColonyEvent, region: &Region, current_tick: u64) 
     };
     
     let region_details = match region {
-        Region::Circle(circle) => {
-            format!("(Circle) at ({:.1}, {:.1}) with radius {:.1}", 
-                circle.x, circle.y, circle.radius)
-        },
         Region::Ellipse(ellipse) => {
             format!("(Ellipse) at ({:.1}, {:.1}) with radius ({:.1}, {:.1})", 
                 ellipse.x, ellipse.y, ellipse.radius_x, ellipse.radius_y)
@@ -54,12 +41,6 @@ pub fn log_local_event(event: &ColonyEvent, region: &Region, current_tick: u64) 
 
 pub fn create_colony_event_description(event: &ColonyEvent, current_tick: u64) -> ColonyEventDescription {
     let (event_type, description) = match event {
-        ColonyEvent::LocalDeath(region) => {
-            ("Local Death".to_string(), format_local_event_description(event, region))
-        },
-        ColonyEvent::RandomTrait(region, _params) => {
-            ("Random Trait".to_string(), format_local_event_description(event, region))
-        },
         ColonyEvent::CreateCreature(region, _params) => {
             ("Create Creature".to_string(), format_local_event_description(event, region))
         },
@@ -87,9 +68,6 @@ pub fn create_colony_event_description(event: &ColonyEvent, current_tick: u64) -
 
 fn format_local_event_description(event: &ColonyEvent, region: &Region) -> String {
     let event_details = match event {
-        ColonyEvent::LocalDeath(_region) => "LocalDeath".to_string(),
-        ColonyEvent::RandomTrait(_region, params) => format!("RandomTrait, traits {:?}", 
-            params.traits),
         ColonyEvent::CreateCreature(_region, params) => format!("CreateCreature, color {:?}, traits {:?}, health {}", 
             params.color, params.traits, params.starting_health),
         _ => {
@@ -98,10 +76,6 @@ fn format_local_event_description(event: &ColonyEvent, region: &Region) -> Strin
     };
     
     let region_details = match region {
-        Region::Circle(circle) => {
-            format!("(Circle) at ({:.1}, {:.1}) with radius {:.1}", 
-                circle.x, circle.y, circle.radius)
-        },
         Region::Ellipse(ellipse) => {
             format!("(Ellipse) at ({:.1}, {:.1}) with radius ({:.1}, {:.1})", 
                 ellipse.x, ellipse.y, ellipse.radius_x, ellipse.radius_y)

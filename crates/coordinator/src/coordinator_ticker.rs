@@ -12,7 +12,7 @@ use std::collections::HashMap;
 
 const TOPOGRAPHY_EVENT_PAUSE_TICKS: u64 = 2000;
 
-fn is_events_paused(tick_count: u64) -> bool {
+fn are_events_paused(tick_count: u64) -> bool {
     let context = CoordinatorContext::get_instance();
     let stored_info = context.get_coord_stored_info();
     stored_info.is_events_paused(tick_count)
@@ -72,7 +72,7 @@ async fn handle_new_topography_event(colony_width: i32, colony_height: i32) {
 }
 
 fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFrequency, u64>, colony_width: i32, colony_height: i32) {
-    if is_events_paused(tick_count) {
+    if are_events_paused(tick_count) {
         return; 
     }
     
@@ -86,8 +86,6 @@ fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFre
                 
                 // Store event in CoordinatorContext (excluding common events)
                 if !matches!(event, 
-                    shared::colony_events::ColonyEvent::LocalDeath(_) |
-                    shared::colony_events::ColonyEvent::RandomTrait(_, _) |
                     shared::colony_events::ColonyEvent::CreateCreature(_, _)
                 ) {
                     let event_description = create_colony_event_description(&event, tick_count);
@@ -98,9 +96,9 @@ fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFre
                 if matches!(event, shared::colony_events::ColonyEvent::NewTopography()) {
                     // Run async function in a blocking context
                     let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-                    rt.block_on(handle_new_topography_event(colony_width, colony_height));
-                    
+                    rt.block_on(handle_new_topography_event(colony_width, colony_height));                    
                     set_event_pause(tick_count, TOPOGRAPHY_EVENT_PAUSE_TICKS);
+                    next_event_ticks.clear();
                 } else {
                     backend_client::broadcast_event_to_backends(event);
                 }
