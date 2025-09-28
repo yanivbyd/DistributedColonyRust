@@ -11,6 +11,7 @@ use std::sync::Mutex;
 use std::collections::HashMap;
 
 const TOPOGRAPHY_EVENT_PAUSE_TICKS: u64 = 2000;
+const DISABLED_EVENTS: bool = false;
 
 fn are_events_paused(tick_count: u64) -> bool {
     let context = CoordinatorContext::get_instance();
@@ -75,7 +76,7 @@ fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFre
     if are_events_paused(tick_count) {
         return; 
     }
-    
+    if DISABLED_EVENTS == true { return };
     for frequency in EVENT_FREQUENCIES.iter() {
         let mut event_rng = new_random_generator();
         
