@@ -4,7 +4,7 @@ use egui_extras::RetainedImage;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use shared::be_api::ShardLayer;
+use shared::be_api::{ShardLayer, ColonyLifeRules};
 use shared::cluster_topology::ClusterTopology;
 use shared::coordinator_api::ColonyEventDescription;
 mod call_be;
@@ -604,28 +604,67 @@ impl BEImageApp {
             if let Some(life_info) = colony_life_rules {
                 ui.group(|ui| {
                     
+                    // Initial rules for comparison
+                    const INITIAL_RULES: ColonyLifeRules = ColonyLifeRules {
+                        health_cost_per_size_unit: 2,
+                        eat_capacity_per_size_unit: 5,
+                        health_cost_if_can_kill: 10,
+                        health_cost_if_can_move: 5,
+                        mutation_chance: 100,
+                    };
+                    
                     egui::Grid::new("colony_life_rules_grid")
                         .num_columns(2)
                         .spacing([20.0, 4.0])
                         .show(ui, |ui| {
                             ui.label("Health Cost Per Size Unit:");
-                            ui.label(format!("{}", life_info.health_cost_per_size_unit));
+                            let current = life_info.health_cost_per_size_unit;
+                            let initial = INITIAL_RULES.health_cost_per_size_unit;
+                            if current != initial {
+                                ui.label(format!("{} (initial={})", current, initial));
+                            } else {
+                                ui.label(format!("{}", current));
+                            }
                             ui.end_row();
                             
                             ui.label("Eat Capacity Per Size Unit:");
-                            ui.label(format!("{}", life_info.eat_capacity_per_size_unit));
+                            let current = life_info.eat_capacity_per_size_unit;
+                            let initial = INITIAL_RULES.eat_capacity_per_size_unit;
+                            if current != initial {
+                                ui.label(format!("{} (initial={})", current, initial));
+                            } else {
+                                ui.label(format!("{}", current));
+                            }
                             ui.end_row();
                             
                             ui.label("Health Cost If Can Kill:");
-                            ui.label(format!("{}", life_info.health_cost_if_can_kill));
+                            let current = life_info.health_cost_if_can_kill;
+                            let initial = INITIAL_RULES.health_cost_if_can_kill;
+                            if current != initial {
+                                ui.label(format!("{} (initial={})", current, initial));
+                            } else {
+                                ui.label(format!("{}", current));
+                            }
                             ui.end_row();
                             
                             ui.label("Health Cost If Can Move:");
-                            ui.label(format!("{}", life_info.health_cost_if_can_move));
+                            let current = life_info.health_cost_if_can_move;
+                            let initial = INITIAL_RULES.health_cost_if_can_move;
+                            if current != initial {
+                                ui.label(format!("{} (initial={})", current, initial));
+                            } else {
+                                ui.label(format!("{}", current));
+                            }
                             ui.end_row();
                             
                             ui.label("Mutation Chance:");
-                            ui.label(format!("{}", life_info.mutation_chance));
+                            let current = life_info.mutation_chance;
+                            let initial = INITIAL_RULES.mutation_chance;
+                            if current != initial {
+                                ui.label(format!("{} (initial={})", current, initial));
+                            } else {
+                                ui.label(format!("{}", current));
+                            }
                             ui.end_row();
                         });
                 });

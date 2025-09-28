@@ -1,7 +1,7 @@
-use crate::{colony::Colony, colony_shard::WHITE_COLOR};
+use crate::{colony::Colony, colony_shard::WHITE_COLOR, shard_utils::ShardUtils};
 
 use rand::{rngs::SmallRng, Rng};
-use shared::{be_api::Shard, colony_events::{ColonyEvent, Region}};
+use shared::{be_api::{Shard, ColonyLifeRules}, colony_events::{ColonyEvent, Region, ColonyRuleChange}, log};
 
 fn point_inside_region(x: i32, y: i32, region: &Region) -> bool {
     match region {
@@ -98,6 +98,10 @@ pub fn apply_event(rng: &mut SmallRng, colony: &Colony, event: &ColonyEvent) {
         ColonyEvent::NewTopography() => {
             panic!("NewTopography should not be applied to the backend");
         },
+        ColonyEvent::ChangeColonyRules(rule_change) => {
+            log!("Colony rules change: {}", rule_change.description);
+            apply_colony_rule_change(colony, &rule_change);
+        },
     } 
 }
 
@@ -121,5 +125,38 @@ pub fn apply_local_event(colony: &Colony, event: &ColonyEvent, region: &Region) 
                 panic!("should not be called");
             }
         }
+    }
+}
+
+fn log_colony_rules(rules: &ColonyLifeRules, prefix: &str) {
+    log!("{}health_cost_per_size_unit={}, eat_capacity_per_size_unit={}, health_cost_if_can_kill={}, health_cost_if_can_move={}, mutation_chance={}",
+        prefix,
+        rules.health_cost_per_size_unit,
+        rules.eat_capacity_per_size_unit,
+        rules.health_cost_if_can_kill,
+        rules.health_cost_if_can_move,
+        rules.mutation_chance
+    );
+}
+
+fn apply_colony_rule_change(colony: &Colony, rule_change: &ColonyRuleChange) {
+    let (_, shard_arcs) = colony.get_hosted_shards();
+    
+    for shard_arc in shard_arcs {
+        let mut shard = shard_arc.lock().unwrap();
+        
+        // Store the old rules for logging
+        let old_rules = shard.colony_life_rules;
+        
+        // Apply the new rules object
+        shard.colony_life_rules = rule_change.new_rules;
+        
+        log!("Updated shard {} rules: {}", ShardUtils::shard_id(&shard.shard), rule_change.description);
+        
+        log_colony_rules(&old_rules, "Old rules: ");
+        log_colony_rules(&shard.colony_life_rules, "New rules: ");
+        
+        // Store the shard to disk to persist the rule changes
+        ShardUtils::store_shard(&*shard);
     }
 }

@@ -11,7 +11,7 @@ use bincode;
 use crate::coordinator_storage::{CoordinatorStorage, CoordinatorStoredInfo, ColonyStatus};
 use crate::coordinator_context::CoordinatorContext;
 
-const COLONY_LIFE_INITIAL_RULES: ColonyLifeRules = ColonyLifeRules { 
+pub const COLONY_LIFE_INITIAL_RULES: ColonyLifeRules = ColonyLifeRules { 
     health_cost_per_size_unit: 2,
     eat_capacity_per_size_unit: 5,
     health_cost_if_can_kill: 10,

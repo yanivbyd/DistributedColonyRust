@@ -16,6 +16,9 @@ pub fn log_event(event: &ColonyEvent, current_tick: u64) {
         },
         ColonyEvent::NewTopography() => {
             log!("[{}] Event: NewTopography", current_tick);
+        },
+        ColonyEvent::ChangeColonyRules(rule_change) => {
+            log!("[{}] Event: ChangeColonyRules - {}", current_tick, rule_change.description);
         }
     }
 }
@@ -56,6 +59,9 @@ pub fn create_colony_event_description(event: &ColonyEvent, current_tick: u64) -
         },
         ColonyEvent::NewTopography() => {
             ("New Topography".to_string(), "New topography generated".to_string())
+        },
+        ColonyEvent::ChangeColonyRules(rule_change) => {
+            ("Colony Rules Change".to_string(), rule_change.description.clone())
         }
     };
 

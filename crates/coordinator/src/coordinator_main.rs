@@ -72,6 +72,7 @@ async fn handle_get_colony_events(limit: usize) -> CoordinatorResponse {
     }
 }
 
+
 async fn handle_client(socket: TcpStream) {
     log!("handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());

@@ -30,11 +30,12 @@ fn set_event_pause(tick_count: u64, pause_ticks: u64) {
     }
 }
 
-const EVENT_FREQUENCIES: [EventFrequency; 4] = [
+const EVENT_FREQUENCIES: [EventFrequency; 5] = [
     EventFrequency::Normal,
     EventFrequency::Rare,
     EventFrequency::Extinction,
     EventFrequency::Topography,
+    EventFrequency::ColonyRules,
 ];
 
 fn log_tick(tick_count: u64, tick_monitor: &Mutex<TickMonitor>) {
@@ -77,6 +78,7 @@ fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFre
         return; 
     }
     if DISABLED_EVENTS == true { return };
+    
     for frequency in EVENT_FREQUENCIES.iter() {
         let mut event_rng = new_random_generator();
         
@@ -101,6 +103,10 @@ fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFre
                     set_event_pause(tick_count, TOPOGRAPHY_EVENT_PAUSE_TICKS);
                     next_event_ticks.clear();
                 } else {
+                    if let shared::colony_events::ColonyEvent::ChangeColonyRules(rule_change) = &event {
+                        CoordinatorContext::get_instance().update_colony_rules(rule_change.new_rules);
+                    }
+                    
                     backend_client::broadcast_event_to_backends(event);
                 }
                 

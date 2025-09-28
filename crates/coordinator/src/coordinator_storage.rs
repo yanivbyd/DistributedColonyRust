@@ -47,6 +47,10 @@ impl CoordinatorStoredInfo {
     pub fn is_events_paused(&self, current_tick: u64) -> bool {
         current_tick < self.pause_events_till
     }
+    
+    pub fn update_colony_rules(&mut self, new_rules: ColonyLifeRules) {
+        self.colony_life_rules = Some(new_rules);
+    }
 }
 
 pub struct CoordinatorStorage;

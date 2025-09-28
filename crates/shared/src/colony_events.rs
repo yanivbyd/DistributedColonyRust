@@ -1,5 +1,5 @@
 use serde::{Serialize, Deserialize};
-use crate::colony_model::{Color, Traits};
+use crate::colony_model::{Color, Traits, ColonyLifeRules};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -28,5 +28,12 @@ pub enum ColonyEvent {
     CreateCreature(Region, CreateCreatureParams),
     ChangeExtraFoodPerTick(i8),
     Extinction(),
-    NewTopography()
+    NewTopography(),
+    ChangeColonyRules(ColonyRuleChange)
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ColonyRuleChange {
+    pub new_rules: ColonyLifeRules,
+    pub description: String,
 }
