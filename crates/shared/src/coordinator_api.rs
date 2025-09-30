@@ -15,7 +15,7 @@ pub enum CoordinatorRequest {
 pub enum CoordinatorResponse {
     GetRoutingTableResponse { entries: Vec<RoutingEntry> },
     GetColonyEventsResponse { events: Vec<ColonyEventDescription> },
-    GetColonyStatsResponse { metrics: Vec<ColonyMetricStats> },
+    GetColonyStatsResponse { metrics: Vec<ColonyMetricStats>, tick_count: u64 },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

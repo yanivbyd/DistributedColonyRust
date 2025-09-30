@@ -104,7 +104,7 @@ struct BEImageApp {
     cluster_topology: &'static ClusterTopology,
     last_update_time: Arc<Mutex<Instant>>,
     combined_texture: Option<egui::TextureHandle>,
-    cached_stats: Option<Vec<shared::coordinator_api::ColonyMetricStats>>, 
+    cached_stats: Option<(u64, Vec<shared::coordinator_api::ColonyMetricStats>)>, 
 }
 
 impl Default for BEImageApp {
@@ -772,8 +772,9 @@ impl BEImageApp {
         });
         ui.separator();
 
-        if let Some(results) = &self.cached_stats {
+        if let Some((tick_count, results)) = &self.cached_stats {
             ui.add_space(4.0);
+            ui.label(format!("Tick: {}", Self::format_number_with_commas(*tick_count)));
             egui::Grid::new("stats_grid")
                 .num_columns(3)
                 .spacing([20.0, 12.0])

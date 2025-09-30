@@ -8,6 +8,7 @@ mod tick_monitor;
 mod colony_event_generator;
 
 use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry, ColonyMetricStats};
+use std::collections::{BTreeMap, HashMap};
 use shared::cluster_topology::ClusterTopology;
 use shared::be_api::StatMetric;
 use tokio::net::TcpListener;
@@ -95,29 +96,61 @@ async fn handle_client(socket: TcpStream) {
 }
 
 async fn handle_get_colony_stats(metrics: Vec<StatMetric>) -> CoordinatorResponse {
-    // For now, take the top-left shard and return its stats
+    // Aggregate across all shards
     let topology = ClusterTopology::get_instance();
     let shards = topology.get_all_shards();
     if shards.is_empty() {
-        return CoordinatorResponse::GetColonyStatsResponse { metrics: Vec::new() };
+        return CoordinatorResponse::GetColonyStatsResponse { metrics: Vec::new(), tick_count: 0 };
     }
-    let top_left = shards.iter().min_by_key(|s| (s.y, s.x)).cloned().unwrap();
-    match crate::backend_client::call_backend_get_shard_stats(top_left, metrics) {
-        Some(m) => {
-            let metrics: Vec<ColonyMetricStats> = m.into_iter().map(|(metric, buckets)| {
-                let mut sum: i64 = 0;
-                let mut total: i64 = 0;
-                for b in &buckets {
-                    sum += b.value as i64 * b.occs as i64;
-                    total += b.occs as i64;
+
+    // Prepare index mapping for requested metrics
+    fn metric_id(m: shared::be_api::StatMetric) -> u8 {
+        match m {
+            shared::be_api::StatMetric::Health => 0,
+            shared::be_api::StatMetric::CreatureSize => 1,
+            shared::be_api::StatMetric::CreateCanKill => 2,
+            shared::be_api::StatMetric::CreateCanMove => 3,
+            shared::be_api::StatMetric::Food => 4,
+        }
+    }
+    let mut pos_by_id: HashMap<u8, usize> = HashMap::new();
+    for (idx, m) in metrics.iter().copied().enumerate() {
+        pos_by_id.insert(metric_id(m), idx);
+    }
+    // counts_per_metric: per requested metric (by index) -> value -> occs
+    let mut counts_per_metric: Vec<BTreeMap<i32, u64>> = vec![BTreeMap::new(); metrics.len()];
+
+    let mut min_tick: Option<u64> = None;
+    for shard in shards {
+        if let Some((tick, per_metric)) = crate::backend_client::call_backend_get_shard_stats(shard, metrics.clone()) {
+            min_tick = Some(match min_tick { Some(t) => t.min(tick), None => tick });
+            for (metric, buckets) in per_metric {
+                if let Some(&idx) = pos_by_id.get(&metric_id(metric)) {
+                    let entry = counts_per_metric.get_mut(idx).unwrap();
+                    for b in buckets {
+                        *entry.entry(b.value).or_insert(0) += b.occs;
+                    }
                 }
-                let avg = if total > 0 { sum as f64 / total as f64 } else { 0.0 };
-                ColonyMetricStats { metric, avg, buckets }
-            }).collect();
-            CoordinatorResponse::GetColonyStatsResponse { metrics }
-        },
-        None => CoordinatorResponse::GetColonyStatsResponse { metrics: Vec::new() },
+            }
+        }
     }
+
+    // Build ordered results following the requested metrics order
+    let mut results: Vec<ColonyMetricStats> = Vec::with_capacity(metrics.len());
+    for (i, metric) in metrics.into_iter().enumerate() {
+        let counts = std::mem::take(&mut counts_per_metric[i]);
+        let mut sum: i64 = 0;
+        let mut total: i64 = 0;
+        for (value, occs) in &counts {
+            sum += *value as i64 * *occs as i64;
+            total += *occs as i64;
+        }
+        let avg = if total > 0 { sum as f64 / total as f64 } else { 0.0 };
+        let buckets = counts.into_iter().map(|(value, occs)| shared::be_api::StatBucket { value, occs }).collect();
+        results.push(ColonyMetricStats { metric, avg, buckets });
+    }
+
+    CoordinatorResponse::GetColonyStatsResponse { metrics: results, tick_count: min_tick.unwrap_or(0) }
 }
 
 #[tokio::main]

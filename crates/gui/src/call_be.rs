@@ -188,11 +188,11 @@ pub fn get_colony_events(limit: usize) -> Option<Vec<ColonyEventDescription>> {
     }
 }
 
-pub fn get_colony_stats(metrics: Vec<StatMetric>) -> Option<Vec<ColonyMetricStats>> {
+pub fn get_colony_stats(metrics: Vec<StatMetric>) -> Option<(u64, Vec<ColonyMetricStats>)> {
     let req = CoordinatorRequest::GetColonyStats { metrics };
     let response = send_coordinator_request(&req)?;
-    if let CoordinatorResponse::GetColonyStatsResponse { metrics } = response {
-        Some(metrics)
+    if let CoordinatorResponse::GetColonyStatsResponse { metrics, tick_count } = response {
+        Some((tick_count, metrics))
     } else {
         None
     }

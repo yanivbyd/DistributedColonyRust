@@ -34,7 +34,7 @@ pub fn call_backend_for_tick_count(shard: ColonyShard) -> Option<u64> {
     }
 }
 
-pub fn call_backend_get_shard_stats(shard: ColonyShard, metrics: Vec<StatMetric>) -> Option<Vec<(StatMetric, Vec<shared::be_api::StatBucket>)>> {
+pub fn call_backend_get_shard_stats(shard: ColonyShard, metrics: Vec<StatMetric>) -> Option<(u64, Vec<(StatMetric, Vec<shared::be_api::StatBucket>)>)> {
     let topology = ClusterTopology::get_instance();
     let host_info = topology.get_host_for_shard(&shard)?;
     let addr = host_info.to_address();
@@ -45,9 +45,10 @@ pub fn call_backend_get_shard_stats(shard: ColonyShard, metrics: Vec<StatMetric>
 
     let response: BackendResponse = receive_response(&mut stream).ok()?;
     match response {
-        BackendResponse::GetShardStats(GetShardStatsResponse::Ok { stats }) => {
-            // stats is Vec<ShardStatResult>; we return only the first (top-left shard usage)
-            stats.first().map(|s| s.metrics.clone())
+        BackendResponse::GetShardStats(GetShardStatsResponse::Ok { stats, tick_count }) => {
+            // stats is Vec<ShardStatResult> for one shard; return (tick, metrics)
+            let metrics = stats.first().map(|s| s.metrics.clone()).unwrap_or_default();
+            Some((tick_count, metrics))
         }
         _ => None,
     }

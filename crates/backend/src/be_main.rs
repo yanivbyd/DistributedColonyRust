@@ -177,7 +177,7 @@ async fn handle_get_shard_stats(req: GetShardStatsRequest) -> BackendResponse {
     if let Some(shard_arc) = colony.get_hosted_colony_shard_arc(&req.shard) {
         let shard = shard_arc.lock().unwrap();
         match ShardUtils::compute_stats(&shard, &req.shard, &req.metrics) {
-            Some(stats) => BackendResponse::GetShardStats(GetShardStatsResponse::Ok { stats }),
+            Some(stats) => BackendResponse::GetShardStats(GetShardStatsResponse::Ok { stats, tick_count: shard.get_current_tick() }),
             None => BackendResponse::GetShardStats(GetShardStatsResponse::ShardNotAvailable),
         }
     } else {

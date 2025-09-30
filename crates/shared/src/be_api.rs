@@ -118,7 +118,7 @@ pub struct GetShardStatsRequest {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum GetShardStatsResponse {
-    Ok { stats: Vec<ShardStatResult> },
+    Ok { stats: Vec<ShardStatResult>, tick_count: u64 },
     ColonyNotInitialized,
     ShardNotAvailable,
 }
