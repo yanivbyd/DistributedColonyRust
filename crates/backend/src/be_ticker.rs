@@ -1,4 +1,5 @@
 use futures::future::join_all;
+use crate::backend_client::send_updated_shard_contents_to_host_async;
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
 use shared::utils::new_random_generator;
@@ -54,7 +55,7 @@ pub fn start_be_ticker() {
                         if host != this_backend_host {
                             let req_owned = req.clone();
                             tokio::spawn(async move {
-                                 let _ = crate::backend_client::send_updated_shard_contents_to_host_async(&host, &req_owned).await;
+                                 let _ = send_updated_shard_contents_to_host_async(&host, &req_owned).await;
                             });
                         }
                     }

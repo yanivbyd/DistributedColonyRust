@@ -1,6 +1,8 @@
 use rand::rngs::SmallRng;
 use rand::{thread_rng, SeedableRng, Rng};
 
+use crate::be_api::Color;
+
 /// Creates a new SmallRng instance seeded from the thread-local random number generator.
 /// This provides a fast, non-cryptographic RNG that's suitable for most simulation purposes.
 pub fn new_random_generator() -> SmallRng {
@@ -30,5 +32,5 @@ pub fn random_color(rng: &mut SmallRng) -> crate::colony_model::Color {
         }
     }
     
-    crate::colony_model::Color { red, green, blue }
+    Color { red, green, blue }
 }

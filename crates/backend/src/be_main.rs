@@ -18,6 +18,7 @@ mod shard_topography;
 mod backend_config;
 mod backend_client;
 
+use crate::be_colony_events::apply_event;
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
 use crate::shard_topography::ShardTopography;
@@ -245,7 +246,7 @@ async fn handle_apply_event(req: ApplyEventRequest) -> BackendResponse {
     } else {
         let colony = Colony::instance();
         let mut rng = shared::utils::new_random_generator();
-        crate::be_colony_events::apply_event(&mut rng, &colony, &req.event);
+        apply_event(&mut rng, &colony, &req.event);
         BackendResponse::ApplyEvent(ApplyEventResponse::Ok)
     }
 }

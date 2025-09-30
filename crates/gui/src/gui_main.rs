@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 use shared::be_api::{ShardLayer, ColonyLifeRules};
 use shared::cluster_topology::ClusterTopology;
 use shared::coordinator_api::ColonyEventDescription;
+
+use crate::call_be::get_colony_stats;
 mod call_be;
 mod connection_pool;
 
@@ -758,13 +760,13 @@ impl BEImageApp {
         ui.horizontal(|ui| {
             if ui.button("Update Stats").clicked() {
                 let metrics = vec![
-                    shared::be_api::StatMetric::Health,
                     shared::be_api::StatMetric::CreatureSize,
                     shared::be_api::StatMetric::CreateCanKill,
                     shared::be_api::StatMetric::CreateCanMove,
                     shared::be_api::StatMetric::Food,
+                    shared::be_api::StatMetric::Health,
                 ];
-                if let Some(results) = crate::call_be::get_colony_stats(metrics) {
+                if let Some(results) = get_colony_stats(metrics) {
                     // Cache results in a local field for drawing
                     self.cached_stats = Some(results);
                 }
@@ -773,8 +775,15 @@ impl BEImageApp {
         ui.separator();
 
         if let Some((tick_count, results)) = &self.cached_stats {
-            ui.add_space(4.0);
-            ui.label(format!("Tick: {}", Self::format_number_with_commas(*tick_count)));
+            ui.add_space(5.0);
+            let available_width = ui.available_width();
+            ui.allocate_ui_with_layout(
+                egui::vec2(available_width, 0.0),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.label(format!("Tick: {}", Self::format_number_with_commas(*tick_count)));
+                }
+            );
             egui::Grid::new("stats_grid")
                 .num_columns(3)
                 .spacing([20.0, 12.0])
