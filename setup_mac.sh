@@ -16,10 +16,4 @@ fi
 # Make build_and_run.sh executable
 chmod +x build_and_run.sh
 
-# Install image crate for frontend if not present
-if ! grep -q 'image' crates/frontend/Cargo.toml; then
-    echo "Adding 'image' crate to frontend..."
-    cargo add image --manifest-path crates/frontend/Cargo.toml
-fi
-
 echo "Setup complete. You can now run ./build_and_run.sh" 

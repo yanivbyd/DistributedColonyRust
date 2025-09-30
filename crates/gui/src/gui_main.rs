@@ -102,6 +102,7 @@ struct BEImageApp {
     shard_config: Arc<Mutex<ShardConfig>>,
     cluster_topology: &'static ClusterTopology,
     last_update_time: Arc<Mutex<Instant>>,
+    combined_texture: Option<egui::TextureHandle>,
 }
 
 impl Default for BEImageApp {
@@ -145,6 +146,7 @@ impl Default for BEImageApp {
             shard_config,
             cluster_topology,
             last_update_time: Arc::new(Mutex::new(Instant::now())),
+            combined_texture: None,
         }
     }
 }
@@ -354,15 +356,17 @@ impl BEImageApp {
         egui::Color32::from_rgb(r, g, b)
     }
     
-    fn show_creatures_tab(&self, ui: &mut egui::Ui) {
-        let locked = self.creatures_color_data.lock().unwrap();
-        
-        self.show_combined_image(ui, &locked, |shard_data| {
+    fn show_creatures_tab(&mut self, ui: &mut egui::Ui) {
+        let colors: Vec<Option<Vec<shared::be_api::Color>>> = {
+            let locked = self.creatures_color_data.lock().unwrap();
+            locked.clone()
+        };
+        self.show_combined_image(ui, &colors, |shard_data| {
             shard_data.clone()
         });
     }
 
-    fn show_combined_image<T, F>(&self, ui: &mut egui::Ui, data: &[Option<T>], converter: F)
+    fn show_combined_image<T, F>(&mut self, ui: &mut egui::Ui, data: &[Option<T>], converter: F)
     where
         F: Fn(&Option<T>) -> Option<Vec<shared::be_api::Color>>,
     {
@@ -407,20 +411,38 @@ impl BEImageApp {
             }
         }
         
-        // Display the combined image
-        let retained_image = egui_extras::RetainedImage::from_color_image("combined", combined_img);
-        retained_image.show_max_size(ui, egui::vec2(800.0, 600.0));
+        // Upload/update a persistent texture and display it
+        let texture_options = egui::TextureOptions::LINEAR;
+        if let Some(tex) = &mut self.combined_texture {
+            tex.set(combined_img, texture_options);
+            ui.add(
+                egui::Image::new(&*tex)
+                    .fit_to_exact_size(egui::vec2(800.0, 600.0))
+            );
+        } else {
+            let tex = ui.ctx().load_texture("combined", combined_img, texture_options);
+            let handle = tex;
+            self.combined_texture = Some(handle);
+            let tex_ref = self.combined_texture.as_ref().unwrap();
+            ui.add(
+                egui::Image::new(tex_ref)
+                    .fit_to_exact_size(egui::vec2(800.0, 600.0))
+            );
+        }
     }
 
-    fn show_layer_tab(&self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>) {
+    fn show_layer_tab(&mut self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>) {
         self.show_layer_tab_with_legend(ui, data, None)
     }
 
-    fn show_layer_tab_with_legend(&self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>, legend_max_value: Option<i32>) {
-        let locked = data.lock().unwrap();
+    fn show_layer_tab_with_legend(&mut self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>, legend_max_value: Option<i32>) {
+        let locked_vec: Vec<Option<Vec<i32>>> = {
+            let locked = data.lock().unwrap();
+            locked.clone()
+        };
         
         // Find global maximum across all shards for consistent normalization
-        let global_max = locked.iter()
+        let global_max = locked_vec.iter()
             .filter_map(|shard_data| shard_data.as_ref())
             .flat_map(|data| data.iter())
             .max()
@@ -432,7 +454,7 @@ impl BEImageApp {
         let legend_max = legend_max_value.unwrap_or(global_max);
         let global_max = legend_max.max(global_max);
 
-        self.show_combined_image(ui, &locked, |shard_data| {
+        self.show_combined_image(ui, &locked_vec, |shard_data| {
             if let Some(data) = shard_data {
                 if global_max > 0 {
                     // Convert i32 data to colors using global normalization
@@ -496,38 +518,47 @@ impl BEImageApp {
         }
     }
 
-    fn show_extra_food_tab(&self, ui: &mut egui::Ui) {
-        self.show_layer_tab(ui, &self.extra_food);
+    fn show_extra_food_tab(&mut self, ui: &mut egui::Ui) {
+        let extra_food = self.extra_food.clone();
+        self.show_layer_tab(ui, &extra_food);
     }
 
-    fn show_sizes_tab(&self, ui: &mut egui::Ui) {
-        self.show_layer_tab_with_legend(ui, &self.sizes, Some(MIN_CREATURE_SIZE_LEGEND_MAX));
+    fn show_sizes_tab(&mut self, ui: &mut egui::Ui) {
+        let sizes = self.sizes.clone();
+        self.show_layer_tab_with_legend(ui, &sizes, Some(MIN_CREATURE_SIZE_LEGEND_MAX));
     }
 
-    fn show_can_kill_tab(&self, ui: &mut egui::Ui) {
-        self.show_layer_tab_boolean(ui, &self.can_kill);
+    fn show_can_kill_tab(&mut self, ui: &mut egui::Ui) {
+        let can_kill = self.can_kill.clone();
+        self.show_layer_tab_boolean(ui, &can_kill);
     }
 
-    fn show_can_move_tab(&self, ui: &mut egui::Ui) {
-        self.show_layer_tab_boolean(ui, &self.can_move);
+    fn show_can_move_tab(&mut self, ui: &mut egui::Ui) {
+        let can_move = self.can_move.clone();
+        self.show_layer_tab_boolean(ui, &can_move);
     }
 
-    fn show_cost_per_turn_tab(&self, ui: &mut egui::Ui) {
-        self.show_layer_tab(ui, &self.cost_per_turn);
+    fn show_cost_per_turn_tab(&mut self, ui: &mut egui::Ui) {
+        let cost_per_turn = self.cost_per_turn.clone();
+        self.show_layer_tab(ui, &cost_per_turn);
     }
 
-    fn show_food_tab(&self, ui: &mut egui::Ui) {
-        self.show_layer_tab_with_legend(ui, &self.food, Some(FOOD_VALUE_LEGEND_MAX));
+    fn show_food_tab(&mut self, ui: &mut egui::Ui) {
+        let food = self.food.clone();
+        self.show_layer_tab_with_legend(ui, &food, Some(FOOD_VALUE_LEGEND_MAX));
     }
 
-    fn show_health_tab(&self, ui: &mut egui::Ui) {
-        self.show_layer_tab_with_legend(ui, &self.health, Some(10)); 
+    fn show_health_tab(&mut self, ui: &mut egui::Ui) {
+        let health = self.health.clone();
+        self.show_layer_tab_with_legend(ui, &health, Some(10)); 
     }
 
-    fn show_layer_tab_boolean(&self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>) {
-        let locked = data.lock().unwrap();
-        
-        self.show_combined_image(ui, &locked, |shard_data| {
+    fn show_layer_tab_boolean(&mut self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>) {
+        let locked_vec: Vec<Option<Vec<i32>>> = {
+            let locked = data.lock().unwrap();
+            locked.clone()
+        };
+        self.show_combined_image(ui, &locked_vec, |shard_data| {
             if let Some(data) = shard_data {
                 // Convert i32 data to colors using boolean mapping
                 let mut colors = Vec::new();
@@ -721,6 +752,11 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Colony Viewer",
         options,
-        Box::new(|_cc| Box::new(BEImageApp::default())),
+        Box::new(|cc| {
+            // Ensure default fonts are installed
+            let fonts = egui::FontDefinitions::default();
+            cc.egui_ctx.set_fonts(fonts);
+            Ok(Box::new(BEImageApp::default()))
+        }),
     )
 }
