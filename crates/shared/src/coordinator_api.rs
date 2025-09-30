@@ -1,5 +1,6 @@
 use serde::{Serialize, Deserialize};
 use crate::colony_model::Shard;
+use crate::be_api::{StatMetric, StatBucket};
 
 pub const COORDINATOR_PORT: u16 = 8083;
 
@@ -7,12 +8,21 @@ pub const COORDINATOR_PORT: u16 = 8083;
 pub enum CoordinatorRequest {
     GetRoutingTable,
     GetColonyEvents { limit: usize },
+    GetColonyStats { metrics: Vec<StatMetric> },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum CoordinatorResponse {
     GetRoutingTableResponse { entries: Vec<RoutingEntry> },
     GetColonyEventsResponse { events: Vec<ColonyEventDescription> },
+    GetColonyStatsResponse { metrics: Vec<ColonyMetricStats> },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ColonyMetricStats {
+    pub metric: StatMetric,
+    pub avg: f64,
+    pub buckets: Vec<StatBucket>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

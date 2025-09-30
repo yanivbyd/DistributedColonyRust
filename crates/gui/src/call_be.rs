@@ -2,7 +2,8 @@
 use eframe::egui;
 use egui_extras::RetainedImage;
 use shared::be_api::{BackendRequest, BackendResponse, GetShardImageRequest, GetShardImageResponse, GetShardLayerRequest, GetShardLayerResponse, GetColonyInfoRequest, GetColonyInfoResponse, ShardLayer, Shard, Color, ColonyLifeRules};
-use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, ColonyEventDescription};
+use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, ColonyEventDescription, ColonyMetricStats};
+use shared::be_api::{StatMetric};
 use shared::cluster_topology::{ClusterTopology, HostInfo};
 use std::net::TcpStream;
 use std::io::{Read, Write};
@@ -182,6 +183,16 @@ pub fn get_colony_events(limit: usize) -> Option<Vec<ColonyEventDescription>> {
     let response = send_coordinator_request(&req)?;
     if let CoordinatorResponse::GetColonyEventsResponse { events } = response {
         Some(events)
+    } else {
+        None
+    }
+}
+
+pub fn get_colony_stats(metrics: Vec<StatMetric>) -> Option<Vec<ColonyMetricStats>> {
+    let req = CoordinatorRequest::GetColonyStats { metrics };
+    let response = send_coordinator_request(&req)?;
+    if let CoordinatorResponse::GetColonyStatsResponse { metrics } = response {
+        Some(metrics)
     } else {
         None
     }

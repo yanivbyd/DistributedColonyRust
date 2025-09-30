@@ -25,6 +25,7 @@ enum Tab {
     CostPerTurn,
     Health,
     Info,
+    Stats,
 }
 
 #[derive(Clone)]
@@ -103,6 +104,7 @@ struct BEImageApp {
     cluster_topology: &'static ClusterTopology,
     last_update_time: Arc<Mutex<Instant>>,
     combined_texture: Option<egui::TextureHandle>,
+    cached_stats: Option<Vec<shared::coordinator_api::ColonyMetricStats>>, 
 }
 
 impl Default for BEImageApp {
@@ -147,6 +149,7 @@ impl Default for BEImageApp {
             cluster_topology,
             last_update_time: Arc::new(Mutex::new(Instant::now())),
             combined_texture: None,
+            cached_stats: None,
         }
     }
 }
@@ -257,6 +260,9 @@ impl App for BEImageApp {
                         Tab::Info => {
                             // No automatic polling for Info tab - data is loaded once when tab is first accessed
                         }
+                        Tab::Stats => {
+                            // No background polling for stats
+                        }
                     }
                     ctx_clone.request_repaint();
                     thread::sleep(Duration::from_millis(REFRESH_INTERVAL_MS));
@@ -278,6 +284,7 @@ impl App for BEImageApp {
                 ui.selectable_value(&mut self.current_tab, Tab::CostPerTurn, "Cost Per Turn");
                 ui.selectable_value(&mut self.current_tab, Tab::Health, "Health");
                 ui.selectable_value(&mut self.current_tab, Tab::Info, "Info");
+                ui.selectable_value(&mut self.current_tab, Tab::Stats, "Stats");
                 
                 // Update shared tab if changed
                 if self.current_tab != old_tab {
@@ -286,8 +293,8 @@ impl App for BEImageApp {
                     }
                 }
                 
-                // Show status indicator only when there are issues and not on Info tab
-                if self.current_tab != Tab::Info {
+                // Show status indicator only when there are issues and not on Info or Stats tabs
+                if self.current_tab != Tab::Info && self.current_tab != Tab::Stats {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let last_update = *self.last_update_time.lock().unwrap();
                         let time_since_update = last_update.elapsed();
@@ -312,6 +319,7 @@ impl App for BEImageApp {
                 Tab::CostPerTurn => self.show_cost_per_turn_tab(ui),
                 Tab::Health => self.show_health_tab(ui),
                 Tab::Info => self.show_info_tab(ui),
+                Tab::Stats => self.show_stats_tab(ui),
             }
         });
     }
@@ -743,6 +751,87 @@ impl BEImageApp {
             });
         } else {
             ui.colored_label(egui::Color32::YELLOW, "Loading colony information...");
+        }
+    }
+
+    fn show_stats_tab(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("Update Stats").clicked() {
+                let metrics = vec![
+                    shared::be_api::StatMetric::Health,
+                    shared::be_api::StatMetric::CreatureSize,
+                    shared::be_api::StatMetric::CreateCanKill,
+                    shared::be_api::StatMetric::CreateCanMove,
+                    shared::be_api::StatMetric::Food,
+                ];
+                if let Some(results) = crate::call_be::get_colony_stats(metrics) {
+                    // Cache results in a local field for drawing
+                    self.cached_stats = Some(results);
+                }
+            }
+        });
+        ui.separator();
+
+        if let Some(results) = &self.cached_stats {
+            ui.add_space(4.0);
+            egui::Grid::new("stats_grid")
+                .num_columns(3)
+                .spacing([20.0, 12.0])
+                .show(ui, |ui| {
+                    for (idx, item) in results.iter().enumerate() {
+                        let (metric, buckets, avg) = (&item.metric, &item.buckets, item.avg);
+                        ui.vertical(|ui| {
+                            let title = match metric {
+                                shared::be_api::StatMetric::Health => "Health",
+                                shared::be_api::StatMetric::CreatureSize => "Creature Size",
+                                shared::be_api::StatMetric::Food => "Food",
+                                shared::be_api::StatMetric::CreateCanKill => "Can Kill",
+                                shared::be_api::StatMetric::CreateCanMove => "Can Move",
+                            };
+                            if !buckets.is_empty() {
+                                let mut min_v = i32::MAX;
+                                let mut max_v = i32::MIN;
+                                for b in buckets.iter() {
+                                    if b.value < min_v { min_v = b.value; }
+                                    if b.value > max_v { max_v = b.value; }
+                                }
+                                ui.heading(format!("{} ({:.2})", title, avg));
+                                ui.label(format!(
+                                    "avg={:.2}, range=[{}...{}]",
+                                    avg,
+                                    Self::format_number_with_commas(min_v as u64),
+                                    Self::format_number_with_commas(max_v as u64)
+                                ));
+
+                                let chart_size = egui::vec2(200.0, 100.0);
+                                let (rect, _resp) = ui.allocate_exact_size(chart_size, egui::Sense::hover());
+                                let painter = ui.painter();
+                                let border_color = egui::Color32::from_gray(140);
+                                painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, border_color));
+
+                                let max_occs = buckets.iter().map(|b| b.occs).max().unwrap_or(1) as f32;
+                                let value_span = (max_v - min_v).max(1) as f32;
+                                let bar_w = 2.0f32;
+                                for b in buckets.iter() {
+                                    let x_norm = (b.value - min_v) as f32 / value_span;
+                                    let x = rect.min.x + x_norm * (rect.width().max(1.0));
+                                    let h = (b.occs as f32 / max_occs) * rect.height();
+                                    let bar_rect = egui::Rect::from_min_max(
+                                        egui::pos2(x - bar_w * 0.5, rect.max.y - h),
+                                        egui::pos2(x + bar_w * 0.5, rect.max.y),
+                                    );
+                                    painter.rect_filled(bar_rect, 0.0, egui::Color32::from_rgb(100, 150, 220));
+                                }
+                            } else {
+                                ui.heading(title);
+                                ui.label("No data");
+                            }
+                        });
+                        if (idx + 1) % 3 == 0 { ui.end_row(); }
+                    }
+                });
+        } else {
+            ui.label("Click 'Update Stats' to load metrics.");
         }
     }
 }

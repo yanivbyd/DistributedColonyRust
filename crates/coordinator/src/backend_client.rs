@@ -1,12 +1,12 @@
 use shared::log;
-use shared::be_api::{BackendRequest, BackendResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse, GetColonyInfoRequest, GetColonyInfoResponse};
+use shared::be_api::{BackendRequest, BackendResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse, GetColonyInfoRequest, GetColonyInfoResponse, GetShardStatsRequest, GetShardStatsResponse, StatMetric};
 use shared::colony_events::ColonyEvent;
-use shared::colony_model::Shard;
+use shared::colony_model::Shard as ColonyShard;
 use shared::cluster_topology::ClusterTopology;
 use shared::backend_communication::{send_request, receive_response};
 use std::net::TcpStream;
 
-pub fn call_backend_for_tick_count(shard: Shard) -> Option<u64> {
+pub fn call_backend_for_tick_count(shard: ColonyShard) -> Option<u64> {
     let topology = ClusterTopology::get_instance();
     let host_info = topology.get_host_for_shard(&shard)?;
     let addr = host_info.to_address();
@@ -31,6 +31,25 @@ pub fn call_backend_for_tick_count(shard: Shard) -> Option<u64> {
             log!("Unexpected response type");
             None
         }
+    }
+}
+
+pub fn call_backend_get_shard_stats(shard: ColonyShard, metrics: Vec<StatMetric>) -> Option<Vec<(StatMetric, Vec<shared::be_api::StatBucket>)>> {
+    let topology = ClusterTopology::get_instance();
+    let host_info = topology.get_host_for_shard(&shard)?;
+    let addr = host_info.to_address();
+    let mut stream = TcpStream::connect(&addr).ok()?;
+
+    let request = BackendRequest::GetShardStats(GetShardStatsRequest { shard, metrics });
+    send_request(&mut stream, &request).ok()?;
+
+    let response: BackendResponse = receive_response(&mut stream).ok()?;
+    match response {
+        BackendResponse::GetShardStats(GetShardStatsResponse::Ok { stats }) => {
+            // stats is Vec<ShardStatResult>; we return only the first (top-left shard usage)
+            stats.first().map(|s| s.metrics.clone())
+        }
+        _ => None,
     }
 }
 

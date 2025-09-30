@@ -7,8 +7,9 @@ mod backend_client;
 mod tick_monitor;
 mod colony_event_generator;
 
-use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry};
+use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry, ColonyMetricStats};
 use shared::cluster_topology::ClusterTopology;
+use shared::be_api::StatMetric;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -28,6 +29,7 @@ fn call_label(response: &CoordinatorResponse) -> &'static str {
     match response {
         CoordinatorResponse::GetRoutingTableResponse { .. } => "GetRoutingTable",
         CoordinatorResponse::GetColonyEventsResponse { .. } => "GetColonyEvents",
+        CoordinatorResponse::GetColonyStatsResponse { .. } => "GetColonyStats",
     }
 }
 
@@ -81,6 +83,7 @@ async fn handle_client(socket: TcpStream) {
         let response = match bincode::deserialize::<CoordinatorRequest>(&bytes) {
             Ok(CoordinatorRequest::GetRoutingTable) => handle_get_routing_table().await,
             Ok(CoordinatorRequest::GetColonyEvents { limit }) => handle_get_colony_events(limit).await,
+            Ok(CoordinatorRequest::GetColonyStats { metrics }) => handle_get_colony_stats(metrics).await,
             Err(e) => {
                 log_error!("Failed to deserialize CoordinatorRequest: {}", e);
                 continue;
@@ -89,6 +92,32 @@ async fn handle_client(socket: TcpStream) {
         send_response(&mut framed, response).await;
     }
     log!("handle_client: connection closed");
+}
+
+async fn handle_get_colony_stats(metrics: Vec<StatMetric>) -> CoordinatorResponse {
+    // For now, take the top-left shard and return its stats
+    let topology = ClusterTopology::get_instance();
+    let shards = topology.get_all_shards();
+    if shards.is_empty() {
+        return CoordinatorResponse::GetColonyStatsResponse { metrics: Vec::new() };
+    }
+    let top_left = shards.iter().min_by_key(|s| (s.y, s.x)).cloned().unwrap();
+    match crate::backend_client::call_backend_get_shard_stats(top_left, metrics) {
+        Some(m) => {
+            let metrics: Vec<ColonyMetricStats> = m.into_iter().map(|(metric, buckets)| {
+                let mut sum: i64 = 0;
+                let mut total: i64 = 0;
+                for b in &buckets {
+                    sum += b.value as i64 * b.occs as i64;
+                    total += b.occs as i64;
+                }
+                let avg = if total > 0 { sum as f64 / total as f64 } else { 0.0 };
+                ColonyMetricStats { metric, avg, buckets }
+            }).collect();
+            CoordinatorResponse::GetColonyStatsResponse { metrics }
+        },
+        None => CoordinatorResponse::GetColonyStatsResponse { metrics: Vec::new() },
+    }
 }
 
 #[tokio::main]

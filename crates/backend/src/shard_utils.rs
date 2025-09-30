@@ -1,5 +1,7 @@
+use std::collections::BTreeMap;
+
 use crate::colony_shard::{ColonyShard, is_blank};
-use shared::{be_api::{Cell, ColonyLifeRules, Color, Shard, Traits, UpdatedShardContentsRequest, ShardLayer}, log_error};
+use shared::{be_api::{Cell, ColonyLifeRules, Color, Shard, Traits, UpdatedShardContentsRequest, ShardLayer, StatMetric, ShardStatResult, StatBucket}, log_error};
 use crate::shard_storage::ShardStorage;
 use shared::log;
 use rand::rngs::SmallRng;
@@ -7,6 +9,26 @@ use rand::rngs::SmallRng;
 pub struct ShardUtils;
 
 impl ShardUtils {
+    #[inline]
+    fn accumulate_counts<F>(shard: &ColonyShard, mapper: F, include_blank_cells: bool) -> Vec<StatBucket>
+    where
+        F: Fn(&Cell) -> i32,
+    {
+        let width = shard.shard.width as usize;
+        let height = shard.shard.height as usize;
+        let row_size = width + 2;
+        let mut counts: BTreeMap<i32, u64> = BTreeMap::new();
+        for row_iter in 1..=height {
+            let start = row_iter * row_size + 1;
+            let end = start + width;
+            for cell in &shard.grid[start..end] {
+                if !include_blank_cells && cell.health == 0 { continue; }
+                let value = mapper(cell);
+                *counts.entry(value).or_insert(0) += 1;
+            }
+        }
+        counts.into_iter().map(|(value, occs)| StatBucket { value, occs }).collect()
+    }
     fn copy_cell_creature_data(dst: &mut Cell, src: &Cell, tick_bit: bool) {
         if dst.health > 0 && src.health == 0 { return; } // don't remove creatures from another shard
         dst.color = src.color;
@@ -15,6 +37,26 @@ impl ShardUtils {
         dst.food = src.food;
         dst.extra_food_per_tick = src.extra_food_per_tick;
         dst.tick_bit = tick_bit;        
+    }
+
+    pub fn compute_stats(shard: &ColonyShard, req_shard: &Shard, stats: &[StatMetric]) -> Option<Vec<ShardStatResult>> {
+        if shard.shard.x != req_shard.x || shard.shard.y != req_shard.y || shard.shard.width != req_shard.width || shard.shard.height != req_shard.height {
+            return None;
+        }
+
+        let mut metric_buckets: Vec<(StatMetric, Vec<StatBucket>)> = Vec::with_capacity(stats.len());
+        for stat in stats.iter().copied() {
+            let buckets = match stat {
+                StatMetric::Health => Self::accumulate_counts(shard, |c| c.health as i32, false),
+                StatMetric::CreatureSize => Self::accumulate_counts(shard, |c| c.traits.size as i32, false),
+                StatMetric::CreateCanKill => Self::accumulate_counts(shard, |c| if c.traits.can_kill { 1 } else { 0 }, false),
+                StatMetric::CreateCanMove => Self::accumulate_counts(shard, |c| if c.traits.can_move { 1 } else { 0 }, false),
+                StatMetric::Food => Self::accumulate_counts(shard, |c| c.food as i32, true),
+            };
+            metric_buckets.push((stat, buckets));
+        }
+
+        Some(vec![ShardStatResult { shard: shard.shard.clone(), metrics: metric_buckets }])
     }
 
     pub fn new_colony_shard(shard: &Shard, colony_life_rules: &ColonyLifeRules, rng: &mut SmallRng) -> ColonyShard {

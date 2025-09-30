@@ -3,7 +3,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, GetShardLayerRequest, GetShardLayerResponse, InitShardTopographyRequest, InitShardTopographyResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse};
+use shared::be_api::{BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, GetShardLayerRequest, GetShardLayerResponse, InitShardTopographyRequest, InitShardTopographyResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse, GetShardStatsRequest, GetShardStatsResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
@@ -36,6 +36,7 @@ fn call_label(response: &BackendResponse) -> &'static str {
         BackendResponse::InitColony(_) => "InitColony",
         BackendResponse::GetShardImage(_) => "GetShardImage",
         BackendResponse::GetShardLayer(_) => "GetShardLayer",
+        BackendResponse::GetShardStats(_) => "GetShardStats",
         BackendResponse::InitColonyShard(_) => "InitColonyShard",
         BackendResponse::GetColonyInfo(_) => "GetColonyInfo",
         BackendResponse::UpdatedShardContents(_) => "UpdatedShardContents",
@@ -70,6 +71,7 @@ async fn handle_client(socket: TcpStream) {
             Ok(BackendRequest::UpdatedShardContents(req)) => handle_updated_shard_contents(req).await,
             Ok(BackendRequest::InitShardTopography(req)) => handle_init_shard_topography(req).await,
             Ok(BackendRequest::GetShardCurrentTick(req)) => handle_get_shard_current_tick(req).await,
+            Ok(BackendRequest::GetShardStats(req)) => handle_get_shard_stats(req).await,
             Ok(BackendRequest::ApplyEvent(req)) => handle_apply_event(req).await,
             Err(e) => {
                 log_error!("Failed to deserialize BackendRequest: {}", e);
@@ -164,6 +166,22 @@ async fn handle_get_colony_info(_req: GetColonyInfoRequest) -> BackendResponse {
             colony_life_rules,
             current_tick,
         })
+    }
+}
+
+async fn handle_get_shard_stats(req: GetShardStatsRequest) -> BackendResponse {
+    if !Colony::is_initialized() {
+        return BackendResponse::GetShardStats(GetShardStatsResponse::ColonyNotInitialized);
+    }
+    let colony = Colony::instance();
+    if let Some(shard_arc) = colony.get_hosted_colony_shard_arc(&req.shard) {
+        let shard = shard_arc.lock().unwrap();
+        match ShardUtils::compute_stats(&shard, &req.shard, &req.metrics) {
+            Some(stats) => BackendResponse::GetShardStats(GetShardStatsResponse::Ok { stats }),
+            None => BackendResponse::GetShardStats(GetShardStatsResponse::ShardNotAvailable),
+        }
+    } else {
+        BackendResponse::GetShardStats(GetShardStatsResponse::ShardNotAvailable)
     }
 }
 

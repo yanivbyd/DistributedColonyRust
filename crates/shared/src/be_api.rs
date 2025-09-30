@@ -14,6 +14,7 @@ pub enum BackendRequest {
     InitColony(InitColonyRequest),
     GetShardImage(GetShardImageRequest),
     GetShardLayer(GetShardLayerRequest),
+    GetShardStats(GetShardStatsRequest),
     InitColonyShard(InitColonyShardRequest),
     GetColonyInfo(GetColonyInfoRequest),
     UpdatedShardContents(UpdatedShardContentsRequest),
@@ -28,6 +29,7 @@ pub enum BackendResponse {
     InitColony(InitColonyResponse),
     GetShardImage(GetShardImageResponse),
     GetShardLayer(GetShardLayerResponse),
+    GetShardStats(GetShardStatsResponse),
     InitColonyShard(InitColonyShardResponse),
     GetColonyInfo(GetColonyInfoResponse),
     UpdatedShardContents(UpdatedShardContentsResponse),
@@ -83,6 +85,41 @@ pub struct GetShardLayerRequest {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum GetShardLayerResponse {
     Ok { data: Vec<i32> },
+    ShardNotAvailable,
+}
+
+// ===== Shard Stats API =====
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub enum StatMetric {
+    Health,
+    CreatureSize,
+    CreateCanKill,
+    CreateCanMove,
+    Food,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct StatBucket {
+    pub value: i32,
+    pub occs: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ShardStatResult {
+    pub shard: Shard,
+    pub metrics: Vec<(StatMetric, Vec<StatBucket>)>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetShardStatsRequest {
+    pub shard: Shard,
+    pub metrics: Vec<StatMetric>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum GetShardStatsResponse {
+    Ok { stats: Vec<ShardStatResult> },
+    ColonyNotInitialized,
     ShardNotAvailable,
 }
 
