@@ -1,0 +1,49 @@
+# Git files
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts (we'll build fresh)
+target/
+Cargo.lock
+
+# CDK files
+CDK/
+cdk.out/
+
+# Output directories
+output/
+data/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Node modules (if any)
+node_modules/
+
+# Docker files (don't include other Docker files)
+Dockerfile
+.dockerignore
+
+# Scripts
+*.sh
+
+# AWS files
+.aws/

@@ -1,0 +1,36 @@
+{
+  "name": "distributed-colony-cloud-aws",
+  "version": "1.0.0",
+  "description": "AWS CDK infrastructure for DistributedColonyRust",
+  "bin": {
+    "app": "bin/app.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "deploy": "cdk deploy",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "destroy": "cdk destroy",
+    "shutdown": "cdk destroy --force"
+  },
+  "keywords": [
+    "aws",
+    "cdk",
+    "infrastructure",
+    "distributed-colony"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.19.19",
+    "aws-cdk": "^2.117.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.117.0",
+    "constructs": "^10.3.0"
+  }
+}
