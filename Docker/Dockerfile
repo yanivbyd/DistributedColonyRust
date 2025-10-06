@@ -85,8 +85,9 @@ RUN echo '#!/bin/sh' > /usr/local/bin/healthcheck.sh && \
 # Make health check script executable
 RUN chmod +x /usr/local/bin/healthcheck.sh
 
-# Change ownership to non-root user
-RUN chown -R appuser:appgroup /usr/local/bin/backend /usr/local/bin/coordinator /usr/local/bin/start.sh /usr/local/bin/healthcheck.sh
+# Prepare writable log directory and change ownership to non-root user
+RUN mkdir -p /app/output/logs \
+    && chown -R appuser:appgroup /usr/local/bin/backend /usr/local/bin/coordinator /usr/local/bin/start.sh /usr/local/bin/healthcheck.sh /app
 
 # Switch to non-root user
 USER appuser

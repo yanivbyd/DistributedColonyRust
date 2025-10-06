@@ -124,7 +124,32 @@ export class SpotInstancesStack extends cdk.Stack {
       `aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${accountId}.dkr.ecr.${region}.amazonaws.com`,
       `docker pull ${ecrUri}`,
       `docker run -d --name distributed-colony -p ${backendPortNumber}:${backendPortNumber} -e SERVICE_TYPE=backend -e BACKEND_PORT=${backendPortNumber} ${ecrUri}`,
-      'echo "Backend container started"'
+      'echo "Backend container started"',
+
+      // Write a reload script
+      "cat <<'EOF' > /home/ec2-user/reload-backend.sh",
+      '#!/bin/bash',
+      'set -e',
+      `ECR_URI=${accountId}.dkr.ecr.${region}.amazonaws.com/distributed-colony:latest`,
+      `BACKEND_PORT=${backendPortNumber}`,
+      '',
+      'echo "[INFO] Pulling latest Docker image..."',
+      `aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${'${'}ECR_URI%/*}`,
+      'docker pull $ECR_URI',
+      '',
+      'echo "[INFO] Stopping and removing existing container (if any)..."',
+      'docker stop distributed-colony || true',
+      'docker rm distributed-colony || true',
+      '',
+      'echo "[INFO] Starting new container..."',
+      'docker run -d \\',
+      '  --name distributed-colony \\',
+      `  -p ${backendPortNumber}:${backendPortNumber} \\`,
+      '  -e SERVICE_TYPE=backend \\',
+      `  -e BACKEND_PORT=${backendPortNumber} \\`,
+      '  $ECR_URI',
+      'EOF',
+      'chmod +x /home/ec2-user/reload-backend.sh'
     );
 
     // Resolve an Amazon Linux 2 AMI at synth-time for this region

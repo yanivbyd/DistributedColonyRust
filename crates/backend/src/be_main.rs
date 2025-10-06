@@ -1,3 +1,4 @@
+use shared::log;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -271,7 +272,14 @@ async fn main() {
     // Validate that this backend's hostname and port are in the cluster topology
     let topology = shared::cluster_topology::ClusterTopology::get_instance();
     let backend_hosts = topology.get_all_backend_hosts();
-    let this_host = shared::cluster_topology::HostInfo::new(hostname.clone(), port);
+    // When running in containers, services often bind on 0.0.0.0, but the cluster
+    // topology may list 127.0.0.1. Normalize just for validation.
+    let normalized_hostname_for_validation = if hostname == "0.0.0.0" {
+        "127.0.0.1".to_string()
+    } else {
+        hostname.clone()
+    };
+    let this_host = shared::cluster_topology::HostInfo::new(normalized_hostname_for_validation, port);
     
     if !backend_hosts.contains(&this_host) {
         panic!("Backend hostname '{}' and port '{}' not found in cluster topology. Available backend hosts: {:?}", 
@@ -284,13 +292,13 @@ async fn main() {
     be_ticker::start_be_ticker();
     let addr = format!("{}:{}", hostname, port);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
-    log_debug!("Listening on {}", addr);
+    log!("Listening on {}", addr);
 
     loop {
-        log_debug!("Waiting for connection...");
+        log!("Waiting for connection...");
         match listener.accept().await {
             Ok((socket, _)) => {
-                log_debug!("Accepted connection");
+                log!("Accepted connection");
                 tokio::spawn(handle_client(socket));
             }
             Err(e) => log_error!("Connection failed: {}", e),
