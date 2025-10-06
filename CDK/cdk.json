@@ -17,13 +17,14 @@
     ]
   },
   "context": {
-    "instanceType": "t3.medium",
-    "maxPrice": "0.05",
+    "instanceType": "t3.micro",
+    "maxPrice": "0.015",
     "keyPairName": "distributed-colony-key",
     "volumeSize": 30,
     "volumeType": "gp3",
     "backendPort": 8082,
     "sshPort": 22,
+    "targetCapacity": 1,
     "cpuType": "X86_64",
     "allocationStrategy": "diversified",
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,

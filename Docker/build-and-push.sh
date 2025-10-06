@@ -74,6 +74,30 @@ if ! aws ecr describe-repositories --repository-names $ECR_REPOSITORY --region $
         --image-scanning-configuration scanOnPush=true \
         --encryption-configuration encryptionType=AES256
     print_status "ECR repository created successfully"
+
+	aws ecr put-lifecycle-policy \
+		--repository-name "$ECR_REPOSITORY" \
+		--lifecycle-policy-text file://<(\
+cat <<'EOF'
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Expire images older than 30 days",
+      "selection": {
+        "tagStatus": "any",
+        "countType": "sinceImagePushed",
+        "countUnit": "days",
+        "countNumber": 30
+      },
+      "action": {
+        "type": "expire"
+      }
+    }
+  ]
+}
+EOF
+)
 else
     print_status "ECR repository already exists"
 fi
@@ -82,17 +106,24 @@ fi
 print_status "Authenticating Docker with ECR..."
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-# Build the Docker image
-print_status "Building Docker image..."
-docker build -t $ECR_REPOSITORY:$IMAGE_TAG -f Dockerfile ..
+# Ensure Buildx is available
+print_status "Ensuring Docker Buildx is available..."
+if ! docker buildx version > /dev/null 2>&1; then
+    print_error "Docker Buildx is not available. Please update Docker to a version that includes Buildx."
+    exit 1
+fi
 
-# Tag the image for ECR
-print_status "Tagging image for ECR..."
-docker tag $ECR_REPOSITORY:$IMAGE_TAG $ECR_URI
+# Create/use a builder (idempotent)
+docker buildx create --use >/dev/null 2>&1 || true
 
-# Push the image to ECR
-print_status "Pushing image to ECR..."
-docker push $ECR_URI
+# Build and push a multi-arch image (amd64 for EC2, arm64 for Apple Silicon)
+print_status "Building and pushing multi-arch image (linux/amd64, linux/arm64)..."
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t $ECR_URI \
+  -f Dockerfile \
+  .. \
+  --push
 
 print_status "Docker image successfully built and pushed to ECR!"
 print_status "Image URI: $ECR_URI"

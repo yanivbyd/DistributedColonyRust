@@ -11,6 +11,7 @@ export interface SpotInstancesConfig {
   volumeType?: string;
   sshPort?: number;
   backendPort?: number;
+  targetCapacity?: number;
 }
 
 export class SpotInstancesStack extends cdk.Stack {
@@ -25,6 +26,7 @@ export class SpotInstancesStack extends cdk.Stack {
       volumeType: this.node.tryGetContext('volumeType'),
       sshPort: this.node.tryGetContext('sshPort'),
       backendPort: this.node.tryGetContext('backendPort'),
+      targetCapacity: this.node.tryGetContext('targetCapacity'),
     };
 
     // Validate required context values (no in-code defaults per requirement)
@@ -49,14 +51,21 @@ export class SpotInstancesStack extends cdk.Stack {
     if (config.backendPort === undefined) {
       throw new Error("Missing required context 'backendPort' in cdk.json (context.backendPort)");
     }
+    if (config.targetCapacity === undefined) {
+      throw new Error("Missing required context 'targetCapacity' in cdk.json (context.targetCapacity)");
+    }
 
     const sshPortNumber = Number(config.sshPort);
     const backendPortNumber = Number(config.backendPort);
+    const targetCapacityNumber = Number(config.targetCapacity);
     if (!Number.isFinite(sshPortNumber)) {
       throw new Error("Context 'sshPort' must be a number");
     }
     if (!Number.isFinite(backendPortNumber)) {
       throw new Error("Context 'backendPort' must be a number");
+    }
+    if (!Number.isFinite(targetCapacityNumber) || targetCapacityNumber < 0) {
+      throw new Error("Context 'targetCapacity' must be a non-negative number");
     }
 
     const vpc = ec2.Vpc.fromLookup(this, 'VPC', { isDefault: true });
@@ -149,8 +158,9 @@ export class SpotInstancesStack extends cdk.Stack {
     const spotFleet = new ec2.CfnSpotFleet(this, 'BackendSpotFleet', {
       spotFleetRequestConfigData: {
         iamFleetRole: spotServiceLinkedRoleArn,
-        targetCapacity: 1,
+        targetCapacity: targetCapacityNumber,
         type: 'maintain',
+        excessCapacityTerminationPolicy: 'Default',
         spotPrice: config.maxPrice!,
         launchTemplateConfigs: [
           {

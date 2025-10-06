@@ -50,6 +50,20 @@ cdk bootstrap  # First time only
 cdk deploy --all
 ```
 
+#### Scale capacity without editing files
+
+To stop all instances (scale to 0) without modifying `cdk.json`:
+
+```bash
+cdk deploy -c targetCapacity=0
+```
+
+To start again with one instance (scale to 1):
+
+```bash
+cdk deploy -c targetCapacity=1
+```
+
 #### Shutdown and Stop All Charges
 
 To completely shut down and remove all AWS resources (stops all charges):
