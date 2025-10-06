@@ -88,6 +88,15 @@ export class DistributedColonyStack extends cdk.Stack {
       resources: ['*'],
     }));
 
+    // IAM Role for Spot Fleet
+    const spotFleetRole = new iam.Role(this, 'SpotFleetRole', {
+      assumedBy: new iam.ServicePrincipal('spotfleet.amazonaws.com'),
+      description: 'IAM role for Spot Fleet',
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2SpotFleetTaggingRole'),
+      ],
+    });
+
     // Get AWS account ID for ECR URI
     const accountId = cdk.Stack.of(this).account;
     const region = cdk.Stack.of(this).region;
@@ -156,8 +165,8 @@ export class DistributedColonyStack extends cdk.Stack {
     // Launch Template for Spot Instance
     const launchTemplate = new ec2.LaunchTemplate(this, 'DistributedColonyLaunchTemplate', {
       instanceType: new ec2.InstanceType(config.instanceType!),
-      machineImage: ec2.MachineImage.latestAmazonLinux2023({
-        cpuType: config.cpuType! as ec2.AmazonLinuxCpuType,
+      machineImage: ec2.MachineImage.latestAmazonLinux({
+        generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
       }),
       securityGroup,
       role,
@@ -177,13 +186,13 @@ export class DistributedColonyStack extends cdk.Stack {
     // Spot Instance Request using CfnSpotFleet
     const spotFleet = new ec2.CfnSpotFleet(this, 'DistributedColonySpotFleet', {
       spotFleetRequestConfigData: {
-        iamFleetRole: role.roleArn,
+        iamFleetRole: spotFleetRole.roleArn,
         targetCapacity: 1,
         spotPrice: config.maxPrice,
         launchSpecifications: [
           {
-            imageId: ec2.MachineImage.latestAmazonLinux2023({
-              cpuType: config.cpuType! as ec2.AmazonLinuxCpuType,
+            imageId: ec2.MachineImage.latestAmazonLinux({
+              generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
             }).getImage(this).imageId,
             instanceType: config.instanceType!,
             keyName: config.keyPairName,

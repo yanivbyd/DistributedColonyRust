@@ -45,10 +45,9 @@ Your credentials will be stored in `~/.aws/credentials` and configuration in `~/
 #### Quick Start
 
 ```bash
-cd aws
 npm install
 cdk bootstrap  # First time only
-cdk deploy
+cdk deploy --all
 ```
 
 #### Shutdown and Stop All Charges
@@ -56,7 +55,6 @@ cdk deploy
 To completely shut down and remove all AWS resources (stops all charges):
 
 ```bash
-cd aws
 npm run shutdown
 # or
 cdk destroy --force
