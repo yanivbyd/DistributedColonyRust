@@ -123,7 +123,9 @@ export class SpotInstancesStack extends cdk.Stack {
       `aws configure set region ${region}`,
       `aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${accountId}.dkr.ecr.${region}.amazonaws.com`,
       `docker pull ${ecrUri}`,
-      `docker run -d --name distributed-colony -p ${backendPortNumber}:${backendPortNumber} -e SERVICE_TYPE=backend -e BACKEND_PORT=${backendPortNumber} ${ecrUri}`,
+      'mkdir -p /data/distributed-colony/output',
+      'chmod 777 -R /data/distributed-colony',
+      `docker run -d --name distributed-colony -p ${backendPortNumber}:${backendPortNumber} -v /data/distributed-colony/output:/app/output -e SERVICE_TYPE=backend -e BACKEND_PORT=${backendPortNumber} ${ecrUri}`,
       'echo "Backend container started"',
 
       // Write a reload script
