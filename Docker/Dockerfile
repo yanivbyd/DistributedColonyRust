@@ -1,6 +1,6 @@
 # Multi-stage Docker build for DistributedColony
 # Stage 1: Build the Rust application
-FROM rust:1.75-alpine AS builder
+FROM rust:1.87-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache \
