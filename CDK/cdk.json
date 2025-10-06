@@ -23,6 +23,7 @@
     "volumeSize": 30,
     "volumeType": "gp3",
     "backendPort": 8082,
+    "coordinatorPort": 8083,
     "sshPort": 22,
     "targetCapacity": 1,
     "cpuType": "X86_64",
