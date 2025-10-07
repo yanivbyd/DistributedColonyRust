@@ -24,6 +24,7 @@ pub struct Cell {
     // Creature 
     pub color: Color,
     pub health: u16,
+    pub age: u16,
 
     pub traits: Traits,
 }
@@ -61,4 +62,5 @@ pub enum ShardLayer {
     CostPerTurn,
     Food,
     Health,
+    Age,
 } 

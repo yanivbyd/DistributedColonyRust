@@ -111,6 +111,7 @@ async fn handle_get_colony_stats(metrics: Vec<StatMetric>) -> CoordinatorRespons
             shared::be_api::StatMetric::CreateCanKill => 2,
             shared::be_api::StatMetric::CreateCanMove => 3,
             shared::be_api::StatMetric::Food => 4,
+            shared::be_api::StatMetric::Age => 5,
         }
     }
     let mut pos_by_id: HashMap<u8, usize> = HashMap::new();

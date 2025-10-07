@@ -128,6 +128,7 @@ impl ColonyShard {
 
                 self.grid[n].color = self.grid[my_cell].color;
                 self.grid[n].health = self.grid[my_cell].health;
+                self.grid[n].age = self.grid[my_cell].age;
                 self.grid[n].traits = self.grid[my_cell].traits;
                 self.grid[n].tick_bit = next_bit;
                 set_blank(&mut self.grid[my_cell]);
@@ -188,6 +189,7 @@ impl ColonyShard {
                 if is_blank(cell) {
                     continue;
                 }
+                self.grid[my_cell].age = self.grid[my_cell].age.saturating_add(1);
 
                 offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
 
@@ -236,6 +238,7 @@ impl ColonyShard {
 
                 self.grid[neighbor].color = self.grid[my_cell].color;
                 self.grid[neighbor].health = half_health;
+                self.grid[neighbor].age = 1;
                 self.grid[neighbor].traits = self.grid[my_cell].traits;
                 self.grid[neighbor].tick_bit = next_bit;
                 if random_chance(rng, self.colony_life_rules.mutation_chance) {
@@ -284,6 +287,7 @@ impl ColonyShard {
             if my_size >= nref.traits.size && nref.health > 0 && !my_color.equals(&nref.color) {
                 if !random_chance(rng, 10) { continue }
                 self.grid[n].health = self.grid[my_cell].health.saturating_add(nref.health);
+                self.grid[n].age = self.grid[my_cell].age;
                 self.grid[n].color = self.grid[my_cell].color;
                 self.grid[n].traits = self.grid[my_cell].traits;
                 self.grid[n].tick_bit = next_bit;
@@ -317,6 +321,7 @@ fn assert_blank_consistency(cell: &Cell) {
 fn set_blank(cell: &mut Cell) {
     cell.color = WHITE_COLOR;
     cell.health = 0;
+    cell.age = 0;
     #[cfg(debug_assertions)]
     assert_blank_consistency(cell);
 }

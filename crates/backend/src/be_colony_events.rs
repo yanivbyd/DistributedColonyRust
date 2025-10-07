@@ -91,6 +91,7 @@ pub fn apply_event(rng: &mut SmallRng, colony: &Colony, event: &ColonyEvent) {
                         shard.grid.iter_mut().for_each(|cell| {
                             cell.color = WHITE_COLOR;
                             cell.health = 0;
+                            cell.age = 0;
                         });
                     }
                 }
@@ -119,6 +120,7 @@ pub fn apply_local_event(colony: &Colony, event: &ColonyEvent, region: &Region) 
                     cell.color = params.color;
                     cell.traits = params.traits;
                     cell.health = params.starting_health;
+                    cell.age = 1;
                 });
             },
             _ => {

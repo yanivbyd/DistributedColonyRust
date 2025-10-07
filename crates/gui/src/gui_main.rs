@@ -26,6 +26,7 @@ enum Tab {
     CanMove,
     CostPerTurn,
     Health,
+    Age,
     Info,
     Stats,
 }
@@ -96,6 +97,7 @@ struct BEImageApp {
     cost_per_turn: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     food: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     health: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
+    age: Arc<Mutex<Vec<Option<Vec<i32>>>>>,
     colony_info: Arc<Mutex<Option<(Option<shared::be_api::ColonyLifeRules>, Option<u64>)>>>,
     colony_events: Arc<Mutex<Option<Vec<ColonyEventDescription>>>>,
     ctx: Option<egui::Context>,
@@ -128,6 +130,7 @@ impl Default for BEImageApp {
         let cost_per_turn = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let health = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
+        let age = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let colony_info = Arc::new(Mutex::new(None));
         let colony_events = Arc::new(Mutex::new(None));
         let current_tab = Tab::Creatures;
@@ -141,6 +144,7 @@ impl Default for BEImageApp {
             cost_per_turn,
             food,
             health,
+            age,
             colony_info,
             colony_events,
             ctx: None,
@@ -170,6 +174,7 @@ impl App for BEImageApp {
             let cost_per_turn = self.cost_per_turn.clone();
             let food = self.food.clone();
             let health = self.health.clone();
+            let age = self.age.clone();
             let ctx_clone = ctx.clone();
             let shared_current_tab = self.shared_current_tab.clone();
             let shard_config = self.shard_config.clone();
@@ -195,8 +200,8 @@ impl App for BEImageApp {
                                 let mut locked = creatures_color_data.lock().unwrap();
                                 *locked = color_data;
                             }
-                        }
-                        Tab::ExtraFood => {
+                    }
+                    Tab::ExtraFood => {
                             let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config, cluster_topology);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !extra_food_data.iter().all(|data| data.is_none()) {
@@ -204,8 +209,8 @@ impl App for BEImageApp {
                                 *locked = extra_food_data;
                                 *last_update_time.lock().unwrap() = Instant::now();
                             }
-                        }
-                        Tab::Sizes => {
+                    }
+                    Tab::Sizes => {
                             let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config, cluster_topology);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !sizes_data.iter().all(|data| data.is_none()) {
@@ -213,7 +218,15 @@ impl App for BEImageApp {
                                 *locked = sizes_data;
                                 *last_update_time.lock().unwrap() = Instant::now();
                             }
+                    }
+                    Tab::Age => {
+                        let age_data = call_be::get_all_shard_layer_data(ShardLayer::Age, &config, cluster_topology);
+                        if !age_data.iter().all(|data| data.is_none()) {
+                            let mut locked = age.lock().unwrap();
+                            *locked = age_data;
+                            *last_update_time.lock().unwrap() = Instant::now();
                         }
+                    }
                         Tab::CanKill => {
                             let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config, cluster_topology);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
@@ -261,8 +274,8 @@ impl App for BEImageApp {
                         }
                         Tab::Info => {
                             // No automatic polling for Info tab - data is loaded once when tab is first accessed
-                        }
-                        Tab::Stats => {
+                    }
+                    Tab::Stats => {
                             // No background polling for stats
                         }
                     }
@@ -285,6 +298,7 @@ impl App for BEImageApp {
                 ui.selectable_value(&mut self.current_tab, Tab::CanMove, "Can Move");
                 ui.selectable_value(&mut self.current_tab, Tab::CostPerTurn, "Cost Per Turn");
                 ui.selectable_value(&mut self.current_tab, Tab::Health, "Health");
+                ui.selectable_value(&mut self.current_tab, Tab::Age, "Age");
                 ui.selectable_value(&mut self.current_tab, Tab::Info, "Info");
                 ui.selectable_value(&mut self.current_tab, Tab::Stats, "Stats");
                 
@@ -320,6 +334,7 @@ impl App for BEImageApp {
                 Tab::CanMove => self.show_can_move_tab(ui),
                 Tab::CostPerTurn => self.show_cost_per_turn_tab(ui),
                 Tab::Health => self.show_health_tab(ui),
+                Tab::Age => self.show_age_tab(ui),
                 Tab::Info => self.show_info_tab(ui),
                 Tab::Stats => self.show_stats_tab(ui),
             }
@@ -563,6 +578,11 @@ impl BEImageApp {
         self.show_layer_tab_with_legend(ui, &health, Some(10)); 
     }
 
+    fn show_age_tab(&mut self, ui: &mut egui::Ui) {
+        let age = self.age.clone();
+        self.show_layer_tab(ui, &age);
+    }
+
     fn show_layer_tab_boolean(&mut self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>) {
         let locked_vec: Vec<Option<Vec<i32>>> = {
             let locked = data.lock().unwrap();
@@ -765,6 +785,7 @@ impl BEImageApp {
                     shared::be_api::StatMetric::CreateCanMove,
                     shared::be_api::StatMetric::Food,
                     shared::be_api::StatMetric::Health,
+                            shared::be_api::StatMetric::Age,
                 ];
                 if let Some(results) = get_colony_stats(metrics) {
                     // Cache results in a local field for drawing
@@ -797,6 +818,7 @@ impl BEImageApp {
                                 shared::be_api::StatMetric::Food => "Food",
                                 shared::be_api::StatMetric::CreateCanKill => "Can Kill",
                                 shared::be_api::StatMetric::CreateCanMove => "Can Move",
+                                shared::be_api::StatMetric::Age => "Age",
                             };
                             if !buckets.is_empty() {
                                 let mut min_v = i32::MAX;

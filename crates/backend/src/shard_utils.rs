@@ -33,6 +33,7 @@ impl ShardUtils {
         if dst.health > 0 && src.health == 0 { return; } // don't remove creatures from another shard
         dst.color = src.color;
         dst.health = src.health;
+        dst.age = src.age;
         dst.traits = src.traits;
         dst.food = src.food;
         dst.extra_food_per_tick = src.extra_food_per_tick;
@@ -52,6 +53,7 @@ impl ShardUtils {
                 StatMetric::CreateCanKill => Self::accumulate_counts(shard, |c| if c.traits.can_kill { 1 } else { 0 }, false),
                 StatMetric::CreateCanMove => Self::accumulate_counts(shard, |c| if c.traits.can_move { 1 } else { 0 }, false),
                 StatMetric::Food => Self::accumulate_counts(shard, |c| c.food as i32, true),
+                StatMetric::Age => Self::accumulate_counts(shard, |c| c.age as i32, false),
             };
             metric_buckets.push((stat, buckets));
         }
@@ -72,6 +74,7 @@ impl ShardUtils {
                     food: 50, 
                     extra_food_per_tick: 50,
                     health: 0,
+                    age: 1,
                     traits: Traits { size: 1, can_kill: true, can_move: true },
                 }
             }).collect(),
@@ -122,6 +125,9 @@ impl ShardUtils {
                 match layer {
                     ShardLayer::CreatureSize => {
                         data.extend(shard.grid[start..end].iter().map(|cell| if is_blank(cell) { 0 } else { cell.traits.size as i32 }));
+                    }
+                    ShardLayer::Age => {
+                        data.extend(shard.grid[start..end].iter().map(|cell| if is_blank(cell) { 0 } else { cell.age as i32 }));
                     }
                     ShardLayer::ExtraFood => {
                         data.extend(shard.grid[start..end].iter().map(|cell| cell.extra_food_per_tick as i32));

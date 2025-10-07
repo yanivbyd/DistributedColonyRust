@@ -96,6 +96,7 @@ pub enum StatMetric {
     CreateCanKill,
     CreateCanMove,
     Food,
+    Age,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
