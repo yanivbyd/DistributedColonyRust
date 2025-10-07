@@ -2,11 +2,14 @@ import * as cdk from 'aws-cdk-lib';
 
 /*
   To debug the startup script, ssh to the instance and run:
-  grep -F "Startup completed successfully" /var/log/cloud-init-output.log # to verify completion in cloud-init logs
+  sudo grep -F "Startup completed successfully" /var/log/cloud-init-output.log # to verify completion in cloud-init logs
   sudo cat /var/log/cloud-init-output.log  # this will show the output of the startup script
   sudo cat /var/log/reload.log  # this will show the output of the reload script
   sudo docker ps -a  # this will show the output of the container
   sudo docker logs <container_id>  #this will show the output of the container
+
+  For logs:
+  cat /data/distributed-colony/output/logs/be_8082.log
 */
 
 export enum ColonyInstanceType {
@@ -74,15 +77,10 @@ export class UserDataBuilder {
       'set -e',
       'INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)',
       'LOCAL_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)',
-      'if [ "$COORDINATOR" = "1" ]; then',
-      instanceType === ColonyInstanceType.COORDINATOR ?
-        `  aws ssm put-parameter --name "/colony/coordinator" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region}` :
-        `  aws ssm put-parameter --name "/colony/backends/$INSTANCE_ID" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region}`,
-      'else',
-      instanceType === ColonyInstanceType.COORDINATOR ?
-        `  aws ssm put-parameter --name "/colony/backends/$INSTANCE_ID" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region}` :
-        `  aws ssm put-parameter --name "/colony/coordinator" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region}`,
-      'fi',
+      ...(instanceType === ColonyInstanceType.COORDINATOR
+        ? [`aws ssm put-parameter --name "/colony/coordinator" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region}`]
+        : [`aws ssm put-parameter --name "/colony/backends/$INSTANCE_ID" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region}`]
+      ),
       'EOF',
       'chmod +x /usr/local/bin/register-ssm.sh',
       // Create SSM removal script
@@ -173,14 +171,15 @@ export class UserDataBuilder {
       'INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)',
       `REGION=${this.region}`,
       'LOCAL_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)',
+      'echo "[INFO] Beginning SSM registration..." | tee -a /var/log/reload.log',
       'if [ "$COORDINATOR" = "1" ]; then',
       instanceType === ColonyInstanceType.COORDINATOR ?
-        `  aws ssm put-parameter --name "/colony/coordinator" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region} || { echo "[ERROR] SSM registration failed (coordinator)" >> /var/log/reload.log; aws ec2 create-tags --resources "$INSTANCE_ID" --tags Key=Status,Value=Faulty Key=FailureReason,Value="SSM registration failed (coordinator)" --region "$REGION" 1>/dev/null 2>&1 || true; exit 1; }` :
-        `  aws ssm put-parameter --name "/colony/backends/$INSTANCE_ID" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region} || { echo "[ERROR] SSM registration failed (backend)" >> /var/log/reload.log; aws ec2 create-tags --resources "$INSTANCE_ID" --tags Key=Status,Value=Faulty Key=FailureReason,Value="SSM registration failed (backend)" --region "$REGION" 1>/dev/null 2>&1 || true; exit 1; }`,
+        `  aws ssm put-parameter --name "/colony/coordinator" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region} | tee -a /var/log/reload.log || { echo "[ERROR] SSM registration failed (coordinator)" >> /var/log/reload.log; aws ec2 create-tags --resources "$INSTANCE_ID" --tags Key=Status,Value=Faulty Key=FailureReason,Value="SSM registration failed (coordinator)" --region "$REGION" 1>/dev/null 2>&1 || true; exit 1; } && echo "[INFO] SSM registration succeeded: /colony/coordinator=$LOCAL_IP:${port}" >> /var/log/reload.log` :
+        `  aws ssm put-parameter --name "/colony/backends/$INSTANCE_ID" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region} | tee -a /var/log/reload.log || { echo "[ERROR] SSM registration failed (backend)" >> /var/log/reload.log; aws ec2 create-tags --resources "$INSTANCE_ID" --tags Key=Status,Value=Faulty Key=FailureReason,Value="SSM registration failed (backend)" --region "$REGION" 1>/dev/null 2>&1 || true; exit 1; } && echo "[INFO] SSM registration succeeded: /colony/backends/$INSTANCE_ID=$LOCAL_IP:${port}" >> /var/log/reload.log`,
       'else',
       instanceType === ColonyInstanceType.COORDINATOR ?
-        `  aws ssm put-parameter --name "/colony/backends/$INSTANCE_ID" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region} || { echo "[ERROR] SSM registration failed (backend)" >> /var/log/reload.log; aws ec2 create-tags --resources "$INSTANCE_ID" --tags Key=Status,Value=Faulty Key=FailureReason,Value="SSM registration failed (backend)" --region "$REGION" 1>/dev/null 2>&1 || true; exit 1; }` :
-        `  aws ssm put-parameter --name "/colony/coordinator" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region} || { echo "[ERROR] SSM registration failed (coordinator)" >> /var/log/reload.log; aws ec2 create-tags --resources "$INSTANCE_ID" --tags Key=Status,Value=Faulty Key=FailureReason,Value="SSM registration failed (coordinator)" --region "$REGION" 1>/dev/null 2>&1 || true; exit 1; }`,
+        `  aws ssm put-parameter --name "/colony/backends/$INSTANCE_ID" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region} | tee -a /var/log/reload.log || { echo "[ERROR] SSM registration failed (backend)" >> /var/log/reload.log; aws ec2 create-tags --resources "$INSTANCE_ID" --tags Key=Status,Value=Faulty Key=FailureReason,Value="SSM registration failed (backend)" --region "$REGION" 1>/dev/null 2>&1 || true; exit 1; } && echo "[INFO] SSM registration succeeded: /colony/backends/$INSTANCE_ID=$LOCAL_IP:${port}" >> /var/log/reload.log` :
+        `  aws ssm put-parameter --name "/colony/coordinator" --value "$LOCAL_IP:${port}" --type String --overwrite --region ${this.region} | tee -a /var/log/reload.log || { echo "[ERROR] SSM registration failed (coordinator)" >> /var/log/reload.log; aws ec2 create-tags --resources "$INSTANCE_ID" --tags Key=Status,Value=Faulty Key=FailureReason,Value="SSM registration failed (coordinator)" --region "$REGION" 1>/dev/null 2>&1 || true; exit 1; } && echo "[INFO] SSM registration succeeded: /colony/coordinator=$LOCAL_IP:${port}" >> /var/log/reload.log`,
       'fi',
     ];
   }
