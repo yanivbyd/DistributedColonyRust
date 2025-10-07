@@ -88,15 +88,9 @@ export class UserDataBuilder {
       '#!/bin/bash',
       'set -e',
       'INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)',
-      'if [ "$COORDINATOR" = "1" ]; then',
       instanceType === ColonyInstanceType.COORDINATOR ?
-        `  aws ssm delete-parameter --name "/colony/coordinator" --region ${this.region} || true` :
-        `  aws ssm delete-parameter --name "/colony/backends/$INSTANCE_ID" --region ${this.region} || true`,
-      'else',
-      instanceType === ColonyInstanceType.COORDINATOR ?
-        `  aws ssm delete-parameter --name "/colony/backends/$INSTANCE_ID" --region ${this.region} || true` :
-        `  aws ssm delete-parameter --name "/colony/coordinator" --region ${this.region} || true`,
-      'fi',
+        `aws ssm delete-parameter --name "/colony/coordinator" --region ${this.region} || true` :
+        `aws ssm delete-parameter --name "/colony/backends/$INSTANCE_ID" --region ${this.region} || true`,
       'EOF',
       'chmod +x /usr/local/bin/remove-ssm.sh',
       // Create systemd service for shutdown cleanup
