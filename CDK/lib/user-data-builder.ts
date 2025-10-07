@@ -114,6 +114,8 @@ export class UserDataBuilder {
       'WantedBy=shutdown.target',
       'EOF',
       'systemctl enable remove-ssm.service',
+      // Run Register SSM script
+      'bash /usr/local/bin/register-ssm.sh',
     ];
   }
 
