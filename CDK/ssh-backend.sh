@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Hardcoded configuration
-STACK_NAME="DistributedColonyStack"                          # CloudFormation stack name
+STACK_NAME="DistributedColonySpotInstances"                  # CloudFormation stack name
 KEY_NAME="distributed-colony-key"                         # EC2 key pair name (must exist in the region)
 KEY_PATH="distributed-colony-key.pem"        # Path to your .pem file
 REGION="eu-west-1"                                       # AWS region
@@ -33,14 +33,24 @@ fi
 
 echo "[INFO] Launch Template ID: ${LT_ID}"
 
+# Find backend instance by tags
+echo "[INFO] Looking for backend instances with Type=backend tag..."
+
 INSTANCE_ID=$(aws ec2 describe-instances \
-  --filters Name=instance-state-name,Values=running Name=launch-template.launch-template-id,Values="${LT_ID}" \
+  --filters \
+    Name=instance-state-name,Values=running \
+    Name=tag:Type,Values=backend \
+    Name=tag:Service,Values=distributed-colony \
   --query 'Reservations[].Instances[].InstanceId' \
   --output text \
   --region "${REGION}" | awk '{print $1}')
 
 if [[ -z "${INSTANCE_ID}" || "${INSTANCE_ID}" == "None" ]]; then
-  echo "[ERROR] No running instances found for launch template ${LT_ID}."
+  echo "[ERROR] No running backend instances found."
+  echo "[INFO] This might mean:"
+  echo "  - Backend instances are still starting up"
+  echo "  - Instances don't have the required tags"
+  echo "  - No backend instances are running"
   exit 1
 fi
 

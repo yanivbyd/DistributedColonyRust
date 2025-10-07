@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
+import { UserDataBuilder, ColonyInstanceType } from './user-data-builder';
 
 export interface SpotInstancesConfig {
   instanceType?: string;
@@ -15,56 +16,7 @@ export interface SpotInstancesConfig {
 }
 
 export class SpotInstancesStack extends cdk.Stack {
-  private buildUserData(runLines: string[]): string[] {
-    const accountId = cdk.Stack.of(this).account;
-    const region = cdk.Stack.of(this).region;
-    const scriptPath = '/home/ec2-user/reload.sh';
-    return [
-      '#!/bin/bash',
-      'set -e',
-      'yum update -y',
-      'yum install -y docker',
-      'systemctl start docker',
-      'systemctl enable docker',
-      'usermod -a -G docker ec2-user',
-      'curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"',
-      'unzip -q awscliv2.zip',
-      'sudo ./aws/install',
-      'rm -rf awscliv2.zip aws/',
-      `aws configure set region ${region}`,
-      `aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${accountId}.dkr.ecr.${region}.amazonaws.com`,
-      // Prepare host directories with root privileges so ec2-user can write
-      'mkdir -p /data',
-      'mkdir -p /data/distributed-colony',
-      'mkdir -p /data/distributed-colony/output',
-      'chmod 777 /data /data/distributed-colony /data/distributed-colony/output',
-      // Ensure reload log exists and is writable by ec2-user
-      `touch /var/log/reload.log`,
-      `chown ec2-user:ec2-user /var/log/reload.log`,
-      `chmod 664 /var/log/reload.log`,
-      `cat <<'EOF' > ${scriptPath}`,
-      '#!/bin/bash',
-      'set -e',
-      `ECR_URI=${accountId}.dkr.ecr.${region}.amazonaws.com/distributed-colony:latest`,
-      `REGION=${region}`,
-      '',
-      'echo "[INFO] Pulling latest Docker image..."',
-      'aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "${ECR_URI%/*}"',
-      'docker pull "$ECR_URI"',
-      '',
-      'echo "[INFO] Stopping and removing existing container if any..."',
-      'docker stop distributed-colony 2>/dev/null || true',
-      'docker rm distributed-colony 2>/dev/null || true',
-      '',
-      'echo "[INFO] Starting new container..."',
-      ...runLines,
-      'EOF',
-      `chmod +x ${scriptPath}`,
-      `su - ec2-user -c '/home/ec2-user/reload.sh >> /var/log/reload.log 2>&1'`,
-      'cat /var/log/reload.log',
-      'echo "Container started"',
-    ];
-  }
+
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
@@ -133,6 +85,9 @@ export class SpotInstancesStack extends cdk.Stack {
     securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(backendPortNumber), 'Allow backend traffic');
     securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(coordinatorPortNumber), 'Allow coordinator traffic');
 
+    const accountId = cdk.Stack.of(this).account;
+    const region = cdk.Stack.of(this).region;
+
     // EC2 instance role (for pulling from ECR, SSM, etc.)
     const instanceRole = new iam.Role(this, 'BackendInstanceRole', {
       assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
@@ -141,6 +96,18 @@ export class SpotInstancesStack extends cdk.Stack {
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'),
       ],
     });
+
+    // Allow instances to write/read their SSM registration parameters
+    instanceRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'ssm:PutParameter',
+        'ssm:DeleteParameter',
+      ],
+      resources: [
+        `arn:aws:ssm:${region}:${accountId}:parameter/colony/*`,
+      ],
+    }));
 
     // ECR pull permissions
     instanceRole.addToPolicy(new iam.PolicyStatement({
@@ -154,28 +121,29 @@ export class SpotInstancesStack extends cdk.Stack {
       resources: ['*'],
     }));
 
+    // Allow instances to tag themselves as Faulty on failures
+    instanceRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'ec2:CreateTags',
+      ],
+      resources: [
+        `arn:aws:ec2:${region}:${accountId}:instance/*`,
+      ],
+      conditions: {
+        StringEquals: {
+          'ec2:Region': region,
+        },
+      },
+    }));
+
     const instanceProfile = new iam.CfnInstanceProfile(this, 'BackendInstanceProfile', {
       roles: [instanceRole.roleName],
     });
 
-    const accountId = cdk.Stack.of(this).account;
-    const region = cdk.Stack.of(this).region;
     const ecrUri = `${accountId}.dkr.ecr.${region}.amazonaws.com/distributed-colony:latest`;
 
-    const backendUserData = ec2.UserData.forLinux();
-    backendUserData.addCommands(
-      ...this.buildUserData(
-        [
-          'docker run -d \\',
-          '  --name distributed-colony \\',
-          `  -p ${backendPortNumber}:${backendPortNumber} \\`,
-          '  -v /data/distributed-colony/output:/app/output \\',
-          '  -e SERVICE_TYPE=backend \\',
-          `  -e BACKEND_PORT=${backendPortNumber} \\`,
-          '  "$ECR_URI"',
-        ],
-      )
-    );
+    const userDataBuilder = new UserDataBuilder(accountId, region);
 
     // Resolve an Amazon Linux 2 AMI at synth-time for this region
     const amiId = ec2.MachineImage.latestAmazonLinux2().getImage(this).imageId;
@@ -198,7 +166,17 @@ export class SpotInstancesStack extends cdk.Stack {
             },
           },
         ],
-        userData: cdk.Fn.base64(backendUserData.render()),
+        userData: cdk.Fn.base64(userDataBuilder.buildUserData(ColonyInstanceType.BACKEND, backendPortNumber)),
+        tagSpecifications: [
+          {
+            resourceType: 'instance',
+            tags: [
+              { key: 'Name', value: 'distributed-colony-backend' },
+              { key: 'Type', value: 'backend' },
+              { key: 'Service', value: 'distributed-colony' },
+            ],
+          },
+        ],
       },
     });
 
@@ -230,20 +208,6 @@ export class SpotInstancesStack extends cdk.Stack {
     });
 
     // Coordinator user data (reuse same flow, different service/port)
-    const coordinatorUserData = ec2.UserData.forLinux();
-    coordinatorUserData.addCommands(
-      ...this.buildUserData(
-        [
-          'docker run -d \\',
-          '  --name distributed-colony \\',
-          `  -p ${coordinatorPortNumber}:${coordinatorPortNumber} \\`,
-          '  -v /data/distributed-colony/output:/app/output \\',
-          '  -e SERVICE_TYPE=coordinator \\',
-          `  -e COORDINATOR_PORT=${coordinatorPortNumber} \\`,
-          '  "$ECR_URI"',
-        ],
-      )
-    );
 
     const coordinatorLt = new ec2.CfnLaunchTemplate(this, 'CoordinatorLaunchTemplate', {
       launchTemplateData: {
@@ -262,7 +226,17 @@ export class SpotInstancesStack extends cdk.Stack {
             },
           },
         ],
-        userData: cdk.Fn.base64(backendUserData.render()),
+        userData: cdk.Fn.base64(userDataBuilder.buildUserData(ColonyInstanceType.COORDINATOR, coordinatorPortNumber)),
+        tagSpecifications: [
+          {
+            resourceType: 'instance',
+            tags: [
+              { key: 'Name', value: 'distributed-colony-coordinator' },
+              { key: 'Type', value: 'coordinator' },
+              { key: 'Service', value: 'distributed-colony' },
+            ],
+          },
+        ],
       },
     });
 
