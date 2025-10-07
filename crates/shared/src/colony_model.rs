@@ -43,6 +43,7 @@ pub struct ColonyLifeRules {
     pub health_cost_if_can_kill: u32,
     pub health_cost_if_can_move: u32,
     pub mutation_chance: u32,
+    pub random_death_chance: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

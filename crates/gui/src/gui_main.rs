@@ -672,6 +672,7 @@ impl BEImageApp {
                         health_cost_if_can_kill: 10,
                         health_cost_if_can_move: 5,
                         mutation_chance: 100,
+                        random_death_chance: 100,
                     };
                     
                     egui::Grid::new("colony_life_rules_grid")
@@ -721,6 +722,16 @@ impl BEImageApp {
                             ui.label("Mutation Chance:");
                             let current = life_info.mutation_chance;
                             let initial = INITIAL_RULES.mutation_chance;
+                            if current != initial {
+                                ui.label(format!("{} (initial={})", current, initial));
+                            } else {
+                                ui.label(format!("{}", current));
+                            }
+                            ui.end_row();
+                            
+                            ui.label("Random Death Chance:");
+                            let current = life_info.random_death_chance;
+                            let initial = INITIAL_RULES.random_death_chance;
                             if current != initial {
                                 ui.label(format!("{} (initial={})", current, initial));
                             } else {

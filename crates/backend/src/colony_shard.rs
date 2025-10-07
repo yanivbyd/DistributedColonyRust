@@ -190,6 +190,11 @@ impl ColonyShard {
                     continue;
                 }
                 self.grid[my_cell].age = self.grid[my_cell].age.saturating_add(1);
+                if random_chance(rng, self.colony_life_rules.random_death_chance) {
+                    set_blank(&mut self.grid[my_cell]);
+                    stats.deaths += 1;
+                    continue;
+                }
 
                 offsets = &neighbor_perms[rng.gen_range(0..neighbor_perms.len())];
 

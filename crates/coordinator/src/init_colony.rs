@@ -17,6 +17,7 @@ pub const COLONY_LIFE_INITIAL_RULES: ColonyLifeRules = ColonyLifeRules {
     health_cost_if_can_kill: 10,
     health_cost_if_can_move: 5,
     mutation_chance: 100,
+    random_death_chance: 100,
 };
 
 

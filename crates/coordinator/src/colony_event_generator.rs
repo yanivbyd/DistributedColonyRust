@@ -125,6 +125,7 @@ pub fn randomize_colony_rules_change(current_rules: ColonyLifeRules, rng: &mut S
         "Health Cost If Can Kill",
         "Health Cost If Can Move",
         "Mutation Chance",
+        "Random Death Chance",
     ];
     
     // Randomly select which parameter to change
@@ -138,6 +139,7 @@ pub fn randomize_colony_rules_change(current_rules: ColonyLifeRules, rng: &mut S
         "Health Cost If Can Kill" => apply_change_and_update(&mut new_rules.health_cost_if_can_kill, MIN_VALUE, rng),
         "Health Cost If Can Move" => apply_change_and_update(&mut new_rules.health_cost_if_can_move, MIN_VALUE, rng),
         "Mutation Chance" => apply_change_and_update(&mut new_rules.mutation_chance, MIN_VALUE, rng),
+        "Random Death Chance" => apply_change_and_update(&mut new_rules.random_death_chance, MIN_VALUE, rng),
         _ => panic!("Unknown parameter: {}", display_name),
     };
     
