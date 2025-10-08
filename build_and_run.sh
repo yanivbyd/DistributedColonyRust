@@ -8,17 +8,17 @@ HOSTNAME="127.0.0.1"
 ./kill_all.sh
 rm -rf output/logs/*
 
-echo "🚀 Starting ${#BACKEND_PORTS[@]} backend instances..."
+echo "🚀 Starting ${#BACKEND_PORTS[@]} backend instances in localhost mode..."
 
 # Start all backends
 for port in "${BACKEND_PORTS[@]}"; do
     echo "🔥 Starting backend on port $port..."
-    cargo run --profile=balanced -p backend -- $HOSTNAME $port &
+    cargo run --profile=balanced -p backend -- $HOSTNAME $port localhost &
 done
 sleep 3
 
-echo "📡 Starting coordinator..."
-cargo run --profile=balanced -p coordinator &
+echo "📡 Starting coordinator in localhost mode..."
+cargo run --profile=balanced -p coordinator -- localhost &
 sleep 1
 
 echo "🖥️  Starting GUI..."

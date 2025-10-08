@@ -9,6 +9,22 @@ use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
 
+#[derive(Debug, Clone, PartialEq)]
+enum DeploymentMode {
+    Localhost,
+    Aws,
+}
+
+impl DeploymentMode {
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "localhost" => Ok(DeploymentMode::Localhost),
+            "aws" => Ok(DeploymentMode::Aws),
+            _ => Err(format!("Invalid deployment mode: {}. Must be 'localhost' or 'aws'", s)),
+        }
+    }
+}
+
 mod colony;
 mod be_ticker;
 mod colony_shard;
@@ -256,14 +272,16 @@ async fn handle_apply_event(req: ApplyEventRequest) -> BackendResponse {
 async fn main() {
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 3 {
-        eprintln!("Usage: {} <hostname> <port>", args[0]);
-        eprintln!("Example: {} 127.0.0.1 8082", args[0]);
+    if args.len() != 4 {
+        eprintln!("Usage: {} <hostname> <port> <deployment_mode>", args[0]);
+        eprintln!("Example: {} 127.0.0.1 8082 localhost", args[0]);
+        eprintln!("Deployment modes: localhost, aws");
         std::process::exit(1);
     }
     
     let hostname = args[1].clone();
     let port: u16 = args[2].parse().expect("Port must be a valid number");
+    let deployment_mode = DeploymentMode::from_str(&args[3]).expect("Invalid deployment mode");
     
     // Initialize global variables
     backend_config::set_backend_hostname(hostname.clone());
@@ -288,6 +306,7 @@ async fn main() {
     
     init_logging(&format!("output/logs/be_{}.log", port));
     log_startup("BE");
+    log!("Starting backend in {:?} deployment mode", deployment_mode);
     set_panic_hook();
     be_ticker::start_be_ticker();
     let addr = format!("{}:{}", hostname, port);

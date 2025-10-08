@@ -193,6 +193,9 @@ export class UserDataBuilder {
     const serviceType = instanceType === ColonyInstanceType.COORDINATOR ? 'coordinator' : 'backend';
     const portEnvVar = instanceType === ColonyInstanceType.COORDINATOR ? 'COORDINATOR_PORT' : 'BACKEND_PORT';
     
+    // Get the local IP for backend instances (coordinator uses 127.0.0.1)
+    const hostname = instanceType === ColonyInstanceType.COORDINATOR ? '127.0.0.1' : '$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)';
+    
     return [
       'docker run -d \\',
       `  --name ${containerName} \\`,
@@ -200,7 +203,10 @@ export class UserDataBuilder {
       '  -v /data/distributed-colony/output:/app/output \\',
       `  -e SERVICE_TYPE=${serviceType} \\`,
       `  -e ${portEnvVar}=${port} \\`,
-      '  "$ECR_URI"',
+      ...(instanceType === ColonyInstanceType.COORDINATOR 
+        ? ['  "$ECR_URI" coordinator aws']
+        : [`  "$ECR_URI" ${hostname} ${port} aws`]
+      ),
     ];
   }
 }

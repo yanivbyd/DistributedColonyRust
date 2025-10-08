@@ -21,6 +21,22 @@ use shared::{log_error, log};
 use bincode;
 use futures_util::SinkExt;
 
+#[derive(Debug, Clone, PartialEq)]
+enum DeploymentMode {
+    Localhost,
+    Aws,
+}
+
+impl DeploymentMode {
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "localhost" => Ok(DeploymentMode::Localhost),
+            "aws" => Ok(DeploymentMode::Aws),
+            _ => Err(format!("Invalid deployment mode: {}. Must be 'localhost' or 'aws'", s)),
+        }
+    }
+}
+
 use crate::init_colony::initialize_colony;
 use crate::coordinator_context::CoordinatorContext;
 
@@ -156,8 +172,20 @@ async fn handle_get_colony_stats(metrics: Vec<StatMetric>) -> CoordinatorRespons
 
 #[tokio::main]
 async fn main() {
+    // Parse command line arguments
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() != 2 {
+        eprintln!("Usage: {} <deployment_mode>", args[0]);
+        eprintln!("Example: {} localhost", args[0]);
+        eprintln!("Deployment modes: localhost, aws");
+        std::process::exit(1);
+    }
+    
+    let deployment_mode = DeploymentMode::from_str(&args[1]).expect("Invalid deployment mode");
+    
     init_logging(&format!("output/logs/coordinator_{}.log", COORDINATOR_PORT));
     log_startup("COORDINATOR");
+    log!("Starting coordinator in {:?} deployment mode", deployment_mode);
     set_panic_hook();
     
     coordinator_ticker::start_coordinator_ticker();
