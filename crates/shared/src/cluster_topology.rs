@@ -12,6 +12,71 @@ const HEIGHT_IN_SHARDS: i32 = 5;
 const SHARD_WIDTH: i32 = 250;
 const SHARD_HEIGHT: i32 = 250;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum NodeType {
+    Coordinator,
+    Backend,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum NodeStatus {
+    Active,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeAddress {
+    pub ip: String,
+    pub port: u16,
+}
+
+impl NodeAddress {
+    pub fn new(ip: String, port: u16) -> Self {
+        Self { ip, port }
+    }
+
+    pub fn to_address(&self) -> String {
+        format!("{}:{}", self.ip, self.port)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeInfo {
+    pub node_type: NodeType,
+    pub address: NodeAddress,
+    pub status: NodeStatus,
+}
+
+impl NodeInfo {
+    pub fn new(node_type: NodeType, address: NodeAddress, status: NodeStatus) -> Self {
+        Self { node_type, address, status }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredTopology {
+    pub self_type: NodeType,
+    pub self_address: NodeAddress,
+    pub coordinator_info: NodeInfo,
+    pub backend_info: Vec<NodeInfo>,
+}
+
+impl DiscoveredTopology {
+    pub fn new(
+        self_type: NodeType,
+        self_address: NodeAddress,
+        coordinator_info: NodeInfo,
+        backend_info: Vec<NodeInfo>,
+    ) -> Self {
+        Self {
+            self_type,
+            self_address,
+            coordinator_info,
+            backend_info,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostInfo {
     pub hostname: String,
