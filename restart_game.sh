@@ -13,12 +13,12 @@ echo "🚀 Starting ${#BACKEND_PORTS[@]} backend instances..."
 # Start all backends
 for port in "${BACKEND_PORTS[@]}"; do
     echo "🔥 Starting backend on port $port..."
-    cargo run --profile=balanced -p backend -- $HOSTNAME $port &
+    cargo run --profile=balanced -p backend -- $HOSTNAME $port localhost &
 done
 sleep 3
 
 echo "📡 Starting coordinator..."
-cargo run --profile=balanced -p coordinator &
+cargo run --profile=balanced -p coordinator -- localhost &
 sleep 1
 
 echo "🖥️  Starting GUI..."

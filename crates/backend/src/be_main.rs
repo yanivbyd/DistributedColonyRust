@@ -301,9 +301,6 @@ async fn main() {
     backend_config::set_backend_hostname(hostname.clone());
     backend_config::set_backend_port(port);
     
-    // Validate that this backend's hostname and port are in the cluster topology
-    let topology = shared::cluster_topology::ClusterTopology::get_instance();
-    let backend_hosts = topology.get_all_backend_hosts();
     // When running in containers, services often bind on 0.0.0.0, but the cluster
     // topology may list 127.0.0.1. Normalize just for validation.
     let normalized_hostname_for_validation = if hostname == "0.0.0.0" {
@@ -311,12 +308,6 @@ async fn main() {
     } else {
         hostname.clone()
     };
-    let this_host = shared::cluster_topology::HostInfo::new(normalized_hostname_for_validation, port);
-    
-    if !backend_hosts.contains(&this_host) {
-        panic!("Backend hostname '{}' and port '{}' not found in cluster topology. Available backend hosts: {:?}", 
-               hostname, port, backend_hosts.iter().map(|h| h.to_address()).collect::<Vec<_>>());
-    }
     
     init_logging(&format!("output/logs/be_{}.log", port));
     log_startup("BE");
@@ -330,6 +321,17 @@ async fn main() {
         start_periodic_discovery(Arc::new(Mutex::new(discovered_topology)));
     }
     
+    if deployment_mode == DeploymentMode::Localhost {
+        // Validate that this backend's hostname and port are in the cluster topology
+        let topology = shared::cluster_topology::ClusterTopology::get_instance();
+        let backend_hosts = topology.get_all_backend_hosts();
+        let this_host = shared::cluster_topology::HostInfo::new(normalized_hostname_for_validation, port);    
+        if !backend_hosts.contains(&this_host) {
+            panic!("Backend hostname '{}' and port '{}' not found in cluster topology. Available backend hosts: {:?}", 
+                hostname, port, backend_hosts.iter().map(|h| h.to_address()).collect::<Vec<_>>());
+        }
+    }
+
     be_ticker::start_be_ticker();
     let addr = format!("{}:{}", hostname, port);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
