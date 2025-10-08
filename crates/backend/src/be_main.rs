@@ -8,6 +8,9 @@ use shared::be_api::{BackendRequest, BackendResponse, GetShardImageResponse, Ini
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
+use shared::cluster_topology::{DiscoveredTopology, NodeType, NodeAddress, start_periodic_discovery};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq)]
 enum DeploymentMode {
@@ -268,6 +271,17 @@ async fn handle_apply_event(req: ApplyEventRequest) -> BackendResponse {
     }
 }
 
+async fn create_discovered_topology(hostname: &str, port: u16) -> DiscoveredTopology {
+    let mut discovered_topology = DiscoveredTopology::new(
+        NodeType::Backend, 
+        NodeAddress::new(hostname.to_string(), port), 
+        None, 
+        Vec::new()
+    );
+    discovered_topology.start_discovery().await;
+    discovered_topology
+}
+
 #[tokio::main]
 async fn main() {
     // Parse command line arguments
@@ -308,6 +322,14 @@ async fn main() {
     log_startup("BE");
     log!("Starting backend in {:?} deployment mode", deployment_mode);
     set_panic_hook();
+    
+    // Create DiscoveredTopology in AWS mode
+    if deployment_mode == DeploymentMode::Aws {
+        let discovered_topology = create_discovered_topology(&hostname, port).await;
+        discovered_topology.log_self();
+        start_periodic_discovery(Arc::new(Mutex::new(discovered_topology)));
+    }
+    
     be_ticker::start_be_ticker();
     let addr = format!("{}:{}", hostname, port);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");

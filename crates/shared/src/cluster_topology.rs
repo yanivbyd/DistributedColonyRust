@@ -2,6 +2,7 @@ use serde::{Serialize, Deserialize};
 use crate::colony_model::Shard;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
+use crate::log;
 
 // Configuration constants
 const COORDINATOR_PORT: u16 = 8083;
@@ -57,7 +58,7 @@ impl NodeInfo {
 pub struct DiscoveredTopology {
     pub self_type: NodeType,
     pub self_address: NodeAddress,
-    pub coordinator_info: NodeInfo,
+    pub coordinator_info: Option<NodeInfo>,
     pub backend_info: Vec<NodeInfo>,
 }
 
@@ -65,7 +66,7 @@ impl DiscoveredTopology {
     pub fn new(
         self_type: NodeType,
         self_address: NodeAddress,
-        coordinator_info: NodeInfo,
+        coordinator_info: Option<NodeInfo>,
         backend_info: Vec<NodeInfo>,
     ) -> Self {
         Self {
@@ -75,6 +76,260 @@ impl DiscoveredTopology {
             backend_info,
         }
     }
+    
+    pub fn log_self(&self) {
+        let coordinator_str = self.coordinator_info
+            .as_ref()
+            .map(|info| info.address.to_address())
+            .unwrap_or_else(|| "None".to_string());
+        log!("DiscoveredTopology: self={}, coordinator={}, backends={}", 
+             self.self_address.to_address(),
+             coordinator_str,
+             self.backend_info.len());
+    }
+    
+    pub async fn start_discovery(&mut self) {        
+        log!("Starting topology discovery from AWS SSM...");
+        
+        // Discover coordinator
+        if let Some(coordinator_address) = Self::discover_coordinator().await {
+            let status = Self::check_node_status(&coordinator_address, NodeType::Coordinator).await;
+            self.coordinator_info = Some(NodeInfo::new(
+                NodeType::Coordinator,
+                coordinator_address,
+                status,
+            ));
+            log!("Discovered coordinator: {:?}", self.coordinator_info);
+        } else {
+            log!("No coordinator found in SSM");
+        }
+        
+        // Discover backends
+        let backend_addresses = Self::discover_backends().await;
+        log!("Discovered {} backends from SSM", backend_addresses.len());
+        
+        for address in backend_addresses {
+            let status = Self::check_node_status(&address, NodeType::Backend).await;
+            let node_info = NodeInfo::new(NodeType::Backend, address, status);
+            self.backend_info.push(node_info);
+        }
+        
+        log!("Topology discovery complete: coordinator={}, backends={}", 
+             self.coordinator_info.is_some(), 
+             self.backend_info.len());
+    }
+    
+    pub async fn refresh_topology(&mut self) {
+        // Discover coordinator
+        let new_coordinator = Self::discover_coordinator().await;
+        let coordinator_changed = match (&self.coordinator_info, &new_coordinator) {
+            (Some(old), Some(new_addr)) => old.address.to_address() != new_addr.to_address(),
+            (None, Some(_)) => true,
+            (Some(_), None) => true,
+            (None, None) => false,
+        };
+        
+        if coordinator_changed {
+            if let Some(coordinator_address) = new_coordinator {
+                let status = Self::check_node_status(&coordinator_address, NodeType::Coordinator).await;
+                self.coordinator_info = Some(NodeInfo::new(
+                    NodeType::Coordinator,
+                    coordinator_address.clone(),
+                    status,
+                ));
+                log!("Coordinator changed: {}", coordinator_address.to_address());
+            } else {
+                self.coordinator_info = None;
+                log!("Coordinator removed from topology");
+            }
+        } else if let Some(coordinator_info) = &mut self.coordinator_info {
+            // Update status for existing coordinator
+            coordinator_info.status = Self::check_node_status(&coordinator_info.address, NodeType::Coordinator).await;
+        }
+        
+        // Discover backends
+        let new_backend_addresses = Self::discover_backends().await;
+        let old_backend_addresses: Vec<String> = self.backend_info
+            .iter()
+            .map(|info| info.address.to_address())
+            .collect();
+        let new_backend_addresses_str: Vec<String> = new_backend_addresses
+            .iter()
+            .map(|addr| addr.to_address())
+            .collect();
+        
+        // Check for added backends
+        for address in &new_backend_addresses {
+            let addr_str = address.to_address();
+            if !old_backend_addresses.contains(&addr_str) {
+                let status = Self::check_node_status(address, NodeType::Backend).await;
+                let node_info = NodeInfo::new(NodeType::Backend, address.clone(), status);
+                self.backend_info.push(node_info);
+                log!("New backend added: {}", addr_str);
+            }
+        }
+        
+        // Check for removed backends
+        self.backend_info.retain(|info| {
+            let addr_str = info.address.to_address();
+            let retained = new_backend_addresses_str.contains(&addr_str);
+            if !retained {
+                log!("Backend removed: {}", addr_str);
+            }
+            retained
+        });
+        
+        // Update status for existing backends
+        for backend in &mut self.backend_info {
+            backend.status = Self::check_node_status(&backend.address, NodeType::Backend).await;
+        }
+    }
+    
+    async fn discover_coordinator() -> Option<NodeAddress> {
+        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+        let ssm_client = aws_sdk_ssm::Client::new(&config);
+        
+        match ssm_client
+            .get_parameter()
+            .name("/colony/coordinator")
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if let Some(param) = response.parameter {
+                    if let Some(value) = param.value {
+                        return Self::parse_address(&value);
+                    }
+                }
+                None
+            }
+            Err(_) => None,
+        }
+    }
+    
+    async fn discover_backends() -> Vec<NodeAddress> {
+        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+        let ssm_client = aws_sdk_ssm::Client::new(&config);
+        
+        let mut backends = Vec::new();
+        
+        match ssm_client
+            .get_parameters_by_path()
+            .path("/colony/backends")
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if let Some(params) = response.parameters {
+                    for param in params {
+                        if let Some(value) = param.value {
+                            if let Some(address) = Self::parse_address(&value) {
+                                backends.push(address);
+                            }
+                        }
+                    }
+                }
+            }
+            Err(_) => {}
+        }
+        
+        backends
+    }
+    
+    fn parse_address(address_str: &str) -> Option<NodeAddress> {
+        let parts: Vec<&str> = address_str.split(':').collect();
+        if parts.len() == 2 {
+            if let Ok(port) = parts[1].parse::<u16>() {
+                return Some(NodeAddress::new(parts[0].to_string(), port));
+            }
+        }
+        None
+    }
+    
+    async fn check_node_status(address: &NodeAddress, node_type: NodeType) -> NodeStatus {
+        use tokio::time::{timeout, Duration};
+        use tokio::net::TcpStream;
+        use tokio_util::codec::{Framed, LengthDelimitedCodec};
+        use futures_util::SinkExt;
+        use tokio_stream::StreamExt;
+        use crate::be_api::{BackendRequest, BackendResponse};
+        use crate::coordinator_api::{CoordinatorRequest, CoordinatorResponse};
+        
+        let addr = address.to_address();
+        let connect_timeout = Duration::from_secs(2);
+        
+        match timeout(connect_timeout, TcpStream::connect(&addr)).await {
+            Ok(Ok(stream)) => {
+                let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+                
+                match node_type {
+                    NodeType::Backend => {
+                        // Send ping request to backend
+                        let ping_request = BackendRequest::Ping;
+                        if let Ok(encoded) = bincode::serialize(&ping_request) {
+                            if framed.send(encoded.into()).await.is_ok() {
+                                // Wait for response
+                                let response_timeout = Duration::from_secs(2);
+                                match timeout(response_timeout, framed.next()).await {
+                                    Ok(Some(Ok(bytes))) => {
+                                        if let Ok(BackendResponse::Ping) = bincode::deserialize::<BackendResponse>(&bytes) {
+                                            return NodeStatus::Active;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    NodeType::Coordinator => {
+                        // Send GetRoutingTable request to coordinator
+                        let routing_request = CoordinatorRequest::GetRoutingTable;
+                        if let Ok(encoded) = bincode::serialize(&routing_request) {
+                            if framed.send(encoded.into()).await.is_ok() {
+                                // Wait for response
+                                let response_timeout = Duration::from_secs(2);
+                                match timeout(response_timeout, framed.next()).await {
+                                    Ok(Some(Ok(bytes))) => {
+                                        if let Ok(CoordinatorResponse::GetRoutingTableResponse { .. }) = 
+                                            bincode::deserialize::<CoordinatorResponse>(&bytes) {
+                                            return NodeStatus::Active;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+                NodeStatus::Unknown
+            }
+            _ => NodeStatus::Unknown,
+        }
+    }
+}
+
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+pub fn start_periodic_discovery(topology: Arc<Mutex<DiscoveredTopology>>) {
+    tokio::spawn(async move {
+        use tokio::time::{interval, Duration};
+        
+        let mut timer = interval(Duration::from_secs(10));
+        // Skip the first tick which fires immediately
+        timer.tick().await;
+        
+        log!("Starting periodic topology discovery (every 10 seconds)");
+        
+        loop {
+            timer.tick().await;
+            
+            log!("Running periodic topology refresh...");
+            let mut topology_guard = topology.lock().await;
+            topology_guard.refresh_topology().await;
+            drop(topology_guard);
+        }
+    });
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

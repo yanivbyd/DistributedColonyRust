@@ -48,13 +48,15 @@ RUN echo '#!/bin/sh' > /usr/local/bin/start.sh && \
     echo 'SERVICE_TYPE=${SERVICE_TYPE:-"backend"}' >> /usr/local/bin/start.sh && \
     echo 'COORDINATOR_HOST=${COORDINATOR_HOST:-"localhost"}' >> /usr/local/bin/start.sh && \
     echo 'COORDINATOR_PORT=${COORDINATOR_PORT:-"8083"}' >> /usr/local/bin/start.sh && \
+    echo 'BACKEND_HOST=${BACKEND_HOST:-"0.0.0.0"}' >> /usr/local/bin/start.sh && \
     echo 'BACKEND_PORT=${BACKEND_PORT:-"8082"}' >> /usr/local/bin/start.sh && \
+    echo 'DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-"localhost"}' >> /usr/local/bin/start.sh && \
     echo '' >> /usr/local/bin/start.sh && \
     echo 'case "$SERVICE_TYPE" in' >> /usr/local/bin/start.sh && \
     echo '    "backend")' >> /usr/local/bin/start.sh && \
-    echo '        echo "Starting backend service on port $BACKEND_PORT"' >> /usr/local/bin/start.sh && \
-    echo '        # Backend needs its own hostname and port as arguments' >> /usr/local/bin/start.sh && \
-    echo '        exec /usr/local/bin/backend 0.0.0.0 $BACKEND_PORT' >> /usr/local/bin/start.sh && \
+    echo '        echo "Starting backend service on $BACKEND_HOST:$BACKEND_PORT in $DEPLOYMENT_MODE mode"' >> /usr/local/bin/start.sh && \
+    echo '        # Backend needs hostname, port, and deployment_mode as arguments' >> /usr/local/bin/start.sh && \
+    echo '        exec /usr/local/bin/backend $BACKEND_HOST $BACKEND_PORT $DEPLOYMENT_MODE' >> /usr/local/bin/start.sh && \
     echo '        ;;' >> /usr/local/bin/start.sh && \
     echo '    "coordinator")' >> /usr/local/bin/start.sh && \
     echo '        echo "Starting coordinator service on port $COORDINATOR_PORT"' >> /usr/local/bin/start.sh && \
@@ -103,7 +105,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 ENV SERVICE_TYPE=backend
 ENV COORDINATOR_HOST=localhost
 ENV COORDINATOR_PORT=8083
+ENV BACKEND_HOST=0.0.0.0
 ENV BACKEND_PORT=8082
+ENV DEPLOYMENT_MODE=localhost
 
 # Start the application
 CMD ["/usr/local/bin/start.sh"]

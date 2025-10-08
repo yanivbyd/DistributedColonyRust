@@ -1,17 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
 
-/*
-  To debug the startup script, ssh to the instance and run:
-  sudo grep -F "Startup completed successfully" /var/log/cloud-init-output.log # to verify completion in cloud-init logs
-  sudo cat /var/log/cloud-init-output.log  # this will show the output of the startup script
-  sudo cat /var/log/reload.log  # this will show the output of the reload script
-  sudo docker ps -a  # this will show the output of the container
-  sudo docker logs <container_id>  #this will show the output of the container
-
-  For logs:
-  cat /data/distributed-colony/output/logs/be_8082.log
-*/
-
 export enum ColonyInstanceType {
   BACKEND = 'backend',
   COORDINATOR = 'coordinator'
@@ -30,6 +18,7 @@ export class UserDataBuilder {
       'set -e',
       ...this.buildSystemSetup(),
       ...this.buildDirectorySetup(),
+      ...this.buildUsefulScripts(),
       ...this.buildSSMScripts(instanceType, port),
       ...this.buildReloadScript(instanceType, port, reloadScriptPath),
       ...this.buildContainerStartup(reloadScriptPath),
@@ -66,6 +55,33 @@ export class UserDataBuilder {
       `touch /var/log/reload.log`,
       `chown ec2-user:ec2-user /var/log/reload.log`,
       `chmod 664 /var/log/reload.log`,
+    ];
+  }
+
+  private buildUsefulScripts(): string[] {
+    return [
+      `cat <<'EOF' > /home/ec2-user/scripts.txt`,
+      '# Useful debugging scripts',
+      '',
+      '# To verify startup completion in cloud-init logs:',
+      'sudo grep -F "Startup completed successfully" /var/log/cloud-init-output.log',
+      '',
+      '# Show the output of the startup script:',
+      'sudo cat /var/log/cloud-init-output.log',
+      '',
+      '# Show the output of the reload script:',
+      'sudo cat /var/log/reload.log',
+      '',
+      '# Show running containers:',
+      'sudo docker ps -a',
+      '',
+      '# Show container logs (replace <container_id> with actual ID):',
+      'sudo docker logs <container_id>',
+      '',
+      '# View application logs:',
+      'cat /data/distributed-colony/output/logs/be_8082.log',
+      'EOF',
+      'chown ec2-user:ec2-user /home/ec2-user/scripts.txt',
     ];
   }
 
@@ -196,17 +212,22 @@ export class UserDataBuilder {
     // Get the local IP for backend instances (coordinator uses 127.0.0.1)
     const hostname = instanceType === ColonyInstanceType.COORDINATOR ? '127.0.0.1' : '$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)';
     
-    return [
+    const baseCommand = [
       'docker run -d \\',
       `  --name ${containerName} \\`,
       `  -p ${port}:${port} \\`,
       '  -v /data/distributed-colony/output:/app/output \\',
       `  -e SERVICE_TYPE=${serviceType} \\`,
       `  -e ${portEnvVar}=${port} \\`,
-      ...(instanceType === ColonyInstanceType.COORDINATOR 
-        ? ['  "$ECR_URI" coordinator aws']
-        : [`  "$ECR_URI" ${hostname} ${port} aws`]
-      ),
+      '  -e DEPLOYMENT_MODE=aws \\',
     ];
+    
+    if (instanceType === ColonyInstanceType.BACKEND) {
+      baseCommand.push(`  -e BACKEND_HOST=${hostname} \\`);
+    }
+    
+    baseCommand.push('  "$ECR_URI"');
+    
+    return baseCommand;
   }
 }

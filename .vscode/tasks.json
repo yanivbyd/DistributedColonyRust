@@ -34,6 +34,54 @@
             }
         },
         {
+            "label": "CDK - Deploy",
+            "type": "shell",
+            "command": "cdk deploy",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/CDK"
+            }
+        },
+        {
+            "label": "CDK - Destroy",
+            "type": "shell",
+            "command": "cdk destroy --force",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/CDK"
+            }
+        },
+        {
+            "label": "Update ECR",
+            "type": "shell",
+            "command": "./build-and-push.sh",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/Docker"
+            }
+        },
+        {
             "label": "cargo-build-backend",
             "type": "shell",
             "command": "cargo",
