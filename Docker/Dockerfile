@@ -12,11 +12,31 @@ RUN apk add --no-cache \
 # Set working directory
 WORKDIR /app
 
-# Copy workspace files
+# Set consistent target directory for better caching
+ENV CARGO_TARGET_DIR=/app/target
+
+# 1. Copy dependency manifests first (these change rarely)
 COPY Cargo.toml Cargo.lock ./
+COPY crates/backend/Cargo.toml crates/backend/Cargo.toml
+COPY crates/coordinator/Cargo.toml crates/coordinator/Cargo.toml
+COPY crates/gui/Cargo.toml crates/gui/Cargo.toml
+COPY crates/shared/Cargo.toml crates/shared/Cargo.toml
+
+# 2. Create minimal dummy source files to satisfy Cargo
+RUN mkdir -p crates/backend/src && echo "fn main() {}" > crates/backend/src/main.rs
+RUN mkdir -p crates/coordinator/src && echo "fn main() {}" > crates/coordinator/src/main.rs
+RUN mkdir -p crates/gui/src && echo "fn main() {}" > crates/gui/src/main.rs
+RUN mkdir -p crates/shared/src && echo "pub fn dummy() {}" > crates/shared/src/lib.rs
+
+# 3. Fetch and cache dependencies (this layer will be cached when Cargo.toml doesn't change)
+# Note: For even faster builds, mount Cargo registry cache with Buildx:
+#       --mount=type=cache,target=/usr/local/cargo/registry
+RUN cargo fetch
+
+# 4. Copy full project source (frequently changing)
 COPY crates/ ./crates/
 
-# Build the application in release mode
+# 5. Build actual binaries (compilation artifacts cached via Docker/Buildx layer caching)
 RUN cargo build --release --bin backend --bin coordinator
 
 # Stage 2: Create minimal runtime image

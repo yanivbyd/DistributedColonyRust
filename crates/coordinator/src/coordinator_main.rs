@@ -6,13 +6,14 @@ mod coordinator_ticker;
 mod backend_client;
 mod tick_monitor;
 mod colony_event_generator;
+mod cloud_start;
+mod http_server;
 
 use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry, ColonyMetricStats};
 use std::collections::{BTreeMap, HashMap};
 use shared::cluster_topology::ClusterTopology;
 use shared::be_api::StatMetric;
-use tokio::net::TcpListener;
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use shared::coordinator_api::{COORDINATOR_PORT };
@@ -20,7 +21,6 @@ use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error, log};
 use bincode;
 use futures_util::SinkExt;
-
 #[derive(Debug, Clone, PartialEq)]
 enum DeploymentMode {
     Localhost,
@@ -39,6 +39,7 @@ impl DeploymentMode {
 
 use crate::init_colony::initialize_colony;
 use crate::coordinator_context::CoordinatorContext;
+use crate::http_server::start_http_server;
 
 type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
 
@@ -190,11 +191,21 @@ async fn main() {
     
     coordinator_ticker::start_coordinator_ticker();
     
-    tokio::spawn(initialize_colony()).await.expect("Failed to initialize colony");
+    // In AWS mode, skip normal initialization - wait for cloud-start HTTP call
+    // In localhost mode, initialize normally
+    if deployment_mode == DeploymentMode::Localhost {
+        tokio::spawn(initialize_colony());
+    } else {
+        log!("AWS mode: Waiting for cloud-start HTTP request to initialize colony");
+        
+        // Start HTTP server for cloud-start endpoint (only in AWS mode)
+        tokio::spawn(start_http_server());
+    }
 
+    // Start TCP listener for coordinator protocol
     let addr = format!("127.0.0.1:{}", COORDINATOR_PORT);
     let listener = TcpListener::bind(&addr).await.expect("Could not bind");
-    log!("Listening on {}", addr);
+    log!("Listening on {} for coordinator protocol", addr);
 
     loop {
         log!("Waiting for connection...");

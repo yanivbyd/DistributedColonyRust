@@ -61,8 +61,10 @@ print_status "Using Image Tag: $IMAGE_TAG"
 
 # Construct full image URI
 ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
+ECR_CACHE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:cache"
 
 print_status "Full ECR URI: $ECR_URI"
+print_status "Cache URI: $ECR_CACHE_URI"
 
 # Check if ECR repository exists, create if it doesn't
 print_status "Checking if ECR repository exists..."
@@ -116,14 +118,22 @@ fi
 # Create/use a builder (idempotent)
 docker buildx create --use >/dev/null 2>&1 || true
 
-# Build and push a multi-arch image (amd64 for EC2, arm64 for Apple Silicon)
-print_status "Building and pushing multi-arch image (linux/amd64, linux/arm64)..."
+# Build and push for linux/amd64 only (for EC2 t3 instances)
+print_status "Building and pushing image for linux/amd64 (with local + remote cache)..."
 docker buildx build \
-  --platform linux/amd64,linux/arm64 \
+  --platform linux/amd64 \
+  --cache-from type=local,src=/tmp/.buildx-cache \
+  --cache-from type=registry,ref=$ECR_CACHE_URI \
+  --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+  --cache-to type=registry,ref=$ECR_CACHE_URI,mode=max \
   -t $ECR_URI \
   -f Dockerfile \
   .. \
   --push
+
+# Replace old cache with new one (atomic swap)
+rm -rf /tmp/.buildx-cache
+mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
 print_status "Docker image successfully built and pushed to ECR!"
 print_status "Image URI: $ECR_URI"

@@ -311,7 +311,7 @@ async fn main() {
     
     init_logging(&format!("output/logs/be_{}.log", port));
     log_startup("BE");
-    log!("Starting backend in {:?} deployment mode", deployment_mode);
+    log!("Starting the backend in {:?} deployment mode", deployment_mode);
     set_panic_hook();
     
     // Create DiscoveredTopology in AWS mode

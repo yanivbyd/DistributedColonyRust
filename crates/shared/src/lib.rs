@@ -7,5 +7,6 @@ pub mod coordinator_api;
 pub mod cluster_topology;
 pub mod connection_pool;
 pub mod logging;
+pub mod ssm;
 pub mod storage;
 pub mod utils; 

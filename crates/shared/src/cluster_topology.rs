@@ -186,64 +186,11 @@ impl DiscoveredTopology {
     }
     
     async fn discover_coordinator() -> Option<NodeAddress> {
-        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-        let ssm_client = aws_sdk_ssm::Client::new(&config);
-        
-        match ssm_client
-            .get_parameter()
-            .name("/colony/coordinator")
-            .send()
-            .await
-        {
-            Ok(response) => {
-                if let Some(param) = response.parameter {
-                    if let Some(value) = param.value {
-                        return Self::parse_address(&value);
-                    }
-                }
-                None
-            }
-            Err(_) => None,
-        }
+        crate::ssm::discover_coordinator().await
     }
     
     async fn discover_backends() -> Vec<NodeAddress> {
-        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-        let ssm_client = aws_sdk_ssm::Client::new(&config);
-        
-        let mut backends = Vec::new();
-        
-        match ssm_client
-            .get_parameters_by_path()
-            .path("/colony/backends")
-            .send()
-            .await
-        {
-            Ok(response) => {
-                if let Some(params) = response.parameters {
-                    for param in params {
-                        if let Some(value) = param.value {
-                            if let Some(address) = Self::parse_address(&value) {
-                                backends.push(address);
-                            }
-                        }
-                    }
-                }
-            }
-            Err(_) => {}
-        }
-        
-        backends
-    }
-    
-    fn parse_address(address_str: &str) -> Option<NodeAddress> {
-        let parts: Vec<&str> = address_str.split(':').collect();
-        if parts.len() == 2 {
-            if let Ok(port) = parts[1].parse::<u16>() {
-                return Some(NodeAddress::new(parts[0].to_string(), port));
-            }
-        }
-        None
+        crate::ssm::discover_backends().await
     }
     
     async fn check_node_status(address: &NodeAddress, node_type: NodeType) -> NodeStatus {
@@ -369,10 +316,29 @@ pub struct ClusterTopology {
     shard_to_host: HashMap<Shard, HostInfo>
 }
 
+static INSTANCE: OnceLock<ClusterTopology> = OnceLock::new();
+
 impl ClusterTopology {
     pub fn get_instance() -> &'static ClusterTopology {
-        static INSTANCE: OnceLock<ClusterTopology> = OnceLock::new();
         INSTANCE.get_or_init(|| Self::new_fixed_topology())
+    }
+    
+    /// Check if ClusterTopology has been initialized
+    pub fn is_initialized() -> bool {
+        INSTANCE.get().is_some()
+    }
+    
+    /// Initialize ClusterTopology with a dynamic topology (for cloud-start mode)
+    /// This must be called before get_instance() is called for the first time
+    /// Returns Ok(()) if successful, Err(()) if already initialized
+    pub fn initialize_with_dynamic_topology(backend_hosts: Vec<HostInfo>, shard_to_host: HashMap<Shard, HostInfo>) -> Result<(), ()> {
+        let coordinator_host = HostInfo::new(HOSTNAME.to_string(), COORDINATOR_PORT);
+        let topology = ClusterTopology {
+            coordinator_host,
+            backend_hosts,
+            shard_to_host,
+        };
+        INSTANCE.set(topology).map_err(|_| ())
     }
     
     /// Get the configured backend ports
