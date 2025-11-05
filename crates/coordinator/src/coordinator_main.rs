@@ -197,7 +197,7 @@ async fn main() {
         tokio::spawn(initialize_colony());
     } else {
         log!("AWS mode: Waiting for cloud-start HTTP request to initialize colony");
-        
+
         // Start HTTP server for cloud-start endpoint (only in AWS mode)
         tokio::spawn(start_http_server());
     }

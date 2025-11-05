@@ -19,3 +19,7 @@ tokio-stream = "0.1"
 futures-util = { version = "0.3", features = ["sink"] }
 aws-config = "1.1"
 aws-sdk-ssm = "1.13" 
+
+[features]
+# Cloud/AWS specific code paths and tests
+cloud = []
