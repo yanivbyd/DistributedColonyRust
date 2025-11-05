@@ -8,6 +8,9 @@ HOSTNAME="127.0.0.1"
 ./kill_all.sh
 rm -rf output/logs/*
 
+echo "🧪 Running test suite (with cloud feature) ..."
+cargo test --all --features cloud
+
 echo "🚀 Starting ${#BACKEND_PORTS[@]} backend instances in localhost mode..."
 
 # Start all backends
