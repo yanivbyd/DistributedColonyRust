@@ -4,6 +4,7 @@
 # This script builds the Docker image and pushes it to AWS ECR
 
 set -e
+start_time=$(date +%s)
 
 # Configuration
 AWS_REGION=${AWS_REGION:-"eu-west-1"}
@@ -149,3 +150,13 @@ aws ecr describe-images \
 
 print_status "Build and push completed successfully!"
 print_status "You can now deploy your CDK stack with: cd ../CDK && npm run deploy"
+
+end_time=$(date +%s)
+elapsed=$(( end_time - start_time ))
+minutes=$(( elapsed / 60 ))
+seconds=$(( elapsed % 60 ))
+if [ $minutes -gt 0 ]; then
+    print_status "Total duration: ${minutes}m ${seconds}s"
+else
+    print_status "Total duration: ${seconds}s"
+fi
