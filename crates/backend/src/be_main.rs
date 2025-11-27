@@ -51,6 +51,11 @@ macro_rules! log_debug {
 
 type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
 
+const BUILD_VERSION: &str = match option_env!("BUILD_VERSION") {
+    Some(value) => value,
+    None => "unknown",
+};
+
 fn call_label(response: &BackendResponse) -> &'static str {
     match response {
         BackendResponse::Ping => "Ping",
@@ -311,7 +316,7 @@ async fn main() {
     
     init_logging(&format!("output/logs/be_{}.log", port));
     log_startup("BE");
-    log!("Starting the backend in {:?} deployment mode", deployment_mode);
+    log!("Starting the backend in {:?} deployment mode, version {}", deployment_mode, BUILD_VERSION);
     set_panic_hook();
     
     // Create DiscoveredTopology in AWS mode

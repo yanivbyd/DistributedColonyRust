@@ -2,6 +2,9 @@
 # Stage 1: Build the Rust application
 FROM rust:1.87-alpine AS builder
 
+ARG BUILD_VERSION="unknown"
+ENV BUILD_VERSION=${BUILD_VERSION}
+
 # Install build dependencies
 RUN apk add --no-cache \
     musl-dev \
@@ -41,6 +44,9 @@ RUN cargo build --release --bin backend --bin coordinator
 
 # Stage 2: Create minimal runtime image
 FROM alpine:3.19
+
+ARG BUILD_VERSION="unknown"
+ENV BUILD_VERSION=${BUILD_VERSION}
 
 # Install runtime dependencies
 RUN apk add --no-cache \

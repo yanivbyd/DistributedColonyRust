@@ -43,6 +43,11 @@ use crate::http_server::start_http_server;
 
 type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
 
+const BUILD_VERSION: &str = match option_env!("BUILD_VERSION") {
+    Some(value) => value,
+    None => "unknown",
+};
+
 fn call_label(response: &CoordinatorResponse) -> &'static str {
     match response {
         CoordinatorResponse::GetRoutingTableResponse { .. } => "GetRoutingTable",
@@ -186,7 +191,7 @@ async fn main() {
     
     init_logging(&format!("output/logs/coordinator_{}.log", COORDINATOR_PORT));
     log_startup("COORDINATOR");
-    log!("Starting coordinator in {:?} deployment mode", deployment_mode);
+    log!("Starting coordinator in {:?} deployment mode, version {}", deployment_mode, BUILD_VERSION);
     set_panic_hook();
     
     coordinator_ticker::start_coordinator_ticker();

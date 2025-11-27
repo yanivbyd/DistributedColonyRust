@@ -4,6 +4,7 @@
 # This script builds the Docker image, pushes it to ECR, and deploys the CDK stack
 
 set -e
+BUILD_VERSION=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
 # Colors for output
 RED='\033[0;31m'
@@ -35,7 +36,7 @@ ECR_REPOSITORY=${ECR_REPOSITORY:-"distributed-colony"}
 IMAGE_TAG=${IMAGE_TAG:-"latest"}
 CDK_CONTEXT_FILE=${CDK_CONTEXT_FILE:-"../CDK/cdk.context.json"}
 
-print_step "Starting DistributedColony deployment..."
+print_step "Starting DistributedColony deployment (version $BUILD_VERSION)..."
 
 # Check if AWS CLI is installed
 if ! command -v aws &> /dev/null; then
@@ -84,7 +85,7 @@ fi
 
 # Step 1: Build and push Docker image
 print_step "Step 1: Building and pushing Docker image..."
-./build-and-push.sh
+BUILD_VERSION="$BUILD_VERSION" ./build-and-push.sh
 
 if [ $? -ne 0 ]; then
     print_error "Docker build and push failed!"

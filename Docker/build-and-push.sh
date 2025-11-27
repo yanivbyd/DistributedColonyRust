@@ -5,6 +5,7 @@
 
 set -e
 start_time=$(date +%s)
+BUILD_VERSION=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
 # Configuration
 AWS_REGION=${AWS_REGION:-"eu-west-1"}
@@ -59,6 +60,7 @@ print_status "Using AWS Account: $AWS_ACCOUNT_ID"
 print_status "Using AWS Region: $AWS_REGION"
 print_status "Using ECR Repository: $ECR_REPOSITORY"
 print_status "Using Image Tag: $IMAGE_TAG"
+print_status "Build version timestamp: $BUILD_VERSION"
 
 # Construct full image URI
 ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
@@ -127,6 +129,7 @@ docker buildx build \
   --cache-from type=registry,ref=$ECR_CACHE_URI \
   --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
   --cache-to type=registry,ref=$ECR_CACHE_URI,mode=max \
+  --build-arg BUILD_VERSION="$BUILD_VERSION" \
   -t $ECR_URI \
   -f Dockerfile \
   .. \

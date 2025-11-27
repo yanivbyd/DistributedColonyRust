@@ -104,6 +104,9 @@ export class SpotInstancesStack extends cdk.Stack {
       actions: [
         'ssm:PutParameter',
         'ssm:DeleteParameter',
+        'ssm:GetParameter',
+        'ssm:GetParameters',
+        'ssm:GetParametersByPath',
       ],
       resources: [
         `arn:aws:ssm:${region}:${accountId}:parameter/colony/*`,

@@ -1,4 +1,5 @@
 use crate::cluster_topology::NodeAddress;
+use crate::{log_error, log};
 use std::sync::{Arc, RwLock, OnceLock};
 
 pub trait SsmProvider: Send + Sync + 'static {
@@ -37,12 +38,19 @@ pub async fn discover_coordinator() -> Option<NodeAddress> {
         Ok(response) => {
             if let Some(param) = response.parameter {
                 if let Some(value) = param.value {
-                    return parse_address(&value);
+                    if let Some(address) = parse_address(&value) {
+                        log!("SSM: coordinator entry = {}", address.to_address());
+                        return Some(address);
+                    }
                 }
             }
+            log!("SSM: coordinator entry missing or invalid");
             None
         }
-        Err(_) => None,
+        Err(err) => {
+            log_error!("Failed to read coordinator from SSM: {}", err);
+            None
+        }
     }
 }
 
@@ -71,8 +79,11 @@ pub async fn discover_backends() -> Vec<NodeAddress> {
                     }
                 }
             }
+            log!("SSM: discovered {} backend entries", backends.len());
         }
-        Err(_) => {}
+        Err(err) => {
+            log_error!("Failed to read backends from SSM: {}", err);
+        }
     }
     
     backends
