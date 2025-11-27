@@ -133,7 +133,14 @@ wait_for_instances() {
   local waited=0
 
   while [ "$waited" -le "$WAIT_TIMEOUT" ]; do
-    mapfile -t instances < <(aws_instance_query "$type" | awk '$2 != "None" {print $1":"$2}')
+    local instances_str
+    instances_str="$(aws_instance_query "$type" | awk '$2 != "None" {print $1":"$2}')"
+    local instances=()
+    if [ -n "$instances_str" ]; then
+      while IFS= read -r line; do
+        [ -n "$line" ] && instances+=("$line")
+      done <<<"$instances_str"
+    fi
 
     if [ "${#instances[@]}" -ge "$target" ]; then
       printf "%s\n" "${instances[@]}"
@@ -208,7 +215,14 @@ main() {
   log_info "Coordinator ready: $coordinator_id @ $coordinator_ip"
 
   log_info "Step 4: Waiting for backend instances..."
-  mapfile -t backend_entries < <(wait_for_instances "backend" "${EXPECTED_BACKENDS}")
+  local backend_entries_raw
+  backend_entries_raw="$(wait_for_instances "backend" "${EXPECTED_BACKENDS}")"
+  local backend_entries=()
+  if [ -n "$backend_entries_raw" ]; then
+    while IFS= read -r line; do
+      [ -n "$line" ] && backend_entries+=("$line")
+    done <<<"$backend_entries_raw"
+  fi
   log_info "Backend instances ready: ${backend_entries[*]}"
 
   local coordinator_log="/data/distributed-colony/output/logs/coordinator_${COORDINATOR_PORT}.log"
