@@ -243,7 +243,8 @@ export class UserDataBuilder {
     baseCommand.push(
       'docker run -d \\',
       `  --name ${containerName} \\`,
-      `  -p $${portEnvVar}:$${portEnvVar} \\`,
+      ...(instanceType === ColonyInstanceType.COORDINATOR ? ['  --network host \\'] : []),
+      ...(instanceType === ColonyInstanceType.COORDINATOR ? [] : [`  -p $${portEnvVar}:$${portEnvVar} \\`]),
       '  -v /data/distributed-colony/output:/app/output \\',
       `  -e SERVICE_TYPE=${serviceType} \\`,
       `  -e ${portEnvVar}=$${portEnvVar} \\`,
