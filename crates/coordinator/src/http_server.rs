@@ -3,6 +3,8 @@ use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use crate::cloud_start::cloud_start_colony;
+use shared::ssm;
+use std::fmt::Write;
 
 pub const HTTP_SERVER_PORT: u16 = 8084;
 const HTTP_BIND_HOST: &str = "0.0.0.0";
@@ -45,6 +47,14 @@ pub async fn start_http_server() {
                                 let response = "HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n";
                                 let _ = stream.write_all(response.as_bytes()).await;
                             }
+                        } else if request.starts_with("GET /debug-ssm") {
+                            let body = render_ssm_state().await;
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                                body.len(),
+                                body
+                            );
+                            let _ = stream.write_all(response.as_bytes()).await;
                         } else if request.starts_with("GET /cloud-start") || request.starts_with("GET /") {
                             let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nCloud-start API";
                             let _ = stream.write_all(response.as_bytes()).await;
@@ -58,5 +68,30 @@ pub async fn start_http_server() {
             Err(e) => log_error!("HTTP connection failed: {}", e),
         }
     }
+}
+
+async fn render_ssm_state() -> String {
+    let mut body = String::new();
+
+    match ssm::discover_coordinator().await {
+        Some(addr) => {
+            let _ = writeln!(body, "Coordinator: {}", addr.to_address());
+        }
+        None => {
+            let _ = writeln!(body, "Coordinator: <none>");
+        }
+    }
+
+    let backends = ssm::discover_backends().await;
+    if backends.is_empty() {
+        let _ = writeln!(body, "Backends: <none>");
+    } else {
+        let _ = writeln!(body, "Backends ({} total):", backends.len());
+        for (idx, backend) in backends.iter().enumerate() {
+            let _ = writeln!(body, "  {}. {}", idx + 1, backend.to_address());
+        }
+    }
+
+    body
 }
 

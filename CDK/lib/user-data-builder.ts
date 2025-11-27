@@ -90,7 +90,10 @@ export class UserDataBuilder {
       scripts.push(
         '',
         '# Trigger cloud-start workflow:',
-        'curl -X POST -i http://127.0.0.1:8084/cloud-start'
+        'curl -X POST -i http://127.0.0.1:8084/cloud-start',
+        '',
+        '# Inspect current SSM registrations:',
+        'curl -X GET -i http://127.0.0.1:8084/debug-ssm'
       );
     }
 
@@ -144,6 +147,7 @@ export class UserDataBuilder {
   }
 
   private buildReloadScript(instanceType: ColonyInstanceType, port: number, scriptPath: string): string[] {
+    const containerName = instanceType === ColonyInstanceType.COORDINATOR ? 'distributed-coordinator' : 'distributed-colony';
     return [
       `cat <<'EOF' > ${scriptPath}`,
       '#!/bin/bash',
@@ -173,8 +177,8 @@ export class UserDataBuilder {
       'docker pull "$ECR_URI" || fail "Docker pull failed"',
       '',
       'echo "[INFO] Stopping and removing existing container if any..."',
-      'docker stop distributed-colony 2>/dev/null || true',
-      'docker rm distributed-colony 2>/dev/null || true',
+      `docker stop ${containerName} 2>/dev/null || true`,
+      `docker rm ${containerName} 2>/dev/null || true`,
       '',
       'echo "[INFO] Starting new container..."',
       ...this.buildDockerRunCommand(instanceType, port).map(line => {
