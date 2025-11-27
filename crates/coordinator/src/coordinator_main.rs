@@ -203,8 +203,18 @@ async fn main() {
     }
 
     // Start TCP listener for coordinator protocol
-    let addr = format!("127.0.0.1:{}", COORDINATOR_PORT);
-    let listener = TcpListener::bind(&addr).await.expect("Could not bind");
+    let bind_host = match deployment_mode {
+        DeploymentMode::Aws => "0.0.0.0",
+        DeploymentMode::Localhost => "127.0.0.1",
+    };
+    let addr = format!("{}:{}", bind_host, COORDINATOR_PORT);
+    let listener = match TcpListener::bind(&addr).await {
+        Ok(listener) => listener,
+        Err(err) => {
+            log_error!("Failed to bind coordinator protocol listener on {}: {}", addr, err);
+            panic!("Could not bind coordinator protocol listener on {}: {}", addr, err);
+        }
+    };
     log!("Listening on {} for coordinator protocol", addr);
 
     loop {

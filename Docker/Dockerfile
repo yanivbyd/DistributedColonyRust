@@ -45,6 +45,7 @@ FROM alpine:3.19
 # Install runtime dependencies
 RUN apk add --no-cache \
     ca-certificates \
+    curl \
     libgcc \
     procps \
     && rm -rf /var/cache/apk/*

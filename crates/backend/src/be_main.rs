@@ -333,9 +333,19 @@ async fn main() {
     }
 
     be_ticker::start_be_ticker();
-    let addr = format!("{}:{}", hostname, port);
-    let listener = TcpListener::bind(&addr).await.expect("Could not bind");
-    log!("Listening on {}", addr);
+    let bind_host = match deployment_mode {
+        DeploymentMode::Aws => "0.0.0.0".to_string(),
+        DeploymentMode::Localhost => hostname.clone(),
+    };
+    let bind_addr = format!("{}:{}", bind_host, port);
+    let listener = match TcpListener::bind(&bind_addr).await {
+        Ok(listener) => listener,
+        Err(err) => {
+            log_error!("Failed to bind listener on {}: {}", bind_addr, err);
+            panic!("Could not bind listener on {}: {}", bind_addr, err);
+        }
+    };
+    log!("Listening on {} (advertised as {})", bind_addr, hostname);
 
     loop {
         log!("Waiting for connection...");

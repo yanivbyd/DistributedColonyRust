@@ -18,7 +18,7 @@ export class UserDataBuilder {
       'set -e',
       ...this.buildSystemSetup(),
       ...this.buildDirectorySetup(),
-      ...this.buildUsefulScripts(),
+      ...this.buildUsefulScripts(instanceType, port),
       ...this.buildSSMScripts(instanceType, port),
       ...this.buildReloadScript(instanceType, port, reloadScriptPath),
       ...this.buildContainerStartup(reloadScriptPath),
@@ -58,8 +58,12 @@ export class UserDataBuilder {
     ];
   }
 
-  private buildUsefulScripts(): string[] {
-    return [
+  private buildUsefulScripts(instanceType: ColonyInstanceType, port: number): string[] {
+    const logFileName = instanceType === ColonyInstanceType.COORDINATOR
+      ? `coordinator_${port}.log`
+      : `be_${port}.log`;
+    const logPath = `/data/distributed-colony/output/logs/${logFileName}`;
+    const scripts = [
       `cat <<'EOF' > /home/ec2-user/scripts.txt`,
       '# Useful debugging scripts',
       '',
@@ -78,11 +82,21 @@ export class UserDataBuilder {
       '# Show container logs (replace <container_id> with actual ID):',
       'sudo docker logs <container_id>',
       '',
-      '# View application logs:',
-      'cat /data/distributed-colony/output/logs/be_8082.log',
-      'EOF',
-      'chown ec2-user:ec2-user /home/ec2-user/scripts.txt',
     ];
+
+    scripts.push('# View application logs:', `cat ${logPath}`);
+
+    if (instanceType === ColonyInstanceType.COORDINATOR) {
+      scripts.push(
+        '',
+        '# Trigger cloud-start workflow:',
+        'curl -X POST -i http://127.0.0.1:8084/cloud-start'
+      );
+    }
+
+    scripts.push('EOF', 'chown ec2-user:ec2-user /home/ec2-user/scripts.txt');
+
+    return scripts;
   }
 
   private buildSSMScripts(instanceType: ColonyInstanceType, port: number): string[] {
@@ -205,6 +219,7 @@ export class UserDataBuilder {
   }
 
   private buildDockerRunCommand(instanceType: ColonyInstanceType, port: number): string[] {
+    const httpPort = 8084;
     const containerName = instanceType === ColonyInstanceType.COORDINATOR ? 'distributed-coordinator' : 'distributed-colony';
     const serviceType = instanceType === ColonyInstanceType.COORDINATOR ? 'coordinator' : 'backend';
     const portEnvVar = instanceType === ColonyInstanceType.COORDINATOR ? 'COORDINATOR_PORT' : 'BACKEND_PORT';
@@ -212,18 +227,29 @@ export class UserDataBuilder {
     // Get the local IP for backend instances (coordinator uses 127.0.0.1)
     const hostname = instanceType === ColonyInstanceType.COORDINATOR ? '127.0.0.1' : '$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)';
     
-    const baseCommand = [
+    const baseCommand: string[] = [];
+
+    if (instanceType === ColonyInstanceType.COORDINATOR) {
+      baseCommand.push(`COORDINATOR_PORT=${port}`);
+      baseCommand.push(`HTTP_PORT=${httpPort}`);
+    } else {
+      baseCommand.push(`BACKEND_PORT=${port}`);
+    }
+
+    baseCommand.push(
       'docker run -d \\',
       `  --name ${containerName} \\`,
-      `  -p ${port}:${port} \\`,
+      `  -p $${portEnvVar}:$${portEnvVar} \\`,
       '  -v /data/distributed-colony/output:/app/output \\',
       `  -e SERVICE_TYPE=${serviceType} \\`,
-      `  -e ${portEnvVar}=${port} \\`,
+      `  -e ${portEnvVar}=$${portEnvVar} \\`,
       '  -e DEPLOYMENT_MODE=aws \\',
-    ];
+    );
     
     if (instanceType === ColonyInstanceType.BACKEND) {
       baseCommand.push(`  -e BACKEND_HOST=${hostname} \\`);
+    } else {
+      baseCommand.push('  -p $HTTP_PORT:$HTTP_PORT \\');
     }
     
     baseCommand.push('  "$ECR_URI"');

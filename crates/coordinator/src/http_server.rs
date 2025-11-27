@@ -5,11 +5,16 @@ use tokio::sync::Mutex;
 use crate::cloud_start::cloud_start_colony;
 
 pub const HTTP_SERVER_PORT: u16 = 8084;
+const HTTP_BIND_HOST: &str = "0.0.0.0";
 
 static CLOUD_START_IN_PROGRESS: Mutex<bool> = Mutex::const_new(false);
 
+fn build_http_bind_addr() -> String {
+    format!("{}:{}", HTTP_BIND_HOST, HTTP_SERVER_PORT)
+}
+
 pub async fn start_http_server() {
-    let addr = format!("127.0.0.1:{}", HTTP_SERVER_PORT);
+    let addr = build_http_bind_addr();
     let listener = TcpListener::bind(&addr).await.expect("Failed to bind HTTP server");
     log!("HTTP server listening on {}", addr);
     
