@@ -5,6 +5,7 @@ use shared::be_api::{BackendRequest, BackendResponse, GetShardImageRequest, GetS
 use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, ColonyEventDescription, ColonyMetricStats};
 use shared::be_api::{StatMetric};
 use shared::cluster_topology::{ClusterTopology, HostInfo};
+use std::sync::Arc;
 use std::net::TcpStream;
 use std::io::{Read, Write};
 use std::time::Duration;
@@ -18,7 +19,7 @@ fn get_connection_pool() -> &'static ConnectionPool {
     CONNECTION_POOL.get_or_init(|| ConnectionPool::new())
 }
 
-pub fn get_cluster_topology() -> &'static ClusterTopology {
+pub fn get_cluster_topology() -> Arc<ClusterTopology> {
     ClusterTopology::get_instance()
 }
 

@@ -32,8 +32,8 @@ pub async fn cloud_start_colony() {
         Ok(()) => {
             log!("ClusterTopology initialized with dynamic topology");
         }
-        Err(()) => {
-            log_error!("ClusterTopology already initialized. Cloud-start requires an uninitialized coordinator.");
+        Err(err) => {
+            log_error!("Failed to install dynamic topology: {}", err);
             return;
         }
     }

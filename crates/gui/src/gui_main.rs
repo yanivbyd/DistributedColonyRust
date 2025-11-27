@@ -105,7 +105,7 @@ struct BEImageApp {
     current_tab: Tab,
     shared_current_tab: Arc<Mutex<Tab>>,
     shard_config: Arc<Mutex<ShardConfig>>,
-    cluster_topology: &'static ClusterTopology,
+    cluster_topology: Arc<ClusterTopology>,
     last_update_time: Arc<Mutex<Instant>>,
     combined_texture: Option<egui::TextureHandle>,
     cached_stats: Option<(u64, Vec<shared::coordinator_api::ColonyMetricStats>)>, 
@@ -121,8 +121,8 @@ impl Default for BEImageApp {
         
         // Initialize cluster topology
         let cluster_topology = call_be::get_cluster_topology();
-        let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images(&shard_config.lock().unwrap(), cluster_topology)));
-        let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap(), cluster_topology)));
+        let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images(&shard_config.lock().unwrap(), cluster_topology.as_ref())));
+        let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap(), cluster_topology.as_ref())));
         let extra_food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let can_kill = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
@@ -178,7 +178,7 @@ impl App for BEImageApp {
             let ctx_clone = ctx.clone();
             let shared_current_tab = self.shared_current_tab.clone();
             let shard_config = self.shard_config.clone();
-            let cluster_topology = self.cluster_topology;
+            let cluster_topology = Arc::clone(&self.cluster_topology);
             let last_update_time = self.last_update_time.clone();
             thread::spawn(move || {
                 loop {
@@ -188,8 +188,8 @@ impl App for BEImageApp {
                     
                     match tab {
                         Tab::Creatures => {
-                            let images = call_be::get_all_shard_retained_images(&config, cluster_topology);
-                            let color_data = call_be::get_all_shard_color_data(&config, cluster_topology);
+                            let images = call_be::get_all_shard_retained_images(&config, cluster_topology.as_ref());
+                            let color_data = call_be::get_all_shard_color_data(&config, cluster_topology.as_ref());
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !images.iter().all(|img| img.is_none()) {
                                 let mut locked = creatures.lock().unwrap();
@@ -202,7 +202,7 @@ impl App for BEImageApp {
                             }
                     }
                     Tab::ExtraFood => {
-                            let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config, cluster_topology);
+                            let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config, cluster_topology.as_ref());
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !extra_food_data.iter().all(|data| data.is_none()) {
                                 let mut locked = extra_food.lock().unwrap();
@@ -211,7 +211,7 @@ impl App for BEImageApp {
                             }
                     }
                     Tab::Sizes => {
-                            let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config, cluster_topology);
+                            let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config, cluster_topology.as_ref());
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !sizes_data.iter().all(|data| data.is_none()) {
                                 let mut locked = sizes.lock().unwrap();
@@ -220,7 +220,7 @@ impl App for BEImageApp {
                             }
                     }
                     Tab::Age => {
-                        let age_data = call_be::get_all_shard_layer_data(ShardLayer::Age, &config, cluster_topology);
+                        let age_data = call_be::get_all_shard_layer_data(ShardLayer::Age, &config, cluster_topology.as_ref());
                         if !age_data.iter().all(|data| data.is_none()) {
                             let mut locked = age.lock().unwrap();
                             *locked = age_data;
@@ -228,7 +228,7 @@ impl App for BEImageApp {
                         }
                     }
                         Tab::CanKill => {
-                            let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config, cluster_topology);
+                            let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config, cluster_topology.as_ref());
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !can_kill_data.iter().all(|data| data.is_none()) {
                                 let mut locked = can_kill.lock().unwrap();
@@ -237,7 +237,7 @@ impl App for BEImageApp {
                             }
                         }
                         Tab::CanMove => {
-                            let can_move_data = call_be::get_all_shard_layer_data(ShardLayer::CanMove, &config, cluster_topology);
+                            let can_move_data = call_be::get_all_shard_layer_data(ShardLayer::CanMove, &config, cluster_topology.as_ref());
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !can_move_data.iter().all(|data| data.is_none()) {
                                 let mut locked = can_move.lock().unwrap();
@@ -246,7 +246,7 @@ impl App for BEImageApp {
                             }
                         }
                         Tab::CostPerTurn => {
-                            let cost_per_turn_data = call_be::get_all_shard_layer_data(ShardLayer::CostPerTurn, &config, cluster_topology);
+                            let cost_per_turn_data = call_be::get_all_shard_layer_data(ShardLayer::CostPerTurn, &config, cluster_topology.as_ref());
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !cost_per_turn_data.iter().all(|data| data.is_none()) {
                                 let mut locked = cost_per_turn.lock().unwrap();
@@ -255,7 +255,7 @@ impl App for BEImageApp {
                             }
                         }
                         Tab::Food => {
-                            let food_data = call_be::get_all_shard_layer_data(ShardLayer::Food, &config, cluster_topology);
+                            let food_data = call_be::get_all_shard_layer_data(ShardLayer::Food, &config, cluster_topology.as_ref());
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !food_data.iter().all(|data| data.is_none()) {
                                 let mut locked = food.lock().unwrap();
@@ -264,7 +264,7 @@ impl App for BEImageApp {
                             }
                         }
                         Tab::Health => {
-                            let health_data = call_be::get_all_shard_layer_data(ShardLayer::Health, &config, cluster_topology);
+                            let health_data = call_be::get_all_shard_layer_data(ShardLayer::Health, &config, cluster_topology.as_ref());
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !health_data.iter().all(|data| data.is_none()) {
                                 let mut locked = health.lock().unwrap();
@@ -633,7 +633,7 @@ impl BEImageApp {
         
         
         // Always refresh data when Info tab is accessed
-        if let Some(info) = call_be::get_colony_info(self.cluster_topology) {
+        if let Some(info) = call_be::get_colony_info(self.cluster_topology.as_ref()) {
             let mut locked = self.colony_info.lock().unwrap();
             *locked = Some(info);
         }

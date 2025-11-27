@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use crate::colony_model::Shard;
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock, RwLock};
 use crate::log;
 
 // Configuration constants
@@ -255,7 +255,6 @@ impl DiscoveredTopology {
     }
 }
 
-use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub fn start_periodic_discovery(topology: Arc<Mutex<DiscoveredTopology>>) {
@@ -316,11 +315,15 @@ pub struct ClusterTopology {
     shard_to_host: HashMap<Shard, HostInfo>
 }
 
-static INSTANCE: OnceLock<ClusterTopology> = OnceLock::new();
+static INSTANCE: OnceLock<RwLock<Arc<ClusterTopology>>> = OnceLock::new();
 
 impl ClusterTopology {
-    pub fn get_instance() -> &'static ClusterTopology {
-        INSTANCE.get_or_init(|| Self::new_fixed_topology())
+    fn topology_lock() -> &'static RwLock<Arc<ClusterTopology>> {
+        INSTANCE.get_or_init(|| RwLock::new(Arc::new(Self::new_fixed_topology())))
+    }
+
+    pub fn get_instance() -> Arc<ClusterTopology> {
+        Self::topology_lock().read().expect("ClusterTopology lock poisoned").clone()
     }
     
     /// Check if ClusterTopology has been initialized
@@ -330,15 +333,22 @@ impl ClusterTopology {
     
     /// Initialize ClusterTopology with a dynamic topology (for cloud-start mode)
     /// This must be called before get_instance() is called for the first time
-    /// Returns Ok(()) if successful, Err(()) if already initialized
-    pub fn initialize_with_dynamic_topology(backend_hosts: Vec<HostInfo>, shard_to_host: HashMap<Shard, HostInfo>) -> Result<(), ()> {
+    /// Returns Ok(()) if successful
+    pub fn initialize_with_dynamic_topology(backend_hosts: Vec<HostInfo>, shard_to_host: HashMap<Shard, HostInfo>) -> Result<(), String> {
         let coordinator_host = HostInfo::new(HOSTNAME.to_string(), COORDINATOR_PORT);
         let topology = ClusterTopology {
             coordinator_host,
             backend_hosts,
             shard_to_host,
         };
-        INSTANCE.set(topology).map_err(|_| ())
+        let topology = Arc::new(topology);
+        match Self::topology_lock().write() {
+            Ok(mut guard) => {
+                *guard = topology;
+                Ok(())
+            }
+            Err(_) => Err("ClusterTopology lock poisoned".to_string()),
+        }
     }
     
     /// Get the configured backend ports
