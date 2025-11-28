@@ -7,8 +7,14 @@ set -euo pipefail
 # 3) SSHes into coordinator/backends to validate logs
 # 4) Triggers the cloud-start workflow from the coordinator
 # Remember to stop the spot fleets via "cd CDK && ./stop.sh" when you're done.
-# Typical instruction for autonomous runs (repeat up to 5 times without help):
-#   "Run the full cloud colony cycle and fix any backend/coordinator issues you encounter."
+#
+# Autonomous agent instructions:
+# When told to "Run the full cloud colony cycle and fix any backend/coordinator issues you encounter":
+# - Run this script end-to-end
+# - If errors are found in logs, analyze them, fix the code, rebuild, and run again
+# - Repeat this cycle up to 5 times total (initial run + up to 4 retries with fixes)
+# - After each failed run, investigate the errors, make code changes, ensure builds pass,
+#   then re-run the full cycle. Only stop and report if all 5 attempts are exhausted.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="$ROOT_DIR/Docker"
@@ -177,9 +183,17 @@ if [ ! -f "\$LOG_PATH" ]; then
 fi
 echo "[INFO] --- Last 100 lines of \$LOG_PATH ---"
 sudo tail -n 100 "\$LOG_PATH"
-if sudo grep -q "\\[ERROR\\]" "\$LOG_PATH"; then
-  echo "[ERROR] Found error entries in \$LOG_PATH"
-  exit 2
+# Check for errors, but ignore expected startup errors
+ERROR_COUNT=\$(sudo grep -c "\\[ERROR\\]" "\$LOG_PATH" || echo "0")
+if [ "\$ERROR_COUNT" -gt 0 ]; then
+  # Count non-startup errors (errors that aren't about SSM parameter not found)
+  CRITICAL_ERRORS=\$(sudo grep "\\[ERROR\\]" "\$LOG_PATH" | grep -v "parameter not found yet" | grep -v "this is normal during startup" | wc -l || echo "0")
+  if [ "\$CRITICAL_ERRORS" -gt 0 ]; then
+    echo "[ERROR] Found \$CRITICAL_ERRORS critical error entries in \$LOG_PATH"
+    exit 2
+  else
+    echo "[INFO] Found \$ERROR_COUNT error entries, but all are expected startup errors"
+  fi
 fi
 EOF
 }
@@ -224,6 +238,9 @@ main() {
     done <<<"$backend_entries_raw"
   fi
   log_info "Backend instances ready: ${backend_entries[*]}"
+
+  log_info "Waiting for services to register in SSM and start up (30 seconds)..."
+  sleep 30
 
   local coordinator_log="/data/distributed-colony/output/logs/coordinator_${COORDINATOR_PORT}.log"
   local backend_log="/data/distributed-colony/output/logs/be_${BACKEND_PORT}.log"

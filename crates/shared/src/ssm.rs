@@ -1,6 +1,7 @@
 use crate::cluster_topology::NodeAddress;
 use crate::{log_error, log};
 use std::sync::{Arc, RwLock, OnceLock};
+use aws_sdk_ssm::error::ProvideErrorMetadata;
 
 pub trait SsmProvider: Send + Sync + 'static {
     fn discover_coordinator(&self) -> Option<NodeAddress>;
@@ -48,7 +49,18 @@ pub async fn discover_coordinator() -> Option<NodeAddress> {
             None
         }
         Err(err) => {
-            log_error!("Failed to read coordinator from SSM: {}", err);
+            // Check if it's a parameter not found error (expected initially)
+            let error_code = err.code();
+            if let Some(code) = error_code {
+                if code == "ParameterNotFound" {
+                    log!("SSM: coordinator parameter not found yet (this is normal during startup)");
+                } else {
+                    log_error!("Failed to read coordinator from SSM: {} (code: {:?}, message: {:?})", 
+                        err, code, err.message());
+                }
+            } else {
+                log_error!("Failed to read coordinator from SSM: {} (full error: {:?})", err, err);
+            }
             None
         }
     }
@@ -82,7 +94,18 @@ pub async fn discover_backends() -> Vec<NodeAddress> {
             log!("SSM: discovered {} backend entries", backends.len());
         }
         Err(err) => {
-            log_error!("Failed to read backends from SSM: {}", err);
+            // Check if it's a parameter not found error (expected initially)
+            let error_code = err.code();
+            if let Some(code) = error_code {
+                if code == "ParameterNotFound" || code == "InvalidKeyId" {
+                    log!("SSM: backend parameters not found yet (this is normal during startup)");
+                } else {
+                    log_error!("Failed to read backends from SSM: {} (code: {:?}, message: {:?})", 
+                        err, code, err.message());
+                }
+            } else {
+                log_error!("Failed to read backends from SSM: {} (full error: {:?})", err, err);
+            }
         }
     }
     

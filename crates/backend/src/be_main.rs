@@ -37,11 +37,13 @@ mod be_colony_events;
 mod shard_topography;
 mod backend_config;
 mod backend_client;
+mod http_server;
 
 use crate::be_colony_events::apply_event;
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
 use crate::shard_topography::ShardTopography;
+use crate::http_server::start_http_server;
 
 
 // Debug logging macro that does nothing by default
@@ -324,6 +326,9 @@ async fn main() {
         let discovered_topology = create_discovered_topology(&hostname, port).await;
         discovered_topology.log_self();
         start_periodic_discovery(Arc::new(Mutex::new(discovered_topology)));
+        
+        // Start HTTP server for debug endpoints (only in AWS mode)
+        tokio::spawn(start_http_server());
     }
     
     if deployment_mode == DeploymentMode::Localhost {
