@@ -105,8 +105,55 @@ log_output "=========================================="
 log_output "Log file: $LOG_FILE"
 log_output ""
 
+# Step 0: Destroy existing CDK stack (if any)
+print_step "Step 0: Destroying existing CDK infrastructure (if any)..."
+
+cd "${WORKSPACE_ROOT}/CDK"
+
+# Check if CDK is installed
+if ! command -v cdk &> /dev/null; then
+    print_warning "CDK CLI not found. Attempting to install dependencies..."
+    if [ -f "package.json" ]; then
+        npm install
+    else
+        print_warning "package.json not found, skipping CDK destroy"
+        cd ..
+    fi
+fi
+
+if command -v cdk &> /dev/null; then
+    print_status "Destroying CDK stack: $STACK_NAME"
+    log_output "Running: cdk destroy --force $STACK_NAME"
+    
+    # Capture CDK destroy output
+    TEMP_DESTROY_LOG=$(mktemp)
+    trap "rm -f $TEMP_DESTROY_LOG" EXIT
+    
+    if cdk destroy --force "$STACK_NAME" > "$TEMP_DESTROY_LOG" 2>&1; then
+        # Extract high-level messages
+        grep -E "(Stack|DELETE|COMPLETE|destroyed|Destroyed|does not exist|No stacks found)" "$TEMP_DESTROY_LOG" | tee -a "$LOG_FILE" || true
+        print_status "CDK destroy completed (or stack did not exist)"
+    else
+        DESTROY_EXIT_CODE=$?
+        # Check if error is just "stack doesn't exist" - that's fine
+        if grep -q "does not exist\|No stacks found" "$TEMP_DESTROY_LOG"; then
+            print_status "Stack does not exist (nothing to destroy)"
+        else
+            # Show errors but don't fail - we want to continue with deployment
+            print_warning "CDK destroy encountered errors (continuing anyway)"
+            log_output "Destroy output (errors):"
+            grep -E "(ERROR|error|Error|failed|Failed)" "$TEMP_DESTROY_LOG" -A 2 -B 1 | tee -a "$LOG_FILE" || true
+        fi
+    fi
+    rm -f "$TEMP_DESTROY_LOG"
+else
+    print_warning "CDK CLI still not available after npm install attempt, skipping destroy"
+fi
+
+cd "${WORKSPACE_ROOT}"
+
 # Check prerequisites
-print_step "Step 0: Checking prerequisites..."
+print_step "Step 1: Checking prerequisites..."
 
 if ! command -v aws &> /dev/null; then
     print_error "AWS CLI is not installed!"
@@ -124,8 +171,8 @@ if [ ! -f "$EXPANDED_KEY_PATH" ]; then
     print_warning "Continuing anyway - SSH operations will fail if key is needed..."
 fi
 
-# Step 1: Build and push Docker image
-print_step "Step 1: Building and pushing Docker image..."
+# Step 2: Build and push Docker image
+print_step "Step 2: Building and pushing Docker image..."
 cd "${WORKSPACE_ROOT}/Docker"
 
 if [ ! -f "build-and-push.sh" ]; then
@@ -171,8 +218,8 @@ fi
 rm -f "$TEMP_BUILD_LOG"
 cd ..
 
-# Step 2: Deploy CDK stack
-print_step "Step 2: Deploying CDK infrastructure..."
+# Step 3: Deploy CDK stack
+print_step "Step 3: Deploying CDK infrastructure..."
 
 cd "${WORKSPACE_ROOT}/CDK"
 
@@ -209,7 +256,7 @@ else
     {
         echo ""
         echo "=========================================="
-        echo "Deployment FAILED at Step 2"
+        echo "Deployment FAILED at Step 3"
         echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
         echo "=========================================="
     } >> "$LOG_FILE"
@@ -220,12 +267,12 @@ rm -f "$TEMP_CDK_LOG"
 cd ..
 
 # Wait for instances to be ready
-print_step "Step 3: Waiting for instances to be ready..."
+print_step "Step 4: Waiting for instances to be ready..."
 print_status "Waiting 30 seconds for instances to initialize..."
 sleep 30
 
-# Step 4: Get coordinator IP and run curl command
-print_step "Step 4: Testing coordinator endpoint..."
+# Step 5: Get coordinator IP and run curl command
+print_step "Step 5: Testing coordinator endpoint..."
 
 print_status "Finding coordinator instance..."
 log_output "Querying AWS for coordinator instances..."
@@ -243,7 +290,7 @@ if [ -z "$COORDINATOR_INSTANCE_ID" ] || [ "$COORDINATOR_INSTANCE_ID" == "None" ]
     {
         echo ""
         echo "=========================================="
-        echo "Deployment FAILED at Step 4: No coordinator instances found"
+        echo "Deployment FAILED at Step 5: No coordinator instances found"
         echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
         echo "=========================================="
     } >> "$LOG_FILE"
@@ -265,7 +312,7 @@ if [ -z "$COORDINATOR_IP" ] || [ "$COORDINATOR_IP" == "None" ]; then
     {
         echo ""
         echo "=========================================="
-        echo "Deployment FAILED at Step 4: Coordinator has no public IP"
+        echo "Deployment FAILED at Step 5: Coordinator has no public IP"
         echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
         echo "=========================================="
     } >> "$LOG_FILE"
@@ -316,8 +363,8 @@ else
     fi
 fi
 
-# Step 4b: Debug all nodes via /debug-ssm endpoint
-print_step "Step 4b: Debugging all nodes via /debug-ssm endpoint..."
+# Step 5b: Debug all nodes via /debug-ssm endpoint
+print_step "Step 5b: Debugging all nodes via /debug-ssm endpoint..."
 
 DEBUG_SCRIPT="${SCRIPT_DIR}/debug_nodes.sh"
 
@@ -336,15 +383,35 @@ else
     fi
 fi
 
-# Step 5: Wait for logs to be generated, then copy logs from spot instances
-print_step "Step 5: Waiting for logs to be generated..."
+# Step 5c: Trigger cloud-start on coordinator
+print_step "Step 5c: Triggering cloud-start on coordinator..."
+
+CLOUD_START_SCRIPT="${SCRIPT_DIR}/cloud_start.sh"
+
+if [ ! -f "$CLOUD_START_SCRIPT" ]; then
+    print_warning "cloud_start.sh not found at: $CLOUD_START_SCRIPT, skipping cloud-start step"
+    log_output "WARNING: cloud_start.sh not found, skipping cloud-start step"
+else
+    log_output "Calling cloud_start.sh to trigger cloud-start on coordinator..."
+    if AWS_REGION="$AWS_REGION" \
+        HTTP_PORT="$COORDINATOR_HTTP_PORT" \
+        LOG_FILE="$LOG_FILE" \
+        "$CLOUD_START_SCRIPT" 2>&1 | tee -a "$LOG_FILE"; then
+        print_status "Cloud-start triggered successfully!"
+    else
+        print_warning "Cloud-start script encountered errors (non-fatal)"
+    fi
+fi
+
+# Step 6: Wait for logs to be generated, then copy logs from spot instances
+print_step "Step 6: Waiting for logs to be generated..."
 print_status "Waiting 2 minutes to allow application logs to be generated..."
 log_output "This allows the application to run and generate logs before collection."
 sleep 120
 print_status "Wait completed, proceeding to log collection..."
 log_output ""
 
-print_step "Step 5b: Copying application logs from spot instances..."
+print_step "Step 6b: Copying application logs from spot instances..."
 
 log_output "Calling gather_logs_from_nodes.sh to collect logs from all instances..."
 GATHER_LOGS_SCRIPT="${SCRIPT_DIR}/gather_logs_from_nodes.sh"
@@ -354,7 +421,7 @@ if [ ! -f "$GATHER_LOGS_SCRIPT" ]; then
     {
         echo ""
         echo "=========================================="
-        echo "Deployment FAILED at Step 5: gather_logs_from_nodes.sh not found"
+        echo "Deployment FAILED at Step 6: gather_logs_from_nodes.sh not found"
         echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
         echo "=========================================="
     } >> "$LOG_FILE"
