@@ -71,62 +71,65 @@ call_debug_ssm() {
     local instance_id=$2
     local public_ip=$3
     
-    print_status "Calling /debug-ssm on ${instance_type} ${instance_id} (${public_ip})..."
-    
     if [ -z "$public_ip" ] || [ "$public_ip" == "None" ]; then
-        print_warning "Instance ${instance_id} has no public IP, skipping..."
+        print_warning "${instance_type} ${instance_id}: No public IP, skipping..."
         return
     fi
     
     DEBUG_URL="http://${public_ip}:${HTTP_PORT}/debug-ssm"
-    log_output "  URL: $DEBUG_URL"
     
     # Use a temporary file for the response
     TEMP_RESPONSE=$(mktemp)
-    trap "rm -f $TEMP_RESPONSE" EXIT
+    TEMP_STDERR=$(mktemp)
     
-    # Call the endpoint with timeout
-    HTTP_CODE=$(curl -s -o "$TEMP_RESPONSE" -w "%{http_code}" --max-time 10 -X GET "$DEBUG_URL" 2>&1 || echo "000")
+    # Call the endpoint with timeout, redirect stderr separately
+    HTTP_CODE=$(curl -s -S -o "$TEMP_RESPONSE" -w "%{http_code}" --max-time 10 -X GET "$DEBUG_URL" 2>"$TEMP_STDERR")
     CURL_EXIT_CODE=$?
     
-    if [ "$CURL_EXIT_CODE" -eq 0 ] && [ -f "$TEMP_RESPONSE" ]; then
-        log_output "  HTTP Status Code: $HTTP_CODE"
+    # Output format: "Type (instance_id): <result or error>"
+    if [ "$CURL_EXIT_CODE" -eq 0 ] && [ "$HTTP_CODE" != "000" ] && [ -f "$TEMP_RESPONSE" ]; then
         if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            print_status "  Success! Response from ${instance_type} ${instance_id}:"
-            log_output "  ---"
             if [ -s "$TEMP_RESPONSE" ]; then
-                # Indent the response for readability
-                sed 's/^/    /' "$TEMP_RESPONSE" | tee -a "${LOG_FILE:-/dev/stdout}"
+                # Remove duplicates by keeping only unique lines, preserve order
+                UNIQUE_RESPONSE=$(awk '!seen[$0]++' "$TEMP_RESPONSE")
+                echo "${instance_type} (${instance_id}):"
+                echo "$UNIQUE_RESPONSE" | sed 's/^/  /'
+                # Also log to file if specified
+                if [ -n "$LOG_FILE" ]; then
+                    echo "${instance_type} (${instance_id}):" >> "$LOG_FILE"
+                    echo "$UNIQUE_RESPONSE" | sed 's/^/  /' >> "$LOG_FILE"
+                fi
             else
-                log_output "    (empty response)"
+                echo "${instance_type} (${instance_id}): (empty response)"
+                [ -n "$LOG_FILE" ] && echo "${instance_type} (${instance_id}): (empty response)" >> "$LOG_FILE"
             fi
-            log_output "  ---"
         else
-            print_warning "  HTTP endpoint returned status code: $HTTP_CODE"
+            print_warning "${instance_type} (${instance_id}): HTTP ${HTTP_CODE}"
             if [ -s "$TEMP_RESPONSE" ]; then
-                log_output "  Response:"
-                sed 's/^/    /' "$TEMP_RESPONSE" | tee -a "${LOG_FILE:-/dev/stdout}"
+                cat "$TEMP_RESPONSE"
+                [ -n "$LOG_FILE" ] && cat "$TEMP_RESPONSE" >> "$LOG_FILE"
             fi
         fi
     else
-        print_warning "  Failed to connect to ${instance_type} ${instance_id} (service may not be ready yet or not reachable)"
-        if [ -f "$TEMP_RESPONSE" ] && [ -s "$TEMP_RESPONSE" ]; then
-            log_output "  Error response:"
-            sed 's/^/    /' "$TEMP_RESPONSE" | tee -a "${LOG_FILE:-/dev/stdout}"
+        # Extract error message from stderr, or use a default message
+        if [ -s "$TEMP_STDERR" ]; then
+            ERROR_MSG=$(head -1 "$TEMP_STDERR" | sed 's/curl: //')
+        else
+            ERROR_MSG="Connection failed (timeout or refused)"
+        fi
+        print_warning "${instance_type} (${instance_id}): ${ERROR_MSG}"
+        if [ -n "$LOG_FILE" ]; then
+            echo "${instance_type} (${instance_id}): ${ERROR_MSG}" >> "$LOG_FILE"
         fi
     fi
     
-    log_output ""
-    rm -f "$TEMP_RESPONSE"
+    rm -f "$TEMP_RESPONSE" "$TEMP_STDERR"
 }
 
 # Main function
 main() {
     print_step "Debugging DistributedColony nodes via /debug-ssm endpoint..."
-    log_output "AWS Region: $AWS_REGION"
-    log_output "HTTP Port: $HTTP_PORT"
-    log_output ""
-
+    
     # Function to get all instances of a type
     get_instance_info() {
         local instance_type=$1
@@ -137,48 +140,32 @@ main() {
             Name=tag:Service,Values=distributed-colony \
           --query 'Reservations[].Instances[].[InstanceId,PublicIpAddress]' \
           --output text \
-          --region "${AWS_REGION}"
+          --region "${AWS_REGION}" 2>/dev/null
     }
 
     # Call debug-ssm on coordinator instances
-    print_status "Finding coordinator instances..."
-    log_output "Querying AWS for all coordinator instances..."
     COORDINATOR_INSTANCES=$(get_instance_info "coordinator")
     if [ -n "$COORDINATOR_INSTANCES" ]; then
-        COORDINATOR_COUNT=$(echo "$COORDINATOR_INSTANCES" | grep -v "^$" | wc -l | tr -d ' ')
-        log_output "Found $COORDINATOR_COUNT coordinator instance(s)"
         while read -r instance_id public_ip; do
             if [ -n "$instance_id" ]; then
-                log_output "  - Coordinator: $instance_id ($public_ip)"
                 call_debug_ssm "coordinator" "$instance_id" "$public_ip"
             fi
         done <<< "$COORDINATOR_INSTANCES"
     else
         print_warning "No coordinator instances found"
-        log_output "WARNING: No coordinator instances found"
-        log_output ""
     fi
 
     # Call debug-ssm on backend instances
-    print_status "Finding backend instances..."
-    log_output "Querying AWS for all backend instances..."
     BACKEND_INSTANCES=$(get_instance_info "backend")
     if [ -n "$BACKEND_INSTANCES" ]; then
-        BACKEND_COUNT=$(echo "$BACKEND_INSTANCES" | grep -v "^$" | wc -l | tr -d ' ')
-        log_output "Found $BACKEND_COUNT backend instance(s)"
         while read -r instance_id public_ip; do
             if [ -n "$instance_id" ]; then
-                log_output "  - Backend: $instance_id ($public_ip)"
                 call_debug_ssm "backend" "$instance_id" "$public_ip"
             fi
         done <<< "$BACKEND_INSTANCES"
     else
         print_warning "No backend instances found"
-        log_output "WARNING: No backend instances found"
-        log_output ""
     fi
-
-    print_status "Debugging completed!"
 }
 
 # Run main function

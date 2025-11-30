@@ -138,10 +138,23 @@ if [ ! -f "build-and-push.sh" ]; then
 fi
 
 log_output "Running: ./build-and-push.sh"
-if ./build-and-push.sh 2>&1 | tee -a "$LOG_FILE"; then
+# Capture output to a temp file to filter verbose logs
+TEMP_BUILD_LOG=$(mktemp)
+trap "rm -f $TEMP_BUILD_LOG" EXIT
+
+if ./build-and-push.sh > "$TEMP_BUILD_LOG" 2>&1; then
+    # Extract only high-level status and errors from the build log
+    grep -E "(INFO|WARNING|ERROR|Step|Successfully|completed|duration|Duration)" "$TEMP_BUILD_LOG" | tee -a "$LOG_FILE" || true
     print_status "Docker image built and pushed successfully!"
 else
+    BUILD_EXIT_CODE=$?
+    # On failure, show errors and context
     print_error "Docker build and push failed!"
+    log_output "Build output (errors and context):"
+    grep -E "(ERROR|WARNING|failed|Failed|error|Error)" "$TEMP_BUILD_LOG" -A 2 -B 2 | tee -a "$LOG_FILE" || true
+    # Also show last 20 lines as context
+    log_output "Last 20 lines of build output:"
+    tail -20 "$TEMP_BUILD_LOG" | tee -a "$LOG_FILE" || true
     {
         echo ""
         echo "=========================================="
@@ -149,8 +162,10 @@ else
         echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
         echo "=========================================="
     } >> "$LOG_FILE"
+    rm -f "$TEMP_BUILD_LOG"
     exit 1
 fi
+rm -f "$TEMP_BUILD_LOG"
 cd ..
 
 # Step 2: Deploy CDK stack
@@ -171,10 +186,23 @@ cdk bootstrap 2>&1 | grep -v "already bootstrapped" || true
 # Deploy the stack
 print_status "Deploying CDK stack: $STACK_NAME"
 log_output "Running: cdk deploy $STACK_NAME --require-approval never"
-if cdk deploy "$STACK_NAME" --require-approval never 2>&1 | tee -a "$LOG_FILE"; then
+# Capture CDK output to filter verbose logs
+TEMP_CDK_LOG=$(mktemp)
+trap "rm -f $TEMP_CDK_LOG" EXIT
+
+if cdk deploy "$STACK_NAME" --require-approval never > "$TEMP_CDK_LOG" 2>&1; then
+    # Extract only high-level status messages from CDK output
+    grep -E "(Stack|Output|CREATE|UPDATE|COMPLETE|successfully|Deploying|Deployment)" "$TEMP_CDK_LOG" | tee -a "$LOG_FILE" || true
     print_status "CDK deployment completed successfully!"
 else
+    CDK_EXIT_CODE=$?
+    # On failure, show errors and context
     print_error "CDK deployment failed!"
+    log_output "CDK output (errors and context):"
+    grep -E "(ERROR|error|Error|failed|Failed|rollback|Rollback)" "$TEMP_CDK_LOG" -A 3 -B 1 | tee -a "$LOG_FILE" || true
+    # Also show last 30 lines as context
+    log_output "Last 30 lines of CDK output:"
+    tail -30 "$TEMP_CDK_LOG" | tee -a "$LOG_FILE" || true
     {
         echo ""
         echo "=========================================="
@@ -182,8 +210,10 @@ else
         echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
         echo "=========================================="
     } >> "$LOG_FILE"
+    rm -f "$TEMP_CDK_LOG"
     exit 1
 fi
+rm -f "$TEMP_CDK_LOG"
 cd ..
 
 # Wait for instances to be ready

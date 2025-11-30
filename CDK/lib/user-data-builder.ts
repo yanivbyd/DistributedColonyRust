@@ -91,11 +91,15 @@ export class UserDataBuilder {
         '',
         '# Trigger cloud-start workflow:',
         'curl -X POST -i http://127.0.0.1:8084/cloud-start',
+      );
+    } 
+      
+    scripts.push(
         '',
         '# Inspect current SSM registrations:',
         'curl -X GET -i http://127.0.0.1:8084/debug-ssm'
-      );
-    }
+    );
+    
 
     scripts.push('EOF', 'chown ec2-user:ec2-user /home/ec2-user/scripts.txt');
 
@@ -243,19 +247,19 @@ export class UserDataBuilder {
     baseCommand.push(
       'docker run -d \\',
       `  --name ${containerName} \\`,
-      ...(instanceType === ColonyInstanceType.COORDINATOR ? ['  --network host \\'] : []),
-      ...(instanceType === ColonyInstanceType.COORDINATOR ? [] : [`  -p $${portEnvVar}:$${portEnvVar} \\`]),
-      ...(instanceType === ColonyInstanceType.BACKEND ? ['  -p 8084:8084 \\'] : []),
+      '  --network host \\',
       '  -v /data/distributed-colony/output:/app/output \\',
       `  -e SERVICE_TYPE=${serviceType} \\`,
       `  -e ${portEnvVar}=$${portEnvVar} \\`,
+      `  -e AWS_DEFAULT_REGION=${this.region} \\`,
+      `  -e AWS_REGION=${this.region} \\`,
       '  -e DEPLOYMENT_MODE=aws \\',
     );
     
     if (instanceType === ColonyInstanceType.BACKEND) {
       baseCommand.push(`  -e BACKEND_HOST=${hostname} \\`);
     } else {
-      baseCommand.push('  -p $HTTP_PORT:$HTTP_PORT \\');
+      baseCommand.push(`  -e HTTP_PORT=${httpPort} \\`);
     }
     
     baseCommand.push('  "$ECR_URI"');
