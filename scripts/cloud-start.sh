@@ -92,12 +92,6 @@ call_debug_ssm() {
     fi
 }
 
-# Function to parse backend count from debug-ssm response
-parse_backend_count() {
-    local response="$1"
-    # Look for "Backends (X total):" pattern
-    echo "$response" | grep -oP 'Backends \(\K[0-9]+(?= total\))' || echo "0"
-}
 
 # Function to check if coordinator exists in response
 check_coordinator() {
@@ -153,7 +147,7 @@ main() {
         exit 1
     fi
     
-    # Remove duplicates from response
+    # Remove duplicates from response (macOS compatible)
     DEBUG_RESPONSE=$(echo "$DEBUG_RESPONSE" | awk '!seen[$0]++')
     
     log_output "Debug-SSM response:"
@@ -169,7 +163,11 @@ main() {
     print_status "Coordinator verified ✓"
     
     # Step 4: Verify at least one backend exists
-    BACKEND_COUNT=$(parse_backend_count "$DEBUG_RESPONSE")
+    # Parse backend count - macOS compatible (no grep -P)
+    BACKEND_COUNT=$(echo "$DEBUG_RESPONSE" | grep "Backends (" | sed -n 's/.*Backends (\([0-9]*\) total).*/\1/p' | head -1)
+    if [ -z "$BACKEND_COUNT" ]; then
+        BACKEND_COUNT="0"
+    fi
     
     if [ "$BACKEND_COUNT" -eq 0 ] || [ -z "$BACKEND_COUNT" ]; then
         print_error "No backends found in SSM (found: $BACKEND_COUNT)"

@@ -63,8 +63,13 @@ async fn get_colony_info(stream: &mut TcpStream) -> Option<GetColonyInfoResponse
 
 async fn connect_to_backend(hostname: &str, port: u16) -> TcpStream {
     let addr = format!("{}:{}", hostname, port);
-    let stream = TcpStream::connect(&addr).await.expect(&format!("Failed to connect to backend at {}", addr));
-    stream
+    match TcpStream::connect(&addr).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            log_error!("Failed to connect to backend at {}: {}", addr, e);
+            panic!("Failed to connect to backend at {}: {}", addr, e);
+        }
+    }
 }
 
 async fn send_init_colony(stream: &mut TcpStream) {

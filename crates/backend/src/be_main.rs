@@ -85,30 +85,41 @@ async fn send_response(framed: &mut FramedStream, response: BackendResponse) {
 }
 
 async fn handle_client(socket: TcpStream) {
-    log_debug!("handle_client: new connection");
+    log!("handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
-    while let Some(Ok(bytes)) = framed.next().await {
-        log_debug!("handle_client: received bytes");
-        let response = match bincode::deserialize::<BackendRequest>(&bytes) {
-            Ok(BackendRequest::Ping) => handle_ping().await,
-            Ok(BackendRequest::InitColony(req)) => handle_init_colony(req).await,
-            Ok(BackendRequest::GetShardImage(req)) => handle_get_shard_image(req).await,
-            Ok(BackendRequest::GetShardLayer(req)) => handle_get_shard_layer(req).await,
-            Ok(BackendRequest::InitColonyShard(req)) => handle_init_colony_shard(req).await,
-            Ok(BackendRequest::GetColonyInfo(req)) => handle_get_colony_info(req).await,
-            Ok(BackendRequest::UpdatedShardContents(req)) => handle_updated_shard_contents(req).await,
-            Ok(BackendRequest::InitShardTopography(req)) => handle_init_shard_topography(req).await,
-            Ok(BackendRequest::GetShardCurrentTick(req)) => handle_get_shard_current_tick(req).await,
-            Ok(BackendRequest::GetShardStats(req)) => handle_get_shard_stats(req).await,
-            Ok(BackendRequest::ApplyEvent(req)) => handle_apply_event(req).await,
-            Err(e) => {
-                log_error!("Failed to deserialize BackendRequest: {}", e);
-                continue;
+    loop {
+        match framed.next().await {
+            Some(Ok(bytes)) => {
+                log!("handle_client: received bytes ({} bytes)", bytes.len());
+                let response = match bincode::deserialize::<BackendRequest>(&bytes) {
+                    Ok(BackendRequest::Ping) => handle_ping().await,
+                    Ok(BackendRequest::InitColony(req)) => handle_init_colony(req).await,
+                    Ok(BackendRequest::GetShardImage(req)) => handle_get_shard_image(req).await,
+                    Ok(BackendRequest::GetShardLayer(req)) => handle_get_shard_layer(req).await,
+                    Ok(BackendRequest::InitColonyShard(req)) => handle_init_colony_shard(req).await,
+                    Ok(BackendRequest::GetColonyInfo(req)) => handle_get_colony_info(req).await,
+                    Ok(BackendRequest::UpdatedShardContents(req)) => handle_updated_shard_contents(req).await,
+                    Ok(BackendRequest::InitShardTopography(req)) => handle_init_shard_topography(req).await,
+                    Ok(BackendRequest::GetShardCurrentTick(req)) => handle_get_shard_current_tick(req).await,
+                    Ok(BackendRequest::GetShardStats(req)) => handle_get_shard_stats(req).await,
+                    Ok(BackendRequest::ApplyEvent(req)) => handle_apply_event(req).await,
+                    Err(e) => {
+                        log_error!("Failed to deserialize BackendRequest: {}", e);
+                        continue;
+                    }
+                };
+                send_response(&mut framed, response).await;
             }
-        };
-        send_response(&mut framed, response).await;
+            Some(Err(e)) => {
+                log_error!("handle_client: error reading from connection: {}", e);
+                break;
+            }
+            None => {
+                log!("handle_client: connection closed by peer");
+                break;
+            }
+        }
     }
-    log_debug!("handle_client: connection closed");
 }
 
 async fn handle_ping() -> BackendResponse {
