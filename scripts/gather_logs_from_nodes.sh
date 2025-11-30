@@ -8,7 +8,10 @@ set -e
 # Configuration (can be overridden via environment variables or arguments)
 AWS_REGION=${AWS_REGION:-"eu-west-1"}
 KEY_PATH=${KEY_PATH:-"CDK/distributed-colony-key.pem"}
-LOG_DIR=${LOG_DIR:-"./logs"}
+# Get workspace root for default LOG_DIR if not set
+SCRIPT_DIR_TMP="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT_TMP="$(cd "$SCRIPT_DIR_TMP/.." && pwd)"
+LOG_DIR=${LOG_DIR:-"${WORKSPACE_ROOT_TMP}/logs"}
 COORDINATOR_PORT=${COORDINATOR_PORT:-8083}
 BACKEND_PORT=${BACKEND_PORT:-8082}
 LOG_FILE=${LOG_FILE:-""}  # Optional: if provided, will append to this log file
@@ -21,7 +24,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Get script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="${SCRIPT_DIR_TMP:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
 # Function to print colored output
 print_status() {
@@ -74,8 +77,8 @@ if [[ "$KEY_PATH" =~ ^~ ]]; then
 elif [[ "$KEY_PATH" =~ ^/ ]]; then
     EXPANDED_KEY_PATH="$KEY_PATH"
 else
-    # Relative path - resolve from script directory
-    EXPANDED_KEY_PATH="${SCRIPT_DIR}/${KEY_PATH}"
+    # Relative path - resolve from workspace root
+    EXPANDED_KEY_PATH="${WORKSPACE_ROOT_TMP}/${KEY_PATH}"
 fi
 
 # Main function

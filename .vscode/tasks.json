@@ -14,7 +14,7 @@
             },
             "problemMatcher": [],
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}/scripts"
             }
         },
         {
@@ -30,7 +30,7 @@
             },
             "problemMatcher": [],
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}/scripts"
             }
         },
         {
@@ -46,7 +46,7 @@
             },
             "problemMatcher": [],
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}/scripts"
             }
         },
         {

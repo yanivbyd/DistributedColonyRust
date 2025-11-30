@@ -13,7 +13,7 @@ KEY_PATH=${KEY_PATH:-"CDK/distributed-colony-key.pem"}
 COORDINATOR_HTTP_PORT=8084
 BACKEND_PORT=8082
 COORDINATOR_PORT=8083
-LOG_DIR="./logs"
+LOG_DIR="${WORKSPACE_ROOT}/logs"
 
 # Colors for output
 RED='\033[0;31m'
@@ -45,10 +45,12 @@ print_step() {
 
 # Get script directory to ensure we can run from anywhere
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# Change to workspace root (one level up from scripts directory)
+WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$WORKSPACE_ROOT"
 
 # Set up logging
-RUN_LOGS_DIR="${SCRIPT_DIR}/run_logs"
+RUN_LOGS_DIR="${WORKSPACE_ROOT}/run_logs"
 mkdir -p "$RUN_LOGS_DIR"
 LOG_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 LOG_FILE="${RUN_LOGS_DIR}/aws_full_cycle_${LOG_TIMESTAMP}.log"
@@ -79,7 +81,8 @@ trap cleanup_on_exit EXIT
     echo "AWS Full Cycle Deployment Log"
     echo "Started: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
     echo "Script: $0"
-    echo "Working Directory: $SCRIPT_DIR"
+    echo "Script Directory: $SCRIPT_DIR"
+    echo "Working Directory: $WORKSPACE_ROOT"
     echo "Log File: $LOG_FILE"
     echo "AWS Region: ${AWS_REGION}"
     echo "Stack Name: ${STACK_NAME}"
@@ -93,8 +96,8 @@ if [[ "$KEY_PATH" =~ ^~ ]]; then
 elif [[ "$KEY_PATH" =~ ^/ ]]; then
     EXPANDED_KEY_PATH="$KEY_PATH"
 else
-    # Relative path - resolve from script directory
-    EXPANDED_KEY_PATH="${SCRIPT_DIR}/${KEY_PATH}"
+    # Relative path - resolve from workspace root
+    EXPANDED_KEY_PATH="${WORKSPACE_ROOT}/${KEY_PATH}"
 fi
 
 print_step "Starting AWS Full Cycle Deployment" | tee -a "$LOG_FILE"
@@ -123,7 +126,7 @@ fi
 
 # Step 1: Build and push Docker image
 print_step "Step 1: Building and pushing Docker image..."
-cd Docker
+cd "${WORKSPACE_ROOT}/Docker"
 
 if [ ! -f "build-and-push.sh" ]; then
     print_error "build-and-push.sh not found in Docker directory"
@@ -171,7 +174,7 @@ cd ..
 # Step 2: Deploy CDK stack
 print_step "Step 2: Deploying CDK infrastructure..."
 
-cd CDK
+cd "${WORKSPACE_ROOT}/CDK"
 
 # Check if CDK is installed
 if ! command -v cdk &> /dev/null; then
@@ -333,8 +336,15 @@ else
     fi
 fi
 
-# Step 5: Copy logs from spot instances
-print_step "Step 5: Copying application logs from spot instances..."
+# Step 5: Wait for logs to be generated, then copy logs from spot instances
+print_step "Step 5: Waiting for logs to be generated..."
+print_status "Waiting 2 minutes to allow application logs to be generated..."
+log_output "This allows the application to run and generate logs before collection."
+sleep 120
+print_status "Wait completed, proceeding to log collection..."
+log_output ""
+
+print_step "Step 5b: Copying application logs from spot instances..."
 
 log_output "Calling gather_logs_from_nodes.sh to collect logs from all instances..."
 GATHER_LOGS_SCRIPT="${SCRIPT_DIR}/gather_logs_from_nodes.sh"
