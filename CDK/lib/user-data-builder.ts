@@ -245,6 +245,7 @@ export class UserDataBuilder {
       `  --name ${containerName} \\`,
       ...(instanceType === ColonyInstanceType.COORDINATOR ? ['  --network host \\'] : []),
       ...(instanceType === ColonyInstanceType.COORDINATOR ? [] : [`  -p $${portEnvVar}:$${portEnvVar} \\`]),
+      ...(instanceType === ColonyInstanceType.BACKEND ? ['  -p 8084:8084 \\'] : []),
       '  -v /data/distributed-colony/output:/app/output \\',
       `  -e SERVICE_TYPE=${serviceType} \\`,
       `  -e ${portEnvVar}=$${portEnvVar} \\`,

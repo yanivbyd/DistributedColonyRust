@@ -4,7 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use shared::ssm;
 use std::fmt::Write;
 
-pub const HTTP_SERVER_PORT: u16 = 8085;
+pub const HTTP_SERVER_PORT: u16 = 8084;
 const HTTP_BIND_HOST: &str = "0.0.0.0";
 
 fn build_http_bind_addr() -> String {

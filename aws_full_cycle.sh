@@ -283,6 +283,26 @@ else
     fi
 fi
 
+# Step 4b: Debug all nodes via /debug-ssm endpoint
+print_step "Step 4b: Debugging all nodes via /debug-ssm endpoint..."
+
+DEBUG_SCRIPT="${SCRIPT_DIR}/debug_nodes.sh"
+
+if [ ! -f "$DEBUG_SCRIPT" ]; then
+    print_warning "debug_nodes.sh not found at: $DEBUG_SCRIPT, skipping debug step"
+    log_output "WARNING: debug_nodes.sh not found, skipping debug step"
+else
+    log_output "Calling debug_nodes.sh to debug all nodes..."
+    if AWS_REGION="$AWS_REGION" \
+        HTTP_PORT="$COORDINATOR_HTTP_PORT" \
+        LOG_FILE="$LOG_FILE" \
+        "$DEBUG_SCRIPT" 2>&1 | tee -a "$LOG_FILE"; then
+        print_status "Debugging completed!"
+    else
+        print_warning "Debug script encountered errors (non-fatal)"
+    fi
+fi
+
 # Step 5: Copy logs from spot instances
 print_step "Step 5: Copying application logs from spot instances..."
 

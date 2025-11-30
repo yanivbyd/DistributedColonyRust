@@ -84,6 +84,7 @@ export class SpotInstancesStack extends cdk.Stack {
     securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(sshPortNumber), 'Allow SSH');
     securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(backendPortNumber), 'Allow backend traffic');
     securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(coordinatorPortNumber), 'Allow coordinator traffic');
+    securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(8084), 'Allow HTTP server (coordinator and backend)');
     securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.allIcmp(), 'Allow ICMP health checks');
 
     const accountId = cdk.Stack.of(this).account;
