@@ -1,0 +1,45 @@
+# Base Docker image for DistributedColony using cargo-chef
+# This image pre-compiles all dependencies and can be reused for fast application builds
+
+FROM lukemathwalker/cargo-chef:latest-rust-1.87-alpine AS chef
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache \
+    musl-dev \
+    openssl-dev \
+    pkgconfig \
+    git
+
+# Planner stage: Generate recipe.json from Cargo.toml files
+# We need to create a temporary Cargo.toml that excludes GUI (which has platform-specific deps)
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock ./
+COPY crates/backend/Cargo.toml crates/backend/Cargo.toml
+COPY crates/coordinator/Cargo.toml crates/coordinator/Cargo.toml
+COPY crates/shared/Cargo.toml crates/shared/Cargo.toml
+
+# Create a temporary Cargo.toml without GUI (since GUI has platform-specific dependencies)
+# This allows cargo-chef to prepare the recipe without GUI
+RUN sed -i '/crates\/gui/d' Cargo.toml
+
+# Create minimal source files so cargo-chef can parse the manifests
+RUN mkdir -p crates/backend/src && echo "fn main() {}" > crates/backend/src/be_main.rs && \
+    mkdir -p crates/coordinator/src && \
+    echo "pub fn dummy() {}" > crates/coordinator/src/lib.rs && \
+    echo "fn main() {}" > crates/coordinator/src/coordinator_main.rs && \
+    mkdir -p crates/shared/src && echo "pub fn dummy() {}" > crates/shared/src/lib.rs
+
+# Prepare recipe for backend, coordinator, and shared (GUI excluded)
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Builder stage: Cook (compile) all dependencies
+# This is the final stage that will be used as the base image
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+# Build all dependencies for backend and coordinator
+# cargo-chef cook will only compile dependencies needed for the specified binaries
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# Set the target directory for consistency
+ENV CARGO_TARGET_DIR=/app/target

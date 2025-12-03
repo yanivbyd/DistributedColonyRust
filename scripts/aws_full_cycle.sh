@@ -172,34 +172,35 @@ if [ ! -f "$EXPANDED_KEY_PATH" ]; then
 fi
 
 # Step 2: Build and push Docker image
-print_step "Step 2: Building and pushing Docker image..."
+print_step "Step 2: Building and pushing Docker images..."
 cd "${WORKSPACE_ROOT}/Docker"
 
-if [ ! -f "build-and-push.sh" ]; then
-    print_error "build-and-push.sh not found in Docker directory"
+if [ ! -f "build-and-push-base.sh" ] || [ ! -f "build-and-push-colony.sh" ]; then
+    print_error "build-and-push-base.sh or build-and-push-colony.sh not found in Docker directory"
     {
         echo ""
         echo "=========================================="
-        echo "Deployment FAILED at Step 1"
+        echo "Deployment FAILED at Step 2"
         echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
         echo "=========================================="
     } >> "$LOG_FILE"
     exit 1
 fi
 
-log_output "Running: ./build-and-push.sh"
 # Capture output to a temp file to filter verbose logs
 TEMP_BUILD_LOG=$(mktemp)
 trap "rm -f $TEMP_BUILD_LOG" EXIT
 
-if ./build-and-push.sh > "$TEMP_BUILD_LOG" 2>&1; then
+# Build and push base image
+log_output "Running: ./build-and-push-base.sh"
+if ./build-and-push-base.sh > "$TEMP_BUILD_LOG" 2>&1; then
     # Extract only high-level status and errors from the build log
     grep -E "(INFO|WARNING|ERROR|Step|Successfully|completed|duration|Duration)" "$TEMP_BUILD_LOG" | tee -a "$LOG_FILE" || true
-    print_status "Docker image built and pushed successfully!"
+    print_status "Base Docker image built and pushed successfully!"
 else
     BUILD_EXIT_CODE=$?
     # On failure, show errors and context
-    print_error "Docker build and push failed!"
+    print_error "Base Docker build and push failed!"
     log_output "Build output (errors and context):"
     grep -E "(ERROR|WARNING|failed|Failed|error|Error)" "$TEMP_BUILD_LOG" -A 2 -B 2 | tee -a "$LOG_FILE" || true
     # Also show last 20 lines as context
@@ -208,12 +209,37 @@ else
     {
         echo ""
         echo "=========================================="
-        echo "Deployment FAILED at Step 1"
+        echo "Deployment FAILED at Step 2 (Base Image)"
+        echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+        echo "=========================================="
+    } >> "$LOG_FILE"
+    exit $BUILD_EXIT_CODE
+fi
+
+# Build and push colony image
+log_output "Running: ./build-and-push-colony.sh"
+if ./build-and-push-colony.sh > "$TEMP_BUILD_LOG" 2>&1; then
+    # Extract only high-level status and errors from the build log
+    grep -E "(INFO|WARNING|ERROR|Step|Successfully|completed|duration|Duration)" "$TEMP_BUILD_LOG" | tee -a "$LOG_FILE" || true
+    print_status "Colony Docker image built and pushed successfully!"
+else
+    BUILD_EXIT_CODE=$?
+    # On failure, show errors and context
+    print_error "Colony Docker build and push failed!"
+    log_output "Build output (errors and context):"
+    grep -E "(ERROR|WARNING|failed|Failed|error|Error)" "$TEMP_BUILD_LOG" -A 2 -B 2 | tee -a "$LOG_FILE" || true
+    # Also show last 20 lines as context
+    log_output "Last 20 lines of build output:"
+    tail -20 "$TEMP_BUILD_LOG" | tee -a "$LOG_FILE" || true
+    {
+        echo ""
+        echo "=========================================="
+        echo "Deployment FAILED at Step 2 (Colony Image)"
         echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
         echo "=========================================="
     } >> "$LOG_FILE"
     rm -f "$TEMP_BUILD_LOG"
-    exit 1
+    exit $BUILD_EXIT_CODE
 fi
 rm -f "$TEMP_BUILD_LOG"
 cd ..

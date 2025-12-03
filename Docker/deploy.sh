@@ -83,16 +83,26 @@ if [ ! -d "../CDK" ]; then
     exit 1
 fi
 
-# Step 1: Build and push Docker image
-print_step "Step 1: Building and pushing Docker image..."
-BUILD_VERSION="$BUILD_VERSION" ./build-and-push.sh
+# Step 1: Build and push Docker images
+print_step "Step 1: Building and pushing Docker images..."
+
+print_status "Building and pushing base image..."
+BUILD_VERSION="$BUILD_VERSION" ./build-and-push-base.sh
 
 if [ $? -ne 0 ]; then
-    print_error "Docker build and push failed!"
+    print_error "Base Docker image build and push failed!"
     exit 1
 fi
 
-print_status "Docker image built and pushed successfully!"
+print_status "Building and pushing colony image..."
+BUILD_VERSION="$BUILD_VERSION" ./build-and-push-colony.sh
+
+if [ $? -ne 0 ]; then
+    print_error "Colony Docker image build and push failed!"
+    exit 1
+fi
+
+print_status "Docker images built and pushed successfully!"
 
 # Step 2: Deploy CDK stack
 print_step "Step 2: Deploying CDK infrastructure..."

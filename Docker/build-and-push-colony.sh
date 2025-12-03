@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Build and push Docker image for DistributedColony
-# This script builds the Docker image and pushes it to AWS ECR
+# Build and push COLONY Docker image for DistributedColony
+# This script builds the application Docker image and pushes it to AWS ECR
+# The colony image depends on the base image, which should be built first
 
 set -e
 start_time=$(date +%s)
@@ -70,12 +71,28 @@ print_status "Build version timestamp: $BUILD_VERSION"
 ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
 ECR_BASE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_BASE_REPOSITORY:$BASE_IMAGE_TAG"
 ECR_CACHE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:cache"
-ECR_BASE_CACHE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_BASE_REPOSITORY:cache"
 
 print_status "Full ECR URI: $ECR_URI"
 print_status "Full Base ECR URI: $ECR_BASE_URI"
 print_status "Cache URI: $ECR_CACHE_URI"
-print_status "Base Cache URI: $ECR_BASE_CACHE_URI"
+
+# Check if base image exists locally first, then in ECR
+print_status "Checking if base image exists locally..."
+if ! docker image inspect distributed-colony-base:latest > /dev/null 2>&1; then
+    print_warning "Base image 'distributed-colony-base:latest' not found locally!"
+    print_status "Checking if base image exists in ECR..."
+    if ! aws ecr describe-images --repository-name $ECR_BASE_REPOSITORY --image-ids imageTag=$BASE_IMAGE_TAG --region $AWS_REGION > /dev/null 2>&1; then
+        print_error "Base image not found locally or in ECR!"
+        print_status "Please build and push the base image first:"
+        print_status "  ./build-and-push-base.sh"
+        exit 1
+    fi
+    print_status "Base image found in ECR, pulling it locally..."
+    docker pull $ECR_BASE_URI
+    docker tag $ECR_BASE_URI distributed-colony-base:latest
+else
+    print_status "Base image found locally (using local image, no network pull needed)"
+fi
 
 # Function to create ECR repository if it doesn't exist
 create_ecr_repository() {
@@ -118,8 +135,7 @@ EOF
     fi
 }
 
-# Create ECR repositories
-create_ecr_repository $ECR_BASE_REPOSITORY
+# Create ECR repository
 create_ecr_repository $ECR_REPOSITORY
 
 # Authenticate Docker with ECR
@@ -136,58 +152,24 @@ fi
 # Create/use a builder (idempotent)
 docker buildx create --use >/dev/null 2>&1 || true
 
-# Step 1: Build and push base image (with dependencies)
-print_status "Building and pushing BASE image for linux/amd64 (with local + remote cache)..."
-docker buildx build \
-  --platform linux/amd64 \
-  --cache-from type=local,src=/tmp/.buildx-cache-base \
-  --cache-from type=registry,ref=$ECR_BASE_CACHE_URI \
-  --cache-to type=local,dest=/tmp/.buildx-cache-base-new,mode=max \
-  --cache-to type=registry,ref=$ECR_BASE_CACHE_URI,mode=max \
-  -t $ECR_BASE_URI \
-  -f Dockerfile.base \
-  .. \
-  --push
-
-# Replace old base cache with new one (atomic swap)
-rm -rf /tmp/.buildx-cache-base
-mv /tmp/.buildx-cache-base-new /tmp/.buildx-cache-base
-
-print_status "Base image successfully built and pushed to ECR!"
-print_status "Base Image URI: $ECR_BASE_URI"
-
-# Step 2: Build and push colony image (application)
-# Note: Buildx will automatically pull the base image from ECR when building
-print_status "Building and pushing COLONY image for linux/amd64 (with local + remote cache)..."
-docker buildx build \
-  --platform linux/amd64 \
-  --cache-from type=local,src=/tmp/.buildx-cache \
-  --cache-from type=registry,ref=$ECR_CACHE_URI \
-  --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
-  --cache-to type=registry,ref=$ECR_CACHE_URI,mode=max \
+# Build colony image locally using local base image (no network pull needed)
+# Cargo will automatically reuse pre-compiled dependencies from the base image
+print_status "Building COLONY image locally (using local base image with cargo-chef dependencies, no network pull)..."
+docker build \
   --build-arg BUILD_VERSION="$BUILD_VERSION" \
-  --build-arg BASE_IMAGE="$ECR_BASE_URI" \
+  --build-arg BASE_IMAGE="distributed-colony-base:latest" \
   -t $ECR_URI \
   -f Dockerfile \
-  .. \
-  --push
+  ..
 
-# Replace old cache with new one (atomic swap)
-rm -rf /tmp/.buildx-cache
-mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+# Push colony image to ECR (only the final image, no cache operations)
+print_status "Pushing COLONY image to ECR..."
+docker push $ECR_URI
 
 print_status "Colony image successfully built and pushed to ECR!"
 print_status "Image URI: $ECR_URI"
 
 # Display image information
-print_status "Base image details:"
-aws ecr describe-images \
-    --repository-name $ECR_BASE_REPOSITORY \
-    --image-ids imageTag=$BASE_IMAGE_TAG \
-    --region $AWS_REGION \
-    --query 'imageDetails[0].{Size:imageSizeInBytes,PushedAt:imagePushedAt,Digest:imageDigest}' \
-    --output table
-
 print_status "Colony image details:"
 aws ecr describe-images \
     --repository-name $ECR_REPOSITORY \
@@ -208,3 +190,4 @@ if [ $minutes -gt 0 ]; then
 else
     print_status "Total duration: ${seconds}s"
 fi
+

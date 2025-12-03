@@ -98,9 +98,25 @@
             }
         },
         {
-            "label": "Update ECR",
+            "label": "Update ECR - Colony Image",
             "type": "shell",
-            "command": "./build-and-push.sh",
+            "command": "./build-and-push-colony.sh",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/Docker"
+            }
+        },
+        {
+            "label": "Update ECR - Base Image",
+            "type": "shell",
+            "command": "./build-and-push-base.sh",
             "group": "build",
             "presentation": {
                 "echo": true,
