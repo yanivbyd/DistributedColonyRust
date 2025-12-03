@@ -18,7 +18,7 @@
             }
         },
         {
-            "label": "Colony - Build and Run All",
+            "label": "Local - Run",
             "type": "shell",
             "command": "./build_and_run.sh",
             "group": "build",
@@ -34,9 +34,25 @@
             }
         },
         {
-            "label": "Colony - Kill All",
+            "label": "Local - Kill",
             "type": "shell",
             "command": "./kill_all.sh",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/scripts"
+            }
+        },
+        {
+            "label": "aws - logs",
+            "type": "shell",
+            "command": "./gather_logs_from_nodes.sh",
             "group": "build",
             "presentation": {
                 "echo": true,

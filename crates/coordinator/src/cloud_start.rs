@@ -56,9 +56,22 @@ async fn discover_and_ping_backends() -> Vec<HostInfo> {
     // Discover backends from AWS SSM
     discovered_topology.start_discovery().await;
     
-    // Filter to only active backends
+    // Get coordinator's own IP address to exclude it from backend list
+    let coordinator_ip = discovered_topology.coordinator_info
+        .as_ref()
+        .map(|info| info.address.ip.clone());
+    
+    // Filter to only active backends, excluding the coordinator's own IP
     let mut available_backends = Vec::new();
     for backend_info in discovered_topology.backend_info {
+        // Skip if this backend matches the coordinator's IP (coordinator should not be a backend)
+        if let Some(ref coord_ip) = coordinator_ip {
+            if backend_info.address.ip == *coord_ip {
+                log_error!("Skipping backend {}:{} (matches coordinator IP)", backend_info.address.ip, backend_info.address.port);
+                continue;
+            }
+        }
+        
         if backend_info.status == NodeStatus::Active {
             available_backends.push(HostInfo::new(
                 backend_info.address.ip,
