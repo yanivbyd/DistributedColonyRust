@@ -128,16 +128,36 @@ docker buildx create --use >/dev/null 2>&1 || true
 
 # Build base image locally first (for fast local colony builds)
 # Using cargo-chef, this builds all dependencies which will be cached
+build_start=$(date +%s)
 print_status "Building BASE image locally for linux/amd64 (using cargo-chef)..."
 docker build \
   -t distributed-colony-base:latest \
   -f Dockerfile.base \
   ..
+build_end=$(date +%s)
+build_elapsed=$(( build_end - build_start ))
+build_min=$(( build_elapsed / 60 ))
+build_sec=$(( build_elapsed % 60 ))
+if [ $build_min -gt 0 ]; then
+    print_status "Build completed in ${build_min}m ${build_sec}s"
+else
+    print_status "Build completed in ${build_sec}s"
+fi
 
 # Tag and push to ECR (for remote builds/CI, but not needed for local colony builds)
+push_start=$(date +%s)
 print_status "Tagging and pushing BASE image to ECR..."
 docker tag distributed-colony-base:latest $ECR_BASE_URI
 docker push $ECR_BASE_URI
+push_end=$(date +%s)
+push_elapsed=$(( push_end - push_start ))
+push_min=$(( push_elapsed / 60 ))
+push_sec=$(( push_elapsed % 60 ))
+if [ $push_min -gt 0 ]; then
+    print_status "Push completed in ${push_min}m ${push_sec}s"
+else
+    print_status "Push completed in ${push_sec}s"
+fi
 
 print_status "Base image successfully built and pushed to ECR!"
 print_status "Base Image URI: $ECR_BASE_URI"
@@ -157,9 +177,12 @@ end_time=$(date +%s)
 elapsed=$(( end_time - start_time ))
 minutes=$(( elapsed / 60 ))
 seconds=$(( elapsed % 60 ))
+echo ""
+print_status "=========================================="
 if [ $minutes -gt 0 ]; then
-    print_status "Total duration: ${minutes}m ${seconds}s"
+    print_status "TOTAL DURATION: ${minutes}m ${seconds}s"
 else
-    print_status "Total duration: ${seconds}s"
+    print_status "TOTAL DURATION: ${seconds}s"
 fi
+print_status "=========================================="
 

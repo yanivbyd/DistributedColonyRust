@@ -10,9 +10,21 @@ ENV BUILD_VERSION=${BUILD_VERSION}
 COPY crates/ ./crates/
 COPY Cargo.toml Cargo.lock ./
 
+# Exclude GUI from workspace (same as base image) to match the dependency set
+# This ensures Cargo only tries to build what we have dependencies for
+RUN sed -i '/crates\/gui/d' Cargo.toml
+
+# Set source file timestamps to be older than compiled dependencies
+# This prevents Cargo's incremental compilation from invalidating the dependency cache
+# The base image has dependencies compiled, so we want Cargo to reuse them
+RUN find crates/ -type f -name "*.rs" -exec touch -t 202001010000.00 {} \; 2>/dev/null || true
+
 # Build the application binaries
-# Cargo will reuse the pre-compiled dependencies from the base image
-RUN cargo build --release --bin backend --bin coordinator
+# Cargo should reuse pre-compiled dependencies from /app/target in the base image
+# The target directory from the base image contains all compiled dependencies
+# Using --offline to ensure Cargo doesn't try to fetch (dependencies already compiled)
+# Cargo's incremental compilation will only rebuild what actually changed
+RUN cargo build --release --bin backend --bin coordinator --offline
 
 # Stage 2: Create minimal runtime image
 FROM alpine:3.19
