@@ -128,11 +128,14 @@ docker buildx create --use >/dev/null 2>&1 || true
 
 # Build base image locally first (for fast local colony builds)
 # Using cargo-chef, this builds all dependencies which will be cached
+# Explicitly specify linux/amd64 platform for EC2 compatibility
 build_start=$(date +%s)
 print_status "Building BASE image locally for linux/amd64 (using cargo-chef)..."
-docker build \
+docker buildx build \
+  --platform linux/amd64 \
   -t distributed-colony-base:latest \
   -f Dockerfile.base \
+  --load \
   ..
 build_end=$(date +%s)
 build_elapsed=$(( build_end - build_start ))

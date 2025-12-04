@@ -16,6 +16,9 @@ export class UserDataBuilder {
     const commands = [
       '#!/bin/bash',
       'set -e',
+      'set -o pipefail',
+      'exec > >(tee -a /var/log/user-data.log) 2>&1',
+      'echo "[INFO] Starting user-data script execution..."',
       ...this.buildSystemSetup(),
       ...this.buildDirectorySetup(),
       ...this.buildUsefulScripts(instanceType, port),
@@ -23,7 +26,7 @@ export class UserDataBuilder {
       ...this.buildReloadScript(instanceType, port, reloadScriptPath),
       ...this.buildContainerStartup(reloadScriptPath),
       ...this.buildRuntimeRegistration(instanceType, port),
-      'echo "Startup completed successfully"',
+      'echo "[INFO] Startup completed successfully"',
     ];
     return commands.join('\n');
   }
@@ -216,9 +219,15 @@ export class UserDataBuilder {
 
   private buildContainerStartup(scriptPath: string): string[] {
     return [
-      `su - ec2-user -c '/home/ec2-user/reload.sh >> /var/log/reload.log 2>&1'`,
+      'echo "[INFO] Starting container via reload script..."',
+      `if ! su - ec2-user -c '/home/ec2-user/reload.sh >> /var/log/reload.log 2>&1'; then`,
+      '  echo "[ERROR] Failed to start container. Checking reload.log..."',
+      '  cat /var/log/reload.log || true',
+      '  echo "[ERROR] Container startup failed - see /var/log/reload.log for details"',
+      '  exit 1',
+      'fi',
       'cat /var/log/reload.log',
-      'echo "Container started"',
+      'echo "[INFO] Container startup completed"',
     ];
   }
 

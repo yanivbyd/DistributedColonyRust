@@ -152,15 +152,19 @@ fi
 # Create/use a builder (idempotent)
 docker buildx create --use >/dev/null 2>&1 || true
 
-# Build colony image locally using local base image (no network pull needed)
-# Cargo will automatically reuse pre-compiled dependencies from the base image
+# Build colony image using ECR base image URI
+# This ensures the colony image references the base image from ECR, not a local image
+# Docker will pull the base image from ECR during the build, and all layers will be included in the final image
+# Explicitly specify linux/amd64 platform for EC2 compatibility
 build_start=$(date +%s)
-print_status "Building COLONY image locally (using local base image with cargo-chef dependencies, no network pull)..."
-docker build \
+print_status "Building COLONY image for linux/amd64 (using ECR base image: $ECR_BASE_URI)..."
+docker buildx build \
+  --platform linux/amd64 \
   --build-arg BUILD_VERSION="$BUILD_VERSION" \
-  --build-arg BASE_IMAGE="distributed-colony-base:latest" \
+  --build-arg BASE_IMAGE="$ECR_BASE_URI" \
   -t $ECR_URI \
   -f Dockerfile \
+  --load \
   ..
 build_end=$(date +%s)
 build_elapsed=$(( build_end - build_start ))

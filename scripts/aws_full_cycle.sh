@@ -175,8 +175,8 @@ fi
 print_step "Step 2: Building and pushing Docker images..."
 cd "${WORKSPACE_ROOT}/Docker"
 
-if [ ! -f "build-and-push-base.sh" ] || [ ! -f "build-and-push-colony.sh" ]; then
-    print_error "build-and-push-base.sh or build-and-push-colony.sh not found in Docker directory"
+if [ ! -f "build-and-push-colony.sh" ]; then
+    print_error "build-and-push-colony.sh not found in Docker directory"
     {
         echo ""
         echo "=========================================="
@@ -190,31 +190,6 @@ fi
 # Capture output to a temp file to filter verbose logs
 TEMP_BUILD_LOG=$(mktemp)
 trap "rm -f $TEMP_BUILD_LOG" EXIT
-
-# Build and push base image
-log_output "Running: ./build-and-push-base.sh"
-if ./build-and-push-base.sh > "$TEMP_BUILD_LOG" 2>&1; then
-    # Extract only high-level status and errors from the build log
-    grep -E "(INFO|WARNING|ERROR|Step|Successfully|completed|duration|Duration)" "$TEMP_BUILD_LOG" | tee -a "$LOG_FILE" || true
-    print_status "Base Docker image built and pushed successfully!"
-else
-    BUILD_EXIT_CODE=$?
-    # On failure, show errors and context
-    print_error "Base Docker build and push failed!"
-    log_output "Build output (errors and context):"
-    grep -E "(ERROR|WARNING|failed|Failed|error|Error)" "$TEMP_BUILD_LOG" -A 2 -B 2 | tee -a "$LOG_FILE" || true
-    # Also show last 20 lines as context
-    log_output "Last 20 lines of build output:"
-    tail -20 "$TEMP_BUILD_LOG" | tee -a "$LOG_FILE" || true
-    {
-        echo ""
-        echo "=========================================="
-        echo "Deployment FAILED at Step 2 (Base Image)"
-        echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
-        echo "=========================================="
-    } >> "$LOG_FILE"
-    exit $BUILD_EXIT_CODE
-fi
 
 # Build and push colony image
 log_output "Running: ./build-and-push-colony.sh"
