@@ -220,16 +220,38 @@ async fn main() {
             panic!("Could not bind coordinator protocol listener on {}: {}", addr, err);
         }
     };
+    
+    // Log network binding information for debugging
+    if let Ok(local_addr) = listener.local_addr() {
+        log!("TCP listener bound successfully on {}", local_addr);
+    }
+    
+    // Log coordinator IP in AWS mode
+    if deployment_mode == DeploymentMode::Aws {
+        if let Some(coord_addr) = shared::ssm::discover_coordinator().await {
+            log!("Coordinator IP (from SSM): {}", coord_addr.ip);
+        } else {
+            log!("Coordinator IP: not yet registered in SSM");
+        }
+    }
+    
     log!("Listening on {} for coordinator protocol", addr);
 
     loop {
         log!("Waiting for connection...");
         match listener.accept().await {
-            Ok((socket, _)) => {
-                log!("Accepted connection");
+            Ok((socket, peer_addr)) => {
+                // Log connection details for debugging
+                if let Ok(local_addr) = socket.local_addr() {
+                    log!("Accepted connection from {} to {}", peer_addr, local_addr);
+                } else {
+                    log!("Accepted connection from {}", peer_addr);
+                }
                 tokio::spawn(handle_client(socket));
             }
-            Err(e) => log_error!("Connection failed: {}", e),
+            Err(e) => {
+                log_error!("Failed to accept connection on {}: {} (kind: {:?})", addr, e, e.kind());
+            }
         }
     }
 } 

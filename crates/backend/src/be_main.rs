@@ -85,7 +85,22 @@ async fn send_response(framed: &mut FramedStream, response: BackendResponse) {
 }
 
 async fn handle_client(socket: TcpStream) {
-    log!("handle_client: new connection");
+    // Log connection details with sender information
+    let (peer_addr_str, local_addr_str) = match (socket.peer_addr(), socket.local_addr()) {
+        (Ok(peer), Ok(local)) => {
+            (format!("{}", peer), format!("{}", local))
+        }
+        (Ok(peer), Err(_)) => {
+            (format!("{}", peer), "unknown".to_string())
+        }
+        (Err(_), Ok(local)) => {
+            ("unknown".to_string(), format!("{}", local))
+        }
+        (Err(_), Err(_)) => {
+            ("unknown".to_string(), "unknown".to_string())
+        }
+    };
+    log!("handle_client: new connection from {} to {}", peer_addr_str, local_addr_str);
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
     loop {
         match framed.next().await {
@@ -368,14 +383,27 @@ async fn main() {
     };
     log!("Listening on {} (advertised as {})", bind_addr, hostname);
 
+    // Log network binding information for debugging
+    if let Ok(local_addr) = listener.local_addr() {
+        log!("TCP listener bound successfully on {}", local_addr);
+    }
+    log!("Backend ready to accept connections on {} (advertised as {}:{})", bind_addr, hostname, port);
+    
     loop {
         log!("Waiting for connection...");
         match listener.accept().await {
-            Ok((socket, _)) => {
-                log!("Accepted connection");
+            Ok((socket, peer_addr)) => {
+                // Log connection details for debugging
+                if let Ok(local_addr) = socket.local_addr() {
+                    log!("Accepted connection from {} to {}", peer_addr, local_addr);
+                } else {
+                    log!("Accepted connection from {}", peer_addr);
+                }
                 tokio::spawn(handle_client(socket));
             }
-            Err(e) => log_error!("Connection failed: {}", e),
+            Err(e) => {
+                log_error!("Failed to accept connection on {}: {} (kind: {:?})", bind_addr, e, e.kind());
+            }
         }
     }
 } 

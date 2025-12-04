@@ -24,7 +24,15 @@ pub async fn start_http_server() {
                     if let Ok(n) = stream.read(&mut buffer).await {
                         let request = String::from_utf8_lossy(&buffer[..n]);
                         
-                        if request.starts_with("GET /debug-ssm") {
+                        if request.starts_with("GET /debug-network") {
+                            let body = render_network_info().await;
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                                body.len(),
+                                body
+                            );
+                            let _ = stream.write_all(response.as_bytes()).await;
+                        } else if request.starts_with("GET /debug-ssm") {
                             let body = render_ssm_state().await;
                             let response = format!(
                                 "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
@@ -69,6 +77,34 @@ async fn render_ssm_state() -> String {
         }
     }
 
+    body
+}
+
+async fn render_network_info() -> String {
+    let mut body = String::new();
+    
+    // Get backend info from config
+    use crate::backend_config;
+    let hostname = backend_config::get_backend_hostname();
+    let port = backend_config::get_backend_port();
+    
+    let _ = writeln!(body, "Backend Configuration:");
+    let _ = writeln!(body, "  Advertised Hostname: {}", hostname);
+    let _ = writeln!(body, "  Advertised Port: {}", port);
+    let _ = writeln!(body, "");
+    let _ = writeln!(body, "Network Diagnostics:");
+    let _ = writeln!(body, "  Listening on: 0.0.0.0:{} (backend protocol)", port);
+    let _ = writeln!(body, "  HTTP server: 0.0.0.0:{}", HTTP_SERVER_PORT);
+    
+    // Try to get backend IP from SSM (if registered)
+    let backends = ssm::discover_backends().await;
+    for backend in backends {
+        if backend.port == port && backend.ip == hostname {
+            let _ = writeln!(body, "  Backend IP (SSM): {}:{}", backend.ip, backend.port);
+            break;
+        }
+    }
+    
     body
 }
 

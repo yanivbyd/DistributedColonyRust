@@ -154,6 +154,32 @@ fi
 
 cd "${WORKSPACE_ROOT}"
 
+# Clean up stale SSM parameters from previous deployments
+print_step "Step 0: Cleaning up stale SSM parameters..."
+print_status "Removing stale backend SSM parameters..."
+SSM_CLEANUP_COUNT=0
+if SSM_PARAMS=$(aws ssm get-parameters-by-path --path "/colony/backends" --region "${AWS_REGION}" --query 'Parameters[*].Name' --output text 2>&1); then
+    if [ -n "$SSM_PARAMS" ] && [ "$SSM_PARAMS" != "None" ]; then
+        for param_name in $SSM_PARAMS; do
+            if [ -n "$param_name" ]; then
+                if aws ssm delete-parameter --name "$param_name" --region "${AWS_REGION}" 2>&1 | tee -a "$LOG_FILE" > /dev/null; then
+                    SSM_CLEANUP_COUNT=$((SSM_CLEANUP_COUNT + 1))
+                    log "Deleted stale SSM parameter: $param_name"
+                fi
+            fi
+        done
+        if [ $SSM_CLEANUP_COUNT -gt 0 ]; then
+            print_status "Cleaned up $SSM_CLEANUP_COUNT stale SSM parameter(s)"
+        else
+            print_status "No stale SSM parameters found (or cleanup failed)"
+        fi
+    else
+        print_status "No SSM parameters to clean up"
+    fi
+else
+    print_warning "Failed to query SSM parameters (may not exist yet, continuing)"
+fi
+
 # Check prerequisites
 print_step "Step 1: Checking prerequisites..."
 
@@ -446,6 +472,40 @@ else
     if [ -f "$DEBUG_RESPONSE_FILE" ]; then
         log_output "Error response:"
         cat "$DEBUG_RESPONSE_FILE" 2>/dev/null | tee -a "$LOG_FILE" || true
+    fi
+fi
+
+# Test debug-network endpoint
+print_status "Testing coordinator debug-network endpoint..."
+DEBUG_NETWORK_URL="http://${COORDINATOR_IP}:${COORDINATOR_HTTP_PORT}/debug-network"
+DEBUG_NETWORK_RESPONSE_FILE="/tmp/coordinator_debug_network_response.txt"
+log_output "Running: curl -X GET $DEBUG_NETWORK_URL"
+
+# Capture HTTP code and response separately
+DEBUG_NETWORK_HTTP_CODE=$(curl -s -o "$DEBUG_NETWORK_RESPONSE_FILE" -w "%{http_code}" -X GET "$DEBUG_NETWORK_URL" || echo "000")
+DEBUG_NETWORK_CURL_EXIT_CODE=$?
+
+log_output "HTTP Status Code: $DEBUG_NETWORK_HTTP_CODE"
+log_output "Curl exit code: $DEBUG_NETWORK_CURL_EXIT_CODE"
+
+if [ "$DEBUG_NETWORK_CURL_EXIT_CODE" -eq 0 ] && [ -f "$DEBUG_NETWORK_RESPONSE_FILE" ]; then
+    if [ "$DEBUG_NETWORK_HTTP_CODE" -ge 200 ] && [ "$DEBUG_NETWORK_HTTP_CODE" -lt 300 ]; then
+        print_status "Debug-Network endpoint responded successfully! (HTTP $DEBUG_NETWORK_HTTP_CODE)"
+    else
+        print_warning "Debug-Network endpoint returned status code: $DEBUG_NETWORK_HTTP_CODE"
+    fi
+    log_output "Response body:"
+    if [ -s "$DEBUG_NETWORK_RESPONSE_FILE" ]; then
+        cat "$DEBUG_NETWORK_RESPONSE_FILE" | tee -a "$LOG_FILE"
+    else
+        log_output "(empty response)"
+    fi
+    echo "" >> "$LOG_FILE"
+else
+    print_warning "Failed to connect to debug-network endpoint (service may not be ready yet)"
+    if [ -f "$DEBUG_NETWORK_RESPONSE_FILE" ]; then
+        log_output "Error response:"
+        cat "$DEBUG_NETWORK_RESPONSE_FILE" 2>/dev/null | tee -a "$LOG_FILE" || true
     fi
 fi
 

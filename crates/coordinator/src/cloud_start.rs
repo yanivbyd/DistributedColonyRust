@@ -4,7 +4,7 @@ use shared::colony_model::Shard;
 use std::collections::HashMap;
 use crate::init_colony::initialize_colony;
 
-pub async fn cloud_start_colony() {
+pub async fn cloud_start_colony() -> bool {
     log!("Starting cloud-start process: discovering backends and creating shard map");
     
     // Step 1: Discover available backend nodes from AWS config
@@ -12,7 +12,7 @@ pub async fn cloud_start_colony() {
     
     if available_backends.is_empty() {
         log_error!("No available backend nodes found. Cannot start colony.");
-        return;
+        return false;
     }
     
     log!("Found {} available backend nodes", available_backends.len());
@@ -34,15 +34,21 @@ pub async fn cloud_start_colony() {
         }
         Err(err) => {
             log_error!("Failed to install dynamic topology: {}", err);
-            return;
+            return false;
         }
     }
     
     // Step 4: Initialize and start the colony
     // Note: coordinator_ticker should already be started in main()
-    initialize_colony().await;
+    let init_success = initialize_colony().await;
     
-    log!("Cloud-start completed successfully");
+    if init_success {
+        log!("Cloud-start completed successfully");
+        true
+    } else {
+        log_error!("Cloud-start failed: colony initialization encountered errors");
+        false
+    }
 }
 
 async fn discover_and_ping_backends() -> Vec<HostInfo> {

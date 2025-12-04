@@ -197,7 +197,44 @@ main() {
             cat "$TEMP_RESPONSE" | sed 's/^/  /' | tee -a "${LOG_FILE:-/dev/stdout}"
         fi
         log_output ""
-        print_status "Cloud-start initiated. Check coordinator logs for progress."
+        print_status "Waiting for cloud-start to complete..."
+        
+        # Poll status endpoint for up to 2 minutes
+        MAX_WAIT=120
+        WAIT_INTERVAL=5
+        ELAPSED=0
+        STATUS="in_progress"
+        
+        while [ "$ELAPSED" -lt "$MAX_WAIT" ] && [ "$STATUS" = "in_progress" ]; do
+            sleep "$WAIT_INTERVAL"
+            ELAPSED=$((ELAPSED + WAIT_INTERVAL))
+            
+            STATUS_RESPONSE=$(curl -s -S --max-time 10 "http://${COORDINATOR_IP}:${HTTP_PORT}/cloud-start-status" 2>/dev/null || echo "")
+            if echo "$STATUS_RESPONSE" | grep -q "status:"; then
+                STATUS=$(echo "$STATUS_RESPONSE" | grep "status:" | sed 's/.*status: *\([^ ]*\).*/\1/')
+                log_output "Cloud-start status: $STATUS (waited ${ELAPSED}s)"
+            fi
+        done
+        
+        if [ "$STATUS" = "success" ]; then
+            print_status "Cloud-start completed successfully!"
+        elif [ "$STATUS" = "failed" ]; then
+            print_error "Cloud-start failed!"
+            log_output "Cloud-start status check returned: failed"
+            if [ -s "$TEMP_STDERR" ]; then
+                log_output "Error details:"
+                cat "$TEMP_STDERR" | sed 's/^/  /' | tee -a "${LOG_FILE:-/dev/stdout}"
+            fi
+            rm -f "$TEMP_RESPONSE" "$TEMP_STDERR"
+            exit 1
+        elif [ "$STATUS" = "in_progress" ]; then
+            print_warning "Cloud-start still in progress after ${MAX_WAIT}s timeout"
+            log_output "Status endpoint may not be available or cloud-start is taking longer than expected"
+        else
+            print_warning "Could not determine cloud-start status (got: $STATUS)"
+        fi
+        
+        rm -f "$TEMP_RESPONSE" "$TEMP_STDERR"
     elif [ "$HTTP_CODE" -eq 409 ]; then
         print_warning "Cloud-start already in progress (HTTP 409)"
         if [ -s "$TEMP_RESPONSE" ]; then

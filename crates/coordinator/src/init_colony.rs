@@ -66,6 +66,10 @@ async fn get_colony_info(stream: &mut TcpStream) -> Option<GetColonyInfoResponse
 async fn connect_to_backend(hostname: &str, port: u16) -> Result<TcpStream, std::io::Error> {
     let addr = format!("{}:{}", hostname, port);
     
+    // Log connection attempt with coordinator's own IP for debugging
+    let coordinator_ip = get_coordinator_ip().await;
+    log!("Attempting to connect to backend {} from coordinator IP {}", addr, coordinator_ip);
+    
     // Configure exponential backoff: start with 100ms, max 2s, max 5 retries
     let backoff = ExponentialBackoff {
         initial_interval: Duration::from_millis(100),
@@ -75,17 +79,48 @@ async fn connect_to_backend(hostname: &str, port: u16) -> Result<TcpStream, std:
         ..Default::default()
     };
     
-    let operation = || async {
-        match TcpStream::connect(&addr).await {
-            Ok(stream) => Ok(stream),
-            Err(e) => {
-                log_error!("Failed to connect to backend at {}: {}", addr, e);
-                Err(BackoffError::transient(e))
+    let attempt_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let attempt_count_clone = attempt_count.clone();
+    let addr_clone = addr.clone();
+    let operation = move || {
+        let count = attempt_count_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let addr = addr_clone.clone();
+        async move {
+            log!("Connection attempt #{} to backend {}", count, addr);
+            match TcpStream::connect(&addr).await {
+                Ok(stream) => {
+                    // Log successful connection with peer address
+                    if let Ok(peer_addr) = stream.peer_addr() {
+                        if let Ok(local_addr) = stream.local_addr() {
+                            log!("Successfully connected to backend {} (peer: {}, local: {})", 
+                                addr, peer_addr, local_addr);
+                        } else {
+                            log!("Successfully connected to backend {} (peer: {})", addr, peer_addr);
+                        }
+                    } else {
+                        log!("Successfully connected to backend {}", addr);
+                    }
+                    Ok(stream)
+                },
+                Err(e) => {
+                    log_error!("Connection attempt #{} to backend {} failed: {} (kind: {:?})", 
+                        count, addr, e, e.kind());
+                    Err(BackoffError::transient(e))
+                }
             }
         }
     };
     
     backoff::future::retry(backoff, operation).await
+}
+
+async fn get_coordinator_ip() -> String {
+    // Try to get coordinator's IP from SSM or use a default
+    if let Some(coord_addr) = shared::ssm::discover_coordinator().await {
+        coord_addr.ip
+    } else {
+        "unknown".to_string()
+    }
 }
 
 async fn send_init_colony(stream: &mut TcpStream) {
@@ -124,7 +159,7 @@ async fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
     }
 }
 
-pub async fn initialize_colony() {
+pub async fn initialize_colony() -> bool {
     // Step 1: Retrieve coordination info and initialize context
     let stored_info = CoordinatorStorage::retrieve(crate::coordinator_storage::COORDINATOR_STATE_FILE)
         .unwrap_or_else(|| {
@@ -140,16 +175,26 @@ pub async fn initialize_colony() {
     let topology = ClusterTopology::get_instance();
     let backend_hosts = topology.get_all_backend_hosts();
     
+    // Log network diagnostic information
+    let coordinator_ip = get_coordinator_ip().await;
+    log!("Coordinator IP: {}", coordinator_ip);
+    log!("Attempting to connect to {} backend(s)", backend_hosts.len());
+    for (idx, host) in backend_hosts.iter().enumerate() {
+        log!("  Backend {}: {}:{}", idx + 1, host.hostname, host.port);
+    }
+    
     // Step 1: Initialize colony if not already done - should ALWAYS be done
     log!("Step 1: Initializing colony");
     
     // Try to get colony info from the first backend
+    log!("Connecting to first backend {}:{} to get colony info", 
+        backend_hosts[0].hostname, backend_hosts[0].port);
     let mut stream = match connect_to_backend(&backend_hosts[0].hostname, backend_hosts[0].port).await {
         Ok(stream) => stream,
         Err(e) => {
             log_error!("Failed to connect to backend {}:{} after retries: {}", 
                       backend_hosts[0].hostname, backend_hosts[0].port, e);
-            return;
+            return false;
         }
     };
     let colony_info = get_colony_info(&mut stream).await;
@@ -164,7 +209,9 @@ pub async fn initialize_colony() {
         },
         Some(GetColonyInfoResponse::ColonyNotInitialized) | None => {
             // Initialize colony on all backends
-            for backend_host in backend_hosts.iter() {
+            log!("Colony not initialized, initializing on all {} backend(s)", backend_hosts.len());
+            for (idx, backend_host) in backend_hosts.iter().enumerate() {
+                log!("Initializing colony on backend {}: {}:{}", idx + 1, backend_host.hostname, backend_host.port);
                 let mut stream = match connect_to_backend(&backend_host.hostname, backend_host.port).await {
                     Ok(stream) => stream,
                     Err(e) => {
@@ -186,23 +233,43 @@ pub async fn initialize_colony() {
     log!("Step 2: Initializing shards");
     
     let all_shards = generate_shards();
+    let mut shard_failures = 0;
+    let mut shard_successes = 0;
     
     // Initialize shards on their respective backends
+    log!("Initializing {} shards across {} backend(s)", all_shards.len(), backend_hosts.len());
     for shard in all_shards.iter() {
         if let Some(host_info) = topology.get_host_for_shard(shard) {
+            log!("Initializing shard {:?} on backend {}:{}", shard, host_info.hostname, host_info.port);
             let mut stream = match connect_to_backend(&host_info.hostname, host_info.port).await {
                 Ok(stream) => stream,
                 Err(e) => {
                     log_error!("Failed to connect to backend {}:{} for shard {:?} after retries: {}", 
                               host_info.hostname, host_info.port, shard, e);
+                    shard_failures += 1;
                     continue;
                 }
             };
             send_init_colony_shard(&mut stream, *shard).await;
+            shard_successes += 1;
         } else {
             log_error!("No backend found for shard {:?}", shard);
+            shard_failures += 1;
         }
-    }    
+    }
+    
+    // If all shard initializations failed, return false
+    if shard_successes == 0 && !all_shards.is_empty() {
+        log_error!("All shard initializations failed. Colony initialization failed.");
+        return false;
+    }
+    
+    // If more than half of shards failed, consider it a failure
+    if shard_failures > shard_successes && shard_failures > 0 {
+        log_error!("Too many shard initialization failures ({} failed, {} succeeded). Colony initialization failed.", 
+                  shard_failures, shard_successes);
+        return false;
+    }
 
     // Step 3: Initialize topography
     if matches!(context.get_coord_stored_info().status, ColonyStatus::NotInitialized) {
@@ -235,4 +302,5 @@ pub async fn initialize_colony() {
     }
     
     log!("Colony initialization completed with status: {:?}", context.get_coord_stored_info().status);
+    true
 } 
