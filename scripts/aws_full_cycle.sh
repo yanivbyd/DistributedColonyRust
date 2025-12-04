@@ -536,6 +536,51 @@ else
     INSTANCE_LOG_DIR=$(ls -td "${LOG_DIR}"/*/ 2>/dev/null | head -1 | sed 's|/$||' || echo "${LOG_DIR}/$(date +"%Y%m%d_%H%M%S")")
 fi
 
+# Step 6c: Check for panics in the collected logs
+print_step "Step 6c: Checking for panics in application logs..."
+if [ -n "$INSTANCE_LOG_DIR" ] && [ -d "$INSTANCE_LOG_DIR" ]; then
+    log "Searching for [PANIC] in logs directory: $INSTANCE_LOG_DIR"
+    PANIC_FOUND=$(find "$INSTANCE_LOG_DIR" -type f -name "*.log" -exec grep -l "\[PANIC\]" {} \; 2>/dev/null || true)
+    
+    if [ -n "$PANIC_FOUND" ]; then
+        print_error "PANIC detected in application logs!"
+        log_output "=========================================="
+        log_output "PANIC DETECTED - Deployment FAILED"
+        log_output "=========================================="
+        log_output ""
+        log_output "Files containing [PANIC]:"
+        echo "$PANIC_FOUND" | while read -r panic_file; do
+            if [ -n "$panic_file" ]; then
+                log_output "  - $panic_file"
+            fi
+        done
+        log_output ""
+        log_output "Panic messages:"
+        echo "$PANIC_FOUND" | while read -r panic_file; do
+            if [ -n "$panic_file" ]; then
+                log_output "--- Panic in $panic_file ---"
+                grep -A 20 "\[PANIC\]" "$panic_file" 2>/dev/null | tee -a "$LOG_FILE" || true
+                log_output ""
+            fi
+        done
+        log_output "=========================================="
+        {
+            echo ""
+            echo "=========================================="
+            echo "Deployment FAILED at Step 6c: PANIC detected in logs"
+            echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+            echo "=========================================="
+        } >> "$LOG_FILE"
+        exit 1
+    else
+        print_status "No panics detected in application logs ✓"
+        log "No [PANIC] found in collected logs"
+    fi
+else
+    print_warning "Could not check for panics - log directory not available"
+    log "Skipping panic check - INSTANCE_LOG_DIR not set or not a directory"
+fi
+
 # Summary
 print_step "Deployment Cycle Complete!"
 log_output "LOGS:"
