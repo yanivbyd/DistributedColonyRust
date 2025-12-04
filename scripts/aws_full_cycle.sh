@@ -13,7 +13,6 @@ KEY_PATH=${KEY_PATH:-"CDK/distributed-colony-key.pem"}
 COORDINATOR_HTTP_PORT=8084
 BACKEND_PORT=8082
 COORDINATOR_PORT=8083
-LOG_DIR="${WORKSPACE_ROOT}/logs"
 
 # Colors for output
 RED='\033[0;31m'
@@ -49,15 +48,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$WORKSPACE_ROOT"
 
-# Set up logging
+# Set up logging directories (must be after WORKSPACE_ROOT is defined)
+LOG_DIR="${WORKSPACE_ROOT}/logs"
 RUN_LOGS_DIR="${WORKSPACE_ROOT}/run_logs"
 mkdir -p "$RUN_LOGS_DIR"
 LOG_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 LOG_FILE="${RUN_LOGS_DIR}/aws_full_cycle_${LOG_TIMESTAMP}.log"
 
-# Function to log to both console and file
+# Function to log to both console and file (for important messages)
 log_output() {
     echo "$@" | tee -a "$LOG_FILE"
+}
+
+# Function to log only to file (for verbose diagnostic information)
+log() {
+    echo "$@" >> "$LOG_FILE"
 }
 
 # Trap handler to log errors on unexpected exit
@@ -104,9 +109,6 @@ print_step "Starting AWS Full Cycle Deployment" | tee -a "$LOG_FILE"
 log_output "=========================================="
 log_output "Log file: $LOG_FILE"
 log_output ""
-
-# Step 0: Destroy existing CDK stack (if any)
-print_step "Step 0: Destroying existing CDK infrastructure (if any)..."
 
 cd "${WORKSPACE_ROOT}/CDK"
 
@@ -192,7 +194,6 @@ TEMP_BUILD_LOG=$(mktemp)
 trap "rm -f $TEMP_BUILD_LOG" EXIT
 
 # Build and push colony image
-log_output "Running: ./build-and-push-colony.sh"
 if ./build-and-push-colony.sh > "$TEMP_BUILD_LOG" 2>&1; then
     # Extract only high-level status and errors from the build log
     grep -E "(INFO|WARNING|ERROR|Step|Successfully|completed|duration|Duration)" "$TEMP_BUILD_LOG" | tee -a "$LOG_FILE" || true
@@ -224,11 +225,57 @@ print_step "Step 3: Deploying CDK infrastructure..."
 
 cd "${WORKSPACE_ROOT}/CDK"
 
+# Verify we're in the right directory and cdk.json exists
+log "Current directory: $(pwd)"
+if [ ! -f "cdk.json" ]; then
+    print_error "cdk.json not found in CDK directory!"
+    log_output "Expected location: ${WORKSPACE_ROOT}/CDK/cdk.json"
+    log "Directory contents:"
+    ls -la >> "$LOG_FILE" || true
+    {
+        echo ""
+        echo "=========================================="
+        echo "Deployment FAILED at Step 3: cdk.json not found"
+        echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+        echo "=========================================="
+    } >> "$LOG_FILE"
+    exit 1
+fi
+
 # Check if CDK is installed
 if ! command -v cdk &> /dev/null; then
     print_warning "CDK CLI not found. Installing dependencies..."
-    npm install
+    if ! npm install; then
+        print_error "npm install failed!"
+        log_output "npm install output:"
+        {
+            echo ""
+            echo "=========================================="
+            echo "Deployment FAILED at Step 3: npm install failed"
+            echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+            echo "=========================================="
+        } >> "$LOG_FILE"
+        exit 1
+    fi
 fi
+
+# Verify CDK is now available
+if ! command -v cdk &> /dev/null; then
+    print_error "CDK CLI still not available after npm install!"
+    log "Checking for CDK in node_modules:"
+    ls -la node_modules/.bin/cdk >> "$LOG_FILE" 2>&1 || true
+    {
+        echo ""
+        echo "=========================================="
+        echo "Deployment FAILED at Step 3: CDK CLI not available"
+        echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+        echo "=========================================="
+    } >> "$LOG_FILE"
+    exit 1
+fi
+
+# Show CDK version for debugging
+log "CDK version: $(cdk --version 2>&1 || echo 'unknown')"
 
 # Bootstrap CDK if needed (silent if already bootstrapped)
 print_status "Bootstrapping CDK (if needed)..."
@@ -236,7 +283,9 @@ cdk bootstrap 2>&1 | grep -v "already bootstrapped" || true
 
 # Deploy the stack
 print_status "Deploying CDK stack: $STACK_NAME"
-log_output "Running: cdk deploy $STACK_NAME --require-approval never"
+log "CDK command: cdk deploy $STACK_NAME --require-approval never"
+log "Working directory: $(pwd)"
+log "cdk.json exists: $([ -f cdk.json ] && echo 'yes' || echo 'no')"
 # Capture CDK output to filter verbose logs
 TEMP_CDK_LOG=$(mktemp)
 trap "rm -f $TEMP_CDK_LOG" EXIT
@@ -248,16 +297,23 @@ if cdk deploy "$STACK_NAME" --require-approval never > "$TEMP_CDK_LOG" 2>&1; the
 else
     CDK_EXIT_CODE=$?
     # On failure, show errors and context
-    print_error "CDK deployment failed!"
+    print_error "CDK deployment failed with exit code: $CDK_EXIT_CODE"
+    log_output "CDK diagnostic information:"
+    log "  Current directory: $(pwd)"
+    log "  cdk.json exists: $([ -f cdk.json ] && echo 'yes' || echo 'no')"
+    log "  CDK version: $(cdk --version 2>&1 || echo 'unknown')"
+    log "  CDK command attempted: cdk deploy $STACK_NAME --require-approval never"
+    log ""
     log_output "CDK output (errors and context):"
-    grep -E "(ERROR|error|Error|failed|Failed|rollback|Rollback)" "$TEMP_CDK_LOG" -A 3 -B 1 | tee -a "$LOG_FILE" || true
-    # Also show last 30 lines as context
-    log_output "Last 30 lines of CDK output:"
-    tail -30 "$TEMP_CDK_LOG" | tee -a "$LOG_FILE" || true
+    grep -E "(ERROR|error|Error|failed|Failed|rollback|Rollback|required|not found|missing)" "$TEMP_CDK_LOG" -A 3 -B 1 | tee -a "$LOG_FILE" || true
+    log ""
+    log "Full CDK output:"
+    cat "$TEMP_CDK_LOG" >> "$LOG_FILE"
     {
         echo ""
         echo "=========================================="
-        echo "Deployment FAILED at Step 3"
+        echo "Deployment FAILED at Step 3: CDK deployment failed"
+        echo "Exit code: $CDK_EXIT_CODE"
         echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
         echo "=========================================="
     } >> "$LOG_FILE"
@@ -276,7 +332,7 @@ sleep 30
 print_step "Step 5: Testing coordinator endpoint..."
 
 print_status "Finding coordinator instance..."
-log_output "Querying AWS for coordinator instances..."
+log "Querying AWS for coordinator instances..."
 COORDINATOR_INSTANCE_ID=$(aws ec2 describe-instances \
   --filters \
     Name=instance-state-name,Values=running \
@@ -298,10 +354,9 @@ if [ -z "$COORDINATOR_INSTANCE_ID" ] || [ "$COORDINATOR_INSTANCE_ID" == "None" ]
     exit 1
 fi
 
-log_output "Found coordinator instance: $COORDINATOR_INSTANCE_ID"
 print_status "Coordinator Instance ID: $COORDINATOR_INSTANCE_ID"
 
-log_output "Getting coordinator public IP..."
+log "Getting coordinator public IP..."
 COORDINATOR_IP=$(aws ec2 describe-instances \
   --instance-ids "${COORDINATOR_INSTANCE_ID}" \
   --query 'Reservations[0].Instances[0].PublicIpAddress' \
@@ -320,28 +375,24 @@ if [ -z "$COORDINATOR_IP" ] || [ "$COORDINATOR_IP" == "None" ]; then
     exit 1
 fi
 
-log_output "Coordinator Public IP: $COORDINATOR_IP"
 print_status "Coordinator Public IP: $COORDINATOR_IP"
 
 # Wait a bit more for services to start
 print_status "Waiting 10 more seconds for services to start..."
 sleep 10
 
-# Test coordinator HTTP endpoint
-print_status "Testing coordinator HTTP endpoint (cloud-start)..."
+# Test coordinator HTTP endpoint (using GET to verify server is up without triggering cloud-start)
+print_status "Testing coordinator HTTP endpoint (health check)..."
 COORDINATOR_URL="http://${COORDINATOR_IP}:${COORDINATOR_HTTP_PORT}/cloud-start"
-log_output "Testing URL: $COORDINATOR_URL"
 
-# Try to curl the endpoint (don't fail script on HTTP errors)
+# Try to curl the endpoint with GET (don't fail script on HTTP errors)
+# GET /cloud-start returns "Cloud-start API" without triggering the actual cloud-start process
 RESPONSE_FILE="/tmp/coordinator_curl_response.txt"
-log_output "Running: curl -X POST $COORDINATOR_URL"
+log_output "Running: curl -X GET $COORDINATOR_URL"
 
 # Capture HTTP code and response separately
-HTTP_CODE=$(curl -s -o "$RESPONSE_FILE" -w "%{http_code}" -X POST "$COORDINATOR_URL" 2>&1 || echo "000")
+HTTP_CODE=$(curl -s -o "$RESPONSE_FILE" -w "%{http_code}" -X GET "$COORDINATOR_URL" || echo "000")
 CURL_EXIT_CODE=$?
-
-log_output "HTTP Status Code: $HTTP_CODE"
-log_output "Curl exit code: $CURL_EXIT_CODE"
 
 if [ "$CURL_EXIT_CODE" -eq 0 ] && [ -f "$RESPONSE_FILE" ]; then
     if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
@@ -361,6 +412,40 @@ else
     if [ -f "$RESPONSE_FILE" ]; then
         log_output "Error response:"
         cat "$RESPONSE_FILE" 2>/dev/null | tee -a "$LOG_FILE" || true
+    fi
+fi
+
+# Test debug-ssm endpoint
+print_status "Testing coordinator debug-ssm endpoint..."
+DEBUG_SSM_URL="http://${COORDINATOR_IP}:${COORDINATOR_HTTP_PORT}/debug-ssm"
+DEBUG_RESPONSE_FILE="/tmp/coordinator_debug_ssm_response.txt"
+log_output "Running: curl -X GET $DEBUG_SSM_URL"
+
+# Capture HTTP code and response separately
+DEBUG_HTTP_CODE=$(curl -s -o "$DEBUG_RESPONSE_FILE" -w "%{http_code}" -X GET "$DEBUG_SSM_URL" || echo "000")
+DEBUG_CURL_EXIT_CODE=$?
+
+log_output "HTTP Status Code: $DEBUG_HTTP_CODE"
+log_output "Curl exit code: $DEBUG_CURL_EXIT_CODE"
+
+if [ "$DEBUG_CURL_EXIT_CODE" -eq 0 ] && [ -f "$DEBUG_RESPONSE_FILE" ]; then
+    if [ "$DEBUG_HTTP_CODE" -ge 200 ] && [ "$DEBUG_HTTP_CODE" -lt 300 ]; then
+        print_status "Debug-SSM endpoint responded successfully! (HTTP $DEBUG_HTTP_CODE)"
+    else
+        print_warning "Debug-SSM endpoint returned status code: $DEBUG_HTTP_CODE"
+    fi
+    log_output "Response body:"
+    if [ -s "$DEBUG_RESPONSE_FILE" ]; then
+        cat "$DEBUG_RESPONSE_FILE" | tee -a "$LOG_FILE"
+    else
+        log_output "(empty response)"
+    fi
+    echo "" >> "$LOG_FILE"
+else
+    print_warning "Failed to connect to debug-ssm endpoint (service may not be ready yet)"
+    if [ -f "$DEBUG_RESPONSE_FILE" ]; then
+        log_output "Error response:"
+        cat "$DEBUG_RESPONSE_FILE" 2>/dev/null | tee -a "$LOG_FILE" || true
     fi
 fi
 
@@ -407,10 +492,8 @@ fi
 # Step 6: Wait for logs to be generated, then copy logs from spot instances
 print_step "Step 6: Waiting for logs to be generated..."
 print_status "Waiting 2 minutes to allow application logs to be generated..."
-log_output "This allows the application to run and generate logs before collection."
 sleep 120
 print_status "Wait completed, proceeding to log collection..."
-log_output ""
 
 print_step "Step 6b: Copying application logs from spot instances..."
 
@@ -455,47 +538,16 @@ fi
 
 # Summary
 print_step "Deployment Cycle Complete!"
-log_output ""
-log_output "=========================================="
-log_output "DEPLOYMENT SUMMARY"
-log_output "=========================================="
-log_output "Stack Name: $STACK_NAME"
-log_output "AWS Region: $AWS_REGION"
-log_output ""
-log_output "COORDINATOR:"
-log_output "  Instance ID: $COORDINATOR_INSTANCE_ID"
-log_output "  Public IP: $COORDINATOR_IP"
-log_output "  HTTP URL: http://${COORDINATOR_IP}:${COORDINATOR_HTTP_PORT}"
-log_output "  Protocol Port: $COORDINATOR_PORT"
-log_output ""
-log_output "BACKEND:"
-log_output "  Port: $BACKEND_PORT"
-if [ -n "$BACKEND_INSTANCES" ]; then
-    BACKEND_COUNT=$(echo "$BACKEND_INSTANCES" | grep -v "^$" | wc -l | tr -d ' ')
-    log_output "  Instance Count: $BACKEND_COUNT"
-    echo "$BACKEND_INSTANCES" | while read -r instance_id public_ip; do
-        if [ -n "$instance_id" ]; then
-            log_output "    - $instance_id ($public_ip)"
-        fi
-    done
-else
-    log_output "  Instance Count: 0"
-fi
-log_output ""
 log_output "LOGS:"
 if [ -n "$INSTANCE_LOG_DIR" ] && [ -d "$INSTANCE_LOG_DIR" ]; then
     log_output "  Application Logs: $INSTANCE_LOG_DIR"
 else
     log_output "  Application Logs: (not available)"
 fi
-log_output "  Run Log File: $LOG_FILE"
-log_output "=========================================="
-log_output ""
 
 # Add footer to log file
 {
     echo "=========================================="
-    echo "Deployment COMPLETED SUCCESSFULLY"
     echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
     echo "=========================================="
 } >> "$LOG_FILE"

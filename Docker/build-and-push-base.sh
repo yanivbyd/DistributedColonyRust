@@ -165,15 +165,6 @@ fi
 print_status "Base image successfully built and pushed to ECR!"
 print_status "Base Image URI: $ECR_BASE_URI"
 
-# Display image information
-print_status "Base image details:"
-aws ecr describe-images \
-    --repository-name $ECR_BASE_REPOSITORY \
-    --image-ids imageTag=$BASE_IMAGE_TAG \
-    --region $AWS_REGION \
-    --query 'imageDetails[0].{Size:imageSizeInBytes,PushedAt:imagePushedAt,Digest:imageDigest}' \
-    --output table
-
 print_status "Base image build and push completed successfully!"
 
 end_time=$(date +%s)

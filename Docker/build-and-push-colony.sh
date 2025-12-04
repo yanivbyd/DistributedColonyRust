@@ -193,15 +193,6 @@ fi
 print_status "Colony image successfully built and pushed to ECR!"
 print_status "Image URI: $ECR_URI"
 
-# Display image information
-print_status "Colony image details:"
-aws ecr describe-images \
-    --repository-name $ECR_REPOSITORY \
-    --image-ids imageTag=$IMAGE_TAG \
-    --region $AWS_REGION \
-    --query 'imageDetails[0].{Size:imageSizeInBytes,PushedAt:imagePushedAt,Digest:imageDigest}' \
-    --output table
-
 print_status "Build and push completed successfully!"
 print_status "You can now deploy your CDK stack with: cd ../CDK && npm run deploy"
 
