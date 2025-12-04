@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, Duration};
 use tokio::sync::Mutex;
 use tokio::net::TcpStream;
+use backoff::{ExponentialBackoff, Error as BackoffError};
 use crate::cluster_topology::HostInfo;
 
 #[derive(Clone)]
@@ -40,8 +41,8 @@ impl AsyncConnectionPool {
             }
         }
         
-        // Create new connection
-        let stream = match TcpStream::connect(&addr).await {
+        // Create new connection with exponential backoff retry
+        let stream = match connect_with_backoff(&addr).await {
             Ok(stream) => Some(stream),
             Err(_) => None,
         };
@@ -72,5 +73,28 @@ impl AsyncConnectionPool {
             }
         });
     }
+}
 
+/// Connect to a backend with exponential backoff retry
+async fn connect_with_backoff(addr: &str) -> Result<TcpStream, std::io::Error> {
+    // Configure exponential backoff: start with 100ms, max 2s, max 10s total
+    let backoff = ExponentialBackoff {
+        initial_interval: Duration::from_millis(100),
+        max_interval: Duration::from_secs(2),
+        max_elapsed_time: Some(Duration::from_secs(10)),
+        multiplier: 2.0,
+        ..Default::default()
+    };
+    
+    let operation = || async {
+        match TcpStream::connect(addr).await {
+            Ok(stream) => Ok(stream),
+            Err(e) => {
+                crate::log_error!("Failed to connect to backend at {}: {}", addr, e);
+                Err(BackoffError::transient(e))
+            }
+        }
+    };
+    
+    backoff::future::retry(backoff, operation).await
 }

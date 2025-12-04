@@ -1,9 +1,11 @@
 use std::net::TcpStream;
 use std::io::{Read, Write};
 use std::sync::OnceLock;
+use std::time::Duration;
 use bincode;
 use tokio::net::TcpStream as TokioTcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use backoff::{ExponentialBackoff, Error as BackoffError};
 use crate::connection_pool::AsyncConnectionPool;
 use crate::cluster_topology::HostInfo;
 
@@ -25,8 +27,9 @@ pub async fn send_request_with_pool<Req: serde::Serialize, Resp: serde::de::Dese
     let stream = if let Some(ref mut stream) = conn.stream {
         stream
     } else {
-        // Recreate connection if it was closed
-        let new_stream = TokioTcpStream::connect(&host_info.to_address()).await?;
+        // Recreate connection if it was closed (with retry and backoff)
+        let addr = host_info.to_address();
+        let new_stream = connect_with_backoff(&addr).await?;
         conn.stream = Some(new_stream);
         conn.is_healthy = true;
         conn.stream.as_mut().unwrap()
@@ -83,4 +86,28 @@ pub async fn send_request_and_receive_response_async<Req: serde::Serialize, Resp
 ) -> Result<Resp, Box<dyn std::error::Error + Send + Sync>> {
     send_request_async(stream, request).await?;
     receive_response_async(stream).await
+}
+
+/// Connect to a backend with exponential backoff retry
+async fn connect_with_backoff(addr: &str) -> Result<TokioTcpStream, std::io::Error> {
+    // Configure exponential backoff: start with 100ms, max 2s, max 10s total
+    let backoff = ExponentialBackoff {
+        initial_interval: Duration::from_millis(100),
+        max_interval: Duration::from_secs(2),
+        max_elapsed_time: Some(Duration::from_secs(10)),
+        multiplier: 2.0,
+        ..Default::default()
+    };
+    
+    let operation = || async {
+        match TokioTcpStream::connect(addr).await {
+            Ok(stream) => Ok(stream),
+            Err(e) => {
+                crate::log_error!("Failed to connect to backend at {}: {}", addr, e);
+                Err(BackoffError::transient(e))
+            }
+        }
+    };
+    
+    backoff::future::retry(backoff, operation).await
 }

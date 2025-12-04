@@ -18,7 +18,8 @@ tokio-util = { version = "0.7", features = ["codec"] }
 tokio-stream = "0.1"
 futures-util = { version = "0.3", features = ["sink"] }
 aws-config = "1.1"
-aws-sdk-ssm = "1.13" 
+aws-sdk-ssm = "1.13"
+backoff = { version = "0.4", features = ["tokio"] } 
 
 [features]
 # Cloud/AWS specific code paths and tests

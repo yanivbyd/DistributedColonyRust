@@ -8,6 +8,8 @@ use shared::{log, log_error};
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bincode;
+use backoff::{ExponentialBackoff, Error as BackoffError};
+use std::time::Duration;
 use crate::coordinator_storage::{CoordinatorStorage, CoordinatorStoredInfo, ColonyStatus};
 use crate::coordinator_context::CoordinatorContext;
 
@@ -61,15 +63,29 @@ async fn get_colony_info(stream: &mut TcpStream) -> Option<GetColonyInfoResponse
     }
 }
 
-async fn connect_to_backend(hostname: &str, port: u16) -> TcpStream {
+async fn connect_to_backend(hostname: &str, port: u16) -> Result<TcpStream, std::io::Error> {
     let addr = format!("{}:{}", hostname, port);
-    match TcpStream::connect(&addr).await {
-        Ok(stream) => stream,
-        Err(e) => {
-            log_error!("Failed to connect to backend at {}: {}", addr, e);
-            panic!("Failed to connect to backend at {}: {}", addr, e);
+    
+    // Configure exponential backoff: start with 100ms, max 2s, max 5 retries
+    let backoff = ExponentialBackoff {
+        initial_interval: Duration::from_millis(100),
+        max_interval: Duration::from_secs(2),
+        max_elapsed_time: Some(Duration::from_secs(10)),
+        multiplier: 2.0,
+        ..Default::default()
+    };
+    
+    let operation = || async {
+        match TcpStream::connect(&addr).await {
+            Ok(stream) => Ok(stream),
+            Err(e) => {
+                log_error!("Failed to connect to backend at {}: {}", addr, e);
+                Err(BackoffError::transient(e))
+            }
         }
-    }
+    };
+    
+    backoff::future::retry(backoff, operation).await
 }
 
 async fn send_init_colony(stream: &mut TcpStream) {
@@ -128,7 +144,14 @@ pub async fn initialize_colony() {
     log!("Step 1: Initializing colony");
     
     // Try to get colony info from the first backend
-    let mut stream = connect_to_backend(&backend_hosts[0].hostname, backend_hosts[0].port).await;
+    let mut stream = match connect_to_backend(&backend_hosts[0].hostname, backend_hosts[0].port).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            log_error!("Failed to connect to backend {}:{} after retries: {}", 
+                      backend_hosts[0].hostname, backend_hosts[0].port, e);
+            return;
+        }
+    };
     let colony_info = get_colony_info(&mut stream).await;
     log!("Colony info: {:?}", colony_info);
     
@@ -142,7 +165,14 @@ pub async fn initialize_colony() {
         Some(GetColonyInfoResponse::ColonyNotInitialized) | None => {
             // Initialize colony on all backends
             for backend_host in backend_hosts.iter() {
-                let mut stream = connect_to_backend(&backend_host.hostname, backend_host.port).await;
+                let mut stream = match connect_to_backend(&backend_host.hostname, backend_host.port).await {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        log_error!("Failed to connect to backend {}:{} after retries: {}", 
+                                  backend_host.hostname, backend_host.port, e);
+                        continue;
+                    }
+                };
                 send_init_colony(&mut stream).await;
             }
             let mut coord_info = context.get_coord_stored_info();
@@ -160,7 +190,14 @@ pub async fn initialize_colony() {
     // Initialize shards on their respective backends
     for shard in all_shards.iter() {
         if let Some(host_info) = topology.get_host_for_shard(shard) {
-            let mut stream = connect_to_backend(&host_info.hostname, host_info.port).await;
+            let mut stream = match connect_to_backend(&host_info.hostname, host_info.port).await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    log_error!("Failed to connect to backend {}:{} for shard {:?} after retries: {}", 
+                              host_info.hostname, host_info.port, shard, e);
+                    continue;
+                }
+            };
             send_init_colony_shard(&mut stream, *shard).await;
         } else {
             log_error!("No backend found for shard {:?}", shard);
