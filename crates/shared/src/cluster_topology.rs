@@ -331,6 +331,14 @@ impl ClusterTopology {
         INSTANCE.get().is_some()
     }
     
+    /// Check if ClusterTopology is using static localhost topology
+    /// Returns true if using static topology (127.0.0.1), false if using dynamic topology
+    pub fn is_using_static_topology() -> bool {
+        let topology = Self::get_instance();
+        // Static topology always uses 127.0.0.1 as hostname
+        topology.backend_hosts.iter().any(|h| h.hostname == HOSTNAME)
+    }
+    
     /// Initialize ClusterTopology with a dynamic topology (for cloud-start mode)
     /// This must be called before get_instance() is called for the first time
     /// Returns Ok(()) if successful
