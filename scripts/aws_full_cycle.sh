@@ -154,6 +154,31 @@ fi
 
 cd "${WORKSPACE_ROOT}"
 
+# Clean up stale SSM parameters from previous deployments
+print_step "Step 0: Cleaning up stale SSM parameters..."
+SSM_CLEANUP_COUNT=0
+if SSM_PARAMS=$(aws ssm get-parameters-by-path --path "/colony/backends" --region "${AWS_REGION}" --query 'Parameters[*].Name' --output text 2>&1); then
+    if [ -n "$SSM_PARAMS" ] && [ "$SSM_PARAMS" != "None" ]; then
+        for param_name in $SSM_PARAMS; do
+            if [ -n "$param_name" ]; then
+                if aws ssm delete-parameter --name "$param_name" --region "${AWS_REGION}" 2>&1 | tee -a "$LOG_FILE" > /dev/null; then
+                    SSM_CLEANUP_COUNT=$((SSM_CLEANUP_COUNT + 1))
+                    log "Deleted stale SSM parameter: $param_name"
+                fi
+            fi
+        done
+        if [ $SSM_CLEANUP_COUNT -gt 0 ]; then
+            print_status "Cleaned up $SSM_CLEANUP_COUNT stale SSM parameter(s)"
+        else
+            print_status "No stale SSM parameters found (or cleanup failed)"
+        fi
+    else
+        print_status "No SSM parameters to clean up"
+    fi
+else
+    print_warning "Failed to query SSM parameters (may not exist yet, continuing)"
+fi
+
 # Check prerequisites
 print_step "Step 1: Checking prerequisites..."
 
@@ -174,7 +199,7 @@ if [ ! -f "$EXPANDED_KEY_PATH" ]; then
 fi
 
 # Step 2: Build and push Docker image
-print_step "Step 2: Building and pushing Docker images..."
+print_step "Step 2: Building and pushing Docker image..."
 cd "${WORKSPACE_ROOT}/Docker"
 
 if [ ! -f "build-and-push-colony.sh" ]; then
@@ -193,10 +218,11 @@ fi
 TEMP_BUILD_LOG=$(mktemp)
 trap "rm -f $TEMP_BUILD_LOG" EXIT
 
-# Build and push colony image
+# Build and push colony image (suppress verbose output)
+print_status "Building and pushing Docker image (this may take a few minutes)..."
 if ./build-and-push-colony.sh > "$TEMP_BUILD_LOG" 2>&1; then
-    # Extract only high-level status and errors from the build log
-    grep -E "(INFO|WARNING|ERROR|Step|Successfully|completed|duration|Duration)" "$TEMP_BUILD_LOG" | tee -a "$LOG_FILE" || true
+    # Only show final success message and total duration
+    grep -E "(TOTAL DURATION|build and push completed successfully)" "$TEMP_BUILD_LOG" | tee -a "$LOG_FILE" || true
     print_status "Colony Docker image built and pushed successfully!"
 else
     BUILD_EXIT_CODE=$?
@@ -278,11 +304,9 @@ fi
 log "CDK version: $(cdk --version 2>&1 || echo 'unknown')"
 
 # Bootstrap CDK if needed (silent if already bootstrapped)
-print_status "Bootstrapping CDK (if needed)..."
 cdk bootstrap 2>&1 | grep -v "already bootstrapped" || true
 
 # Deploy the stack
-print_status "Deploying CDK stack: $STACK_NAME"
 log "CDK command: cdk deploy $STACK_NAME --require-approval never"
 log "Working directory: $(pwd)"
 log "cdk.json exists: $([ -f cdk.json ] && echo 'yes' || echo 'no')"
@@ -446,6 +470,40 @@ else
     if [ -f "$DEBUG_RESPONSE_FILE" ]; then
         log_output "Error response:"
         cat "$DEBUG_RESPONSE_FILE" 2>/dev/null | tee -a "$LOG_FILE" || true
+    fi
+fi
+
+# Test debug-network endpoint
+print_status "Testing coordinator debug-network endpoint..."
+DEBUG_NETWORK_URL="http://${COORDINATOR_IP}:${COORDINATOR_HTTP_PORT}/debug-network"
+DEBUG_NETWORK_RESPONSE_FILE="/tmp/coordinator_debug_network_response.txt"
+log_output "Running: curl -X GET $DEBUG_NETWORK_URL"
+
+# Capture HTTP code and response separately
+DEBUG_NETWORK_HTTP_CODE=$(curl -s -o "$DEBUG_NETWORK_RESPONSE_FILE" -w "%{http_code}" -X GET "$DEBUG_NETWORK_URL" || echo "000")
+DEBUG_NETWORK_CURL_EXIT_CODE=$?
+
+log_output "HTTP Status Code: $DEBUG_NETWORK_HTTP_CODE"
+log_output "Curl exit code: $DEBUG_NETWORK_CURL_EXIT_CODE"
+
+if [ "$DEBUG_NETWORK_CURL_EXIT_CODE" -eq 0 ] && [ -f "$DEBUG_NETWORK_RESPONSE_FILE" ]; then
+    if [ "$DEBUG_NETWORK_HTTP_CODE" -ge 200 ] && [ "$DEBUG_NETWORK_HTTP_CODE" -lt 300 ]; then
+        print_status "Debug-Network endpoint responded successfully! (HTTP $DEBUG_NETWORK_HTTP_CODE)"
+    else
+        print_warning "Debug-Network endpoint returned status code: $DEBUG_NETWORK_HTTP_CODE"
+    fi
+    log_output "Response body:"
+    if [ -s "$DEBUG_NETWORK_RESPONSE_FILE" ]; then
+        cat "$DEBUG_NETWORK_RESPONSE_FILE" | tee -a "$LOG_FILE"
+    else
+        log_output "(empty response)"
+    fi
+    echo "" >> "$LOG_FILE"
+else
+    print_warning "Failed to connect to debug-network endpoint (service may not be ready yet)"
+    if [ -f "$DEBUG_NETWORK_RESPONSE_FILE" ]; then
+        log_output "Error response:"
+        cat "$DEBUG_NETWORK_RESPONSE_FILE" 2>/dev/null | tee -a "$LOG_FILE" || true
     fi
 fi
 
