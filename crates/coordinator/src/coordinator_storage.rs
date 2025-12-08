@@ -18,6 +18,7 @@ pub struct CoordinatorStoredInfo {
     pub colony_life_rules: Option<ColonyLifeRules>,
     pub colony_events: Vec<ColonyEventDescription>,
     pub pause_events_till: u64,
+    pub cloud_start_idempotency_key: Option<String>,
 }
 
 impl CoordinatorStoredInfo {
@@ -29,6 +30,7 @@ impl CoordinatorStoredInfo {
             colony_life_rules: None,
             colony_events: Vec::new(),
             pause_events_till: 0,
+            cloud_start_idempotency_key: None,
         }
     }
     
