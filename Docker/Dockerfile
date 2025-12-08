@@ -1,10 +1,22 @@
 # Multi-stage Docker build for DistributedColony using cargo-chef
-# Stage 1: Build the Rust application using base image with pre-compiled dependencies
+# Optimized for minimal final image size using distroless runtime
+
+# Stage 1: Planner stage (cargo-chef prepare)
+# Note: This stage is typically handled by the base image, but we reference it here for clarity
 ARG BASE_IMAGE=distributed-colony-base:latest
+
+# Stage 2: Builder stage (cargo-chef cook + cargo build --release)
+# Uses the base image which already has dependencies pre-compiled via cargo-chef
 FROM ${BASE_IMAGE} AS builder
 
 ARG BUILD_VERSION="unknown"
 ENV BUILD_VERSION=${BUILD_VERSION}
+
+# Add Rust build optimizations for smaller binary size
+# -C link-arg=-s: Strip symbols from the final binary
+# Note: LTO cannot be enabled via RUSTFLAGS here due to conflict with embed-bitcode=no in base image
+# LTO can be enabled in Cargo.toml [profile.release] section if desired (requires embed-bitcode=true)
+ENV RUSTFLAGS="-C link-arg=-s"
 
 # Copy the full source code
 COPY crates/ ./crates/
@@ -19,104 +31,45 @@ RUN sed -i '/crates\/gui/d' Cargo.toml
 # The base image has dependencies compiled, so we want Cargo to reuse them
 RUN find crates/ -type f -name "*.rs" -exec touch -t 202001010000.00 {} \; 2>/dev/null || true
 
-# Build the application binaries
+# Build the application binaries with release optimizations
 # Cargo should reuse pre-compiled dependencies from /app/target in the base image
 # The target directory from the base image contains all compiled dependencies
 # Using --offline to ensure Cargo doesn't try to fetch (dependencies already compiled)
 # Cargo's incremental compilation will only rebuild what actually changed
+# LTO is enabled via Cargo.toml release profile settings if configured
 RUN cargo build --release --bin backend --bin coordinator --offline
 
-# Stage 2: Create minimal runtime image
-FROM alpine:3.19
+# Strip the binaries to further reduce size (additional to RUSTFLAGS)
+# This removes debug symbols and other metadata
+RUN strip /app/target/release/backend /app/target/release/coordinator || true
+
+# Stage 3: Runtime stage (minimal distroless image)
+# Using distroless/cc which provides only the C runtime library and CA certificates
+# This results in a dramatically smaller image (~10-40 MB vs ~270 MB)
+FROM gcr.io/distroless/cc AS runtime
 
 ARG BUILD_VERSION="unknown"
 ENV BUILD_VERSION=${BUILD_VERSION}
 
-# Install runtime dependencies
-RUN apk add --no-cache \
-    ca-certificates \
-    curl \
-    libgcc \
-    procps \
-    && rm -rf /var/cache/apk/*
-
-# Create non-root user
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -u 1001 -S appuser -G appgroup
-
-# Set working directory
-WORKDIR /app
-
-# Copy binaries from builder stage
-COPY --from=builder /app/target/release/backend /usr/local/bin/
-COPY --from=builder /app/target/release/coordinator /usr/local/bin/
-
-# Create startup script
-RUN echo '#!/bin/sh' > /usr/local/bin/start.sh && \
-    echo 'set -e' >> /usr/local/bin/start.sh && \
-    echo '' >> /usr/local/bin/start.sh && \
-    echo '# Default values' >> /usr/local/bin/start.sh && \
-    echo 'SERVICE_TYPE=${SERVICE_TYPE:-"backend"}' >> /usr/local/bin/start.sh && \
-    echo 'COORDINATOR_HOST=${COORDINATOR_HOST:-"localhost"}' >> /usr/local/bin/start.sh && \
-    echo 'COORDINATOR_PORT=${COORDINATOR_PORT:-"8083"}' >> /usr/local/bin/start.sh && \
-    echo 'BACKEND_HOST=${BACKEND_HOST:-"0.0.0.0"}' >> /usr/local/bin/start.sh && \
-    echo 'BACKEND_PORT=${BACKEND_PORT:-"8082"}' >> /usr/local/bin/start.sh && \
-    echo '' >> /usr/local/bin/start.sh && \
-    echo 'case "$SERVICE_TYPE" in' >> /usr/local/bin/start.sh && \
-    echo '    "backend")' >> /usr/local/bin/start.sh && \
-    echo '        echo "Starting backend service on $BACKEND_HOST:$BACKEND_PORT in aws mode"' >> /usr/local/bin/start.sh && \
-    echo '        # Backend needs hostname, port, and deployment_mode as arguments' >> /usr/local/bin/start.sh && \
-    echo '        exec /usr/local/bin/backend $BACKEND_HOST $BACKEND_PORT aws' >> /usr/local/bin/start.sh && \
-    echo '        ;;' >> /usr/local/bin/start.sh && \
-    echo '    "coordinator")' >> /usr/local/bin/start.sh && \
-    echo '        echo "Starting coordinator service on port $COORDINATOR_PORT in aws mode"' >> /usr/local/bin/start.sh && \
-    echo '        exec /usr/local/bin/coordinator aws' >> /usr/local/bin/start.sh && \
-    echo '        ;;' >> /usr/local/bin/start.sh && \
-    echo '    *)' >> /usr/local/bin/start.sh && \
-    echo '        echo "Unknown service type: $SERVICE_TYPE"' >> /usr/local/bin/start.sh && \
-    echo '        echo "Valid options: backend, coordinator"' >> /usr/local/bin/start.sh && \
-    echo '        exit 1' >> /usr/local/bin/start.sh && \
-    echo '        ;;' >> /usr/local/bin/start.sh && \
-    echo 'esac' >> /usr/local/bin/start.sh
-
-# Make startup script executable
-RUN chmod +x /usr/local/bin/start.sh
-
-# Create health check script
-RUN echo '#!/bin/sh' > /usr/local/bin/healthcheck.sh && \
-    echo '# Simple health check - check if the process is running' >> /usr/local/bin/healthcheck.sh && \
-    echo 'if [ "$SERVICE_TYPE" = "backend" ]; then' >> /usr/local/bin/healthcheck.sh && \
-    echo '    # Check if backend process is running' >> /usr/local/bin/healthcheck.sh && \
-    echo '    pgrep -f "/usr/local/bin/backend" > /dev/null || exit 1' >> /usr/local/bin/healthcheck.sh && \
-    echo 'elif [ "$SERVICE_TYPE" = "coordinator" ]; then' >> /usr/local/bin/healthcheck.sh && \
-    echo '    # Check if coordinator process is running' >> /usr/local/bin/healthcheck.sh && \
-    echo '    pgrep -f "/usr/local/bin/coordinator" > /dev/null || exit 1' >> /usr/local/bin/healthcheck.sh && \
-    echo 'fi' >> /usr/local/bin/healthcheck.sh && \
-    echo 'exit 0' >> /usr/local/bin/healthcheck.sh
-
-# Make health check script executable
-RUN chmod +x /usr/local/bin/healthcheck.sh
-
-# Prepare writable log directory and change ownership to non-root user
-RUN mkdir -p /app/output/logs \
-    && chown -R appuser:appgroup /usr/local/bin/backend /usr/local/bin/coordinator /usr/local/bin/start.sh /usr/local/bin/healthcheck.sh /app
-
-# Switch to non-root user
-USER appuser
-
-# Expose ports (will be overridden by environment variables)
-EXPOSE 8082 8083
-
-# Add health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD /usr/local/bin/healthcheck.sh
-
-# Set default environment variables
+# Set default environment variables for compatibility
+# Note: In distroless, shell scripts cannot be used, so these are for reference
+# The actual binary selection must be done via CMD override
 ENV SERVICE_TYPE=backend
 ENV COORDINATOR_HOST=localhost
 ENV COORDINATOR_PORT=8083
 ENV BACKEND_HOST=0.0.0.0
 ENV BACKEND_PORT=8082
 
-# Start the application
-CMD ["/usr/local/bin/start.sh"]
+# Copy both binaries from builder stage
+# Both are needed since the image can run either backend or coordinator
+COPY --from=builder /app/target/release/backend /usr/local/bin/backend
+COPY --from=builder /app/target/release/coordinator /usr/local/bin/coordinator
+
+# Expose ports (will be overridden by environment variables in deployment)
+EXPOSE 8082 8083
+
+# Default entrypoint: run backend with default arguments
+# To run coordinator instead, override CMD: docker run ... /usr/local/bin/coordinator aws
+# To run backend with custom args: docker run ... /usr/local/bin/backend <host> <port> aws
+ENTRYPOINT ["/usr/local/bin/backend"]
+CMD ["0.0.0.0", "8082", "aws"]
