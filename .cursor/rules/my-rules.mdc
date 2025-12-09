@@ -15,6 +15,13 @@ No unit tests
 Do not use Rayon, always use tokio for parallelism
 Never clone large objects, such as ColonyShard
 
+## Specification Workflow
+- **Acknowledgment section location**: The "Acknowledgment" section must always be the **first section** in any specification file (placed immediately after the title)
+- **NEVER implement before specification is acknowledged**: All feature specifications in `feature_specs/` directory must have an "Acknowledgment" section at the beginning
+- **Check for acknowledgment**: Before implementing any feature from a spec file, verify that the "Acknowledgment" section shows the specification has been reviewed and approved AND marked as "Ready for implementation"
+- **If not acknowledged**: Only work on the specification itself (updates, clarifications, etc.) - do NOT start implementation
+- **After acknowledgment**: Proceed with implementation according to the specification
+
 ## Code Architecture Guidelines
 - **High-level functions** should focus on business logic and orchestration
 - **Low-level details** (TCP connections, serialization, file I/O, error handling) should be abstracted into separate helper functions
