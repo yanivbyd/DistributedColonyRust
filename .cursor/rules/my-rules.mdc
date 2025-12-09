@@ -11,7 +11,6 @@ Always build after doing changes, make sure no errors or warnings.
 Do not ask for changes, always apply without asking.
 Logging error should be done via log_error.
 Do not run the crates - only check if they build without errors/warnings.
-No unit tests
 Do not use Rayon, always use tokio for parallelism
 Never clone large objects, such as ColonyShard
 
@@ -21,6 +20,7 @@ Never clone large objects, such as ColonyShard
 - **Check for acknowledgment**: Before implementing any feature from a spec file, verify that the "Acknowledgment" section shows the specification has been reviewed and approved AND marked as "Ready for implementation"
 - **If not acknowledged**: Only work on the specification itself (updates, clarifications, etc.) - do NOT start implementation
 - **After acknowledgment**: Proceed with implementation according to the specification
+- **Recommended options in specs**: When a specification presents multiple options and one is recommended, indicate this in the section title by adding "(Recommended)" to the recommended option, e.g., "Option 1: Description (Recommended)". For each alternative option, clearly state the pros and cons compared to the recommended option, and explain the motivation for presenting that alternative option.
 
 ## Code Architecture Guidelines
 - **High-level functions** should focus on business logic and orchestration
