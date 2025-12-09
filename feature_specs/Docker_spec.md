@@ -1,5 +1,8 @@
 # Docker Build System Specification
 
+## Acknowledgment
+Acknowledged by Yaniv
+
 ## Overview
 
 This specification defines a two-stage Docker build system for DistributedColony that separates dependency compilation from application binary creation, enabling fast iterative builds while maintaining minimal production images.
@@ -24,7 +27,7 @@ This specification defines a two-stage Docker build system for DistributedColony
 
 ## Design Principles
 
-0. **Use Cargo-Chef**: Use cargo-chef for efficient dependency caching and fast builds.
+0. **Use Cargo-Chef with Docker BuildKit Cache Mounts**: Use cargo-chef for dependency compilation in base image, and Docker BuildKit cache mounts in colony image to persist compiled dependencies across builds. This ensures fast builds even when Cargo's incremental compilation invalidates its cache.
 1. **AMD64 Platform Only**: All builds must target `linux/amd64` platform only. No multi-arch support.
 2. **Never Pull from ECR**: All builds use local images only. If base image doesn't exist locally, build fails with clear error message.
 3. **Fast Iteration**: Colony image builds must be fast by reusing compiled dependencies from base image.
@@ -57,31 +60,30 @@ Docker/
 2. **Planner Stage** (`FROM chef AS planner`)
    - Copy `Cargo.toml` and `Cargo.lock` (root workspace files)
    - Copy individual crate `Cargo.toml` files (backend, coordinator, shared)
-   - Exclude GUI crate from workspace (platform-specific dependencies)
+   - **CRITICAL: Ensure GUI crate is explicitly excluded in Cargo.toml workspace manifest:**
+     - Workspace must have: `exclude = ["crates/gui"]` or use `members = [...]` without GUI
+     - This prevents Cargo from loading GUI manifest and invalidating dependency layers
    - Create minimal source stubs for all crates (so cargo-chef can parse dependencies)
    - Run `cargo chef prepare --recipe-path recipe.json` to generate dependency recipe
    - Output: `recipe.json` containing all dependency information
 
 3. **Builder Stage** (`FROM chef AS builder`)
    - Copy `recipe.json` from planner stage
-   - Set `RUSTFLAGS="-C link-arg=-s"` to strip symbols from compiled dependencies
+   - Set `RUSTFLAGS="-C link-arg=-s"` to strip symbols from final binaries (not dependencies)
    - Run `cargo chef cook --release --recipe-path recipe.json` to compile all dependencies
    - This stage compiles only dependencies, not application code
-   - Strip debug symbols from compiled object files to reduce image size:
-     - Run `find /app/target/release -name "*.rlib" -exec strip --strip-debug {} \; || true`
-     - Run `find /app/target/release/deps -type f -executable -exec strip --strip-debug {} \; || true`
-   - Final image contains: Rust toolchain, compiled dependencies (without debug info) in `/app/target`, build environment
+   - **CRITICAL: Do NOT strip `.rlib` files or dependency artifacts** - this corrupts Cargo metadata and breaks incremental compilation
+   - Final image contains: Rust toolchain, compiled dependencies (with full metadata) in `/app/target`, build environment
 
 ### Key Features
 
 - Uses cargo-chef for efficient dependency caching
 - Separates dependency analysis (planner) from compilation (builder)
-- Excludes GUI crate to avoid platform-specific issues
+- Excludes GUI crate to avoid platform-specific issues (must be explicit in Cargo.toml)
 - All dependencies pre-compiled and ready for reuse
-- Debug symbols stripped from dependencies to minimize image size
-- Uses `RUSTFLAGS="-C link-arg=-s"` for symbol stripping during compilation
-- Additional post-compilation stripping of `.rlib` files and executables
-- Target directory preserved for incremental builds
+- **CRITICAL: Dependency artifacts (`.rlib`, `.o` files) are NOT stripped** - only final binaries are stripped in colony image
+- Uses `RUSTFLAGS="-C link-arg=-s"` for symbol stripping (affects final binaries only)
+- Target directory preserved for incremental builds with full Cargo metadata
 - When `Cargo.toml` or `Cargo.lock` changes, only the recipe and dependency compilation layers are invalidated
 - Recipe generation is fast (only parses manifests, doesn't compile)
 - Dependency compilation is cached separately from application code
@@ -106,12 +108,17 @@ This ensures that:
 1. **Builder Stage** (`FROM distributed-colony-base:latest AS builder`)
    - Target platform: `linux/amd64` (explicitly specified in build command)
    - Uses local base image (never pulls from ECR)
+   - **CRITICAL: Copy `/app/target` from base image FIRST** before using cache mounts:
+     - `COPY --from=distributed-colony-base:latest /app/target /app/target`
+     - This populates the cache mount with pre-compiled dependencies from base image
+     - BuildKit cache mounts do NOT include base image filesystem, so explicit copy is required
    - Copies source code (`crates/`, `Cargo.toml`, `Cargo.lock`)
-   - Excludes GUI from workspace (matches base image)
-   - Sets source file timestamps older than dependencies (prevents cache invalidation)
+   - Excludes GUI from workspace (matches base image, must be explicit in Cargo.toml)
+   - **Uses Docker BuildKit cache mount** to persist compiled dependencies:
+     - `--mount=type=cache,target=/app/target` - Compiled artifacts cache (populated from base image)
    - Builds binaries: `cargo build --release --bin backend --bin coordinator --offline`
-   - Strips binaries: `strip target/release/backend target/release/coordinator`
-   - Uses `RUSTFLAGS="-C link-arg=-s"` for symbol stripping
+   - Strips **only final binaries**: `strip target/release/backend target/release/coordinator`
+   - Uses `RUSTFLAGS="-C link-arg=-s"` for symbol stripping (affects final binaries only)
 
 2. **Runtime Stage** (`FROM gcr.io/distroless/cc AS runtime`)
    - Target platform: `linux/amd64` (inherited from builder stage)
@@ -123,11 +130,14 @@ This ensures that:
 
 ### Key Features
 
-- Reuses compiled dependencies from base image (fast builds)
-- Uses `--offline` flag to prevent network fetches
+- **Copies `/app/target` from base image** before using cache mounts to ensure dependency reuse
+- **Uses Docker BuildKit cache mount** for `/app/target` to persist compiled dependencies across builds
+- Even if Cargo's incremental compilation invalidates its cache, Docker cache mounts preserve compiled artifacts
+- Uses `--offline` flag to prevent network fetches (registry/git caches from base image)
 - Minimal runtime image (distroless/cc)
 - Both binaries included (backend and coordinator)
-- Stripped binaries for minimal size
+- **Only final binaries are stripped** - dependency artifacts preserve full Cargo metadata
+- Fast builds (< 2 minutes) by reusing cached dependencies from Docker cache mounts
 
 ## Build Scripts
 
@@ -182,11 +192,11 @@ This ensures that:
 5. Create ECR repository if it doesn't exist (with lifecycle policy)
 6. Authenticate Docker with ECR
 7. Build colony image locally:
-   - Use `docker buildx build --platform linux/amd64 --load` (buildx required for platform specification)
+   - Use `DOCKER_BUILDKIT=1 docker build --platform linux/amd64` (BuildKit required for cache mounts)
    - Pass `BASE_IMAGE=distributed-colony-base:latest` as build arg
    - Tag with ECR URI
    - Build from parent directory (context: `..`)
-   - Note: `--load` flag ensures the image is available locally after buildx build
+   - BuildKit cache mounts will automatically persist compiled dependencies across builds
 8. Push colony image to ECR
 9. Print timing information and success message
 
@@ -382,3 +392,43 @@ Note: Multi-arch support is explicitly excluded per design principle #1 (AMD64 o
 - [ ] Layer caching works (subsequent builds are faster)
 - [ ] ECR repositories created with correct policies
 - [ ] Lifecycle policies expire old images correctly
+
+## Critical Implementation Requirements
+
+The following three fixes are **REQUIRED** for the implementation to meet the requirements:
+
+### Fix 1: Copy Base Image Target Directory Before Cache Mounts
+
+**Problem**: BuildKit cache mounts do NOT include the base image filesystem. Without explicitly copying `/app/target` from the base image, the colony build will not reuse pre-compiled dependencies.
+
+**Solution**: Add this line at the start of the colony builder stage (before any cache mounts):
+```dockerfile
+COPY --from=distributed-colony-base:latest /app/target /app/target
+```
+
+This ensures the base-image dependency artifacts populate the cache mount and are reused.
+
+### Fix 2: Do NOT Strip Dependency Artifacts in Base Image
+
+**Problem**: Stripping `.rlib` files or dependency artifacts in the base image can:
+- Corrupt Cargo metadata
+- Break incremental compilation
+- Force full recompilation in the colony image
+
+**Solution**: 
+- **Base Image**: Do NOT strip `.rlib`, `.o`, or any dependency artifacts
+- **Colony Image**: Strip ONLY the final binaries (backend and coordinator)
+
+### Fix 3: Explicitly Exclude GUI Crate in Workspace Manifest
+
+**Problem**: If GUI crate is not explicitly excluded in `Cargo.toml`, Cargo may still load the GUI manifest, invalidating dependency layers.
+
+**Solution**: Ensure `Cargo.toml` workspace manifest explicitly excludes GUI:
+```toml
+[workspace]
+members = ["crates/backend", "crates/coordinator", "crates/shared"]
+exclude = ["crates/gui"]
+```
+
+Or use `members = [...]` without including `crates/gui`.
+
