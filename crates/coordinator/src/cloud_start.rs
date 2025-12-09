@@ -4,7 +4,6 @@ use shared::colony_model::Shard;
 use std::collections::HashMap;
 use crate::init_colony::initialize_colony;
 use crate::coordinator_context::CoordinatorContext;
-use crate::coordinator_storage::{CoordinatorStorage, COORDINATOR_STATE_FILE};
 
 pub async fn cloud_start_colony(idempotency_key: Option<String>) {
     log!("Starting cloud-start process: discovering backends and creating shard map");
@@ -44,19 +43,11 @@ pub async fn cloud_start_colony(idempotency_key: Option<String>) {
     // Note: coordinator_ticker should already be started in main()
     initialize_colony().await;
     
-    // Step 5: Store idempotency_key after successful initialization
+    // Step 5: Store idempotency_key in memory after successful initialization
     if let Some(key) = idempotency_key {
         let context = CoordinatorContext::get_instance();
         let mut stored_info = context.get_coord_stored_info();
         stored_info.cloud_start_idempotency_key = Some(key.clone());
-        drop(stored_info);
-        
-        let stored_info = context.get_coord_stored_info();
-        if let Err(e) = CoordinatorStorage::store(&stored_info, COORDINATOR_STATE_FILE) {
-            log_error!("Failed to save coordinator info with idempotency_key: {}", e);
-        } else {
-            log!("Stored idempotency_key after successful cloud-start");
-        }
     }
     
     log!("Cloud-start completed successfully");

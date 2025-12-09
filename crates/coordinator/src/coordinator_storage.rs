@@ -2,6 +2,7 @@ use serde::{Serialize, Deserialize};
 use shared::{be_api::ColonyLifeRules, storage::StorageUtils};
 use shared::coordinator_api::ColonyEventDescription;
 
+#[allow(dead_code)]
 pub const COORDINATOR_STATE_FILE: &str = "output/storage/colony.dat";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -55,13 +56,16 @@ impl CoordinatorStoredInfo {
     }
 }
 
+#[allow(dead_code)]
 pub struct CoordinatorStorage;
 
 impl CoordinatorStorage {
+    #[allow(dead_code)]
     pub fn store(info: &CoordinatorStoredInfo, filename: &str) -> Result<(), String> {
         StorageUtils::store_with_checksum(info, filename)
     }
 
+    #[allow(dead_code)]
     pub fn retrieve(filename: &str) -> Option<CoordinatorStoredInfo> {
         StorageUtils::retrieve_with_checksum(filename)
     }

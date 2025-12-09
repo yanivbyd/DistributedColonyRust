@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::colony_shard::{ColonyShard, is_blank};
-use shared::{be_api::{Cell, ColonyLifeRules, Color, Shard, Traits, UpdatedShardContentsRequest, ShardLayer, StatMetric, ShardStatResult, StatBucket}, log_error};
-use crate::shard_storage::ShardStorage;
+use shared::{be_api::{Cell, ColonyLifeRules, Color, Shard, Traits, UpdatedShardContentsRequest, ShardLayer, StatMetric, ShardStatResult, StatBucket}};
 use shared::log;
 use rand::rngs::SmallRng;
 
@@ -80,14 +79,9 @@ impl ShardUtils {
             }).collect(),
         };
 
-        let shard_filename = Self::get_shard_filename(shard);
-        
-        if ShardStorage::retrieve_shard(&mut colony_shard, &shard_filename) {
-            log!("Loaded shard from: {}", shard_filename);
-        } else {
-            log!("Randomizing shard: {}", Self::shard_id(shard));
-            colony_shard.randomize_at_start(rng);
-        }
+        // State persistence removed - always start with randomized shard
+        log!("Randomizing shard: {}", Self::shard_id(shard));
+        colony_shard.randomize_at_start(rng);
 
         colony_shard
     }
@@ -257,30 +251,17 @@ impl ShardUtils {
         }
     }
     
-    pub fn store_shard(shard: &ColonyShard) {
-        let shard_filename = Self::get_shard_filename(&shard.shard);
-        let temp_filename = Self::get_shard_temp_filename(&shard.shard);
-
-        // Write to temp file first
-        if let Err(e) = ShardStorage::store_shard(shard, &temp_filename) {
-            log_error!("Failed to store shard to temp file {}: {}", temp_filename, e);
-            return;
-        }
-
-        // Atomically rename temp to final file
-        if let Err(e) = std::fs::rename(&temp_filename, &shard_filename) {
-            log_error!("Failed to rename temp file to final file: {}", e);
-            // Clean up temp file
-            let _ = std::fs::remove_file(&temp_filename);
-        } else {
-            log!("Stored shard in {}", shard_filename);
-        }
+    pub fn store_shard(_shard: &ColonyShard) {
+        // State persistence removed - this method is now a no-op
+        // Storage infrastructure remains for future high availability support
     }
 
+    #[allow(dead_code)]
     fn get_shard_filename(shard: &Shard) -> String {
         format!("output/storage/{}.dat", ShardUtils::shard_id(shard))
     }
 
+    #[allow(dead_code)]
     fn get_shard_temp_filename(shard: &Shard) -> String {
         format!("{}.tmp", Self::get_shard_filename(shard))
     }

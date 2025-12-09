@@ -23,11 +23,6 @@ fn set_event_pause(tick_count: u64, pause_ticks: u64) {
     let context = CoordinatorContext::get_instance();
     let mut stored_info = context.get_coord_stored_info();
     stored_info.set_pause_events_till(tick_count + pause_ticks);
-    
-    // Store the updated info to disk
-    if let Err(e) = crate::coordinator_storage::CoordinatorStorage::store(&stored_info, crate::coordinator_storage::COORDINATOR_STATE_FILE) {
-        shared::log_error!("Failed to save coordination info: {}", e);
-    }
 }
 
 const EVENT_FREQUENCIES: [EventFrequency; 5] = [

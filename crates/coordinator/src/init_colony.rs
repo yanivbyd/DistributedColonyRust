@@ -10,7 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bincode;
 use backoff::{ExponentialBackoff, Error as BackoffError};
 use std::time::Duration;
-use crate::coordinator_storage::{CoordinatorStorage, CoordinatorStoredInfo, ColonyStatus};
+use crate::coordinator_storage::{CoordinatorStoredInfo, ColonyStatus};
 use crate::coordinator_context::CoordinatorContext;
 
 pub const COLONY_LIFE_INITIAL_RULES: ColonyLifeRules = ColonyLifeRules { 
@@ -125,14 +125,8 @@ async fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
 }
 
 pub async fn initialize_colony() {
-    // Step 1: Retrieve coordination info and initialize context
-    let stored_info = CoordinatorStorage::retrieve(crate::coordinator_storage::COORDINATOR_STATE_FILE)
-        .unwrap_or_else(|| {
-            log!("No existing coordination info found, starting fresh");
-            CoordinatorStoredInfo::new()
-        });
-    
-    CoordinatorContext::initialize_with_stored_info(stored_info);
+    // Step 1: Initialize context with fresh state
+    CoordinatorContext::initialize_with_stored_info(CoordinatorStoredInfo::new());
     let context = CoordinatorContext::get_instance();
     
     log!("Starting colony initialization with status: {:?}", context.get_coord_stored_info().status);
@@ -228,10 +222,6 @@ pub async fn initialize_colony() {
         
         let mut coord_stored_info = context.get_coord_stored_info();
         coord_stored_info.status = ColonyStatus::TopographyInitialized;
-        
-        if let Err(e) = CoordinatorStorage::store(&coord_stored_info, crate::coordinator_storage::COORDINATOR_STATE_FILE) {
-            log_error!("Failed to save coordination info: {}", e);
-        }
     }
     
     log!("Colony initialization completed with status: {:?}", context.get_coord_stored_info().status);

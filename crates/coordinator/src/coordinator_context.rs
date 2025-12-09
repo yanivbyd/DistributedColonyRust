@@ -31,13 +31,6 @@ impl CoordinatorContext {
     pub fn add_colony_event(&self, event: ColonyEventDescription) {
         let mut stored_info = self.coord_stored_info.lock().expect("Failed to acquire lock on coord_stored_info");
         stored_info.add_event(event);
-        drop(stored_info); // Release lock before calling storage
-        
-        // Store the updated info to disk
-        let stored_info = self.coord_stored_info.lock().expect("Failed to acquire lock on coord_stored_info");
-        if let Err(e) = crate::coordinator_storage::CoordinatorStorage::store(&stored_info, crate::coordinator_storage::COORDINATOR_STATE_FILE) {
-            shared::log_error!("Failed to save coordination info: {}", e);
-        }
     }
 
     pub fn get_colony_events(&self) -> Vec<ColonyEventDescription> {
@@ -56,12 +49,5 @@ impl CoordinatorContext {
     pub fn update_colony_rules(&self, new_rules: ColonyLifeRules) {
         let mut stored_info = self.coord_stored_info.lock().expect("Failed to acquire lock on coord_stored_info");
         stored_info.update_colony_rules(new_rules);
-        drop(stored_info); // Release lock before calling storage
-        
-        // Store the updated info to disk
-        let stored_info = self.coord_stored_info.lock().expect("Failed to acquire lock on coord_stored_info");
-        if let Err(e) = crate::coordinator_storage::CoordinatorStorage::store(&stored_info, crate::coordinator_storage::COORDINATOR_STATE_FILE) {
-            shared::log_error!("Failed to save coordination info: {}", e);
-        }
     }
 }

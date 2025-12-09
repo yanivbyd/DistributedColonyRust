@@ -5,6 +5,7 @@ use serde::{Serialize, Deserialize};
 #[derive(Serialize, Deserialize)]
 pub struct ShardStorage;
 
+#[allow(dead_code)]
 impl ShardStorage {
     pub fn store_shard(shard: &ColonyShard, filename: &str) -> Result<(), String> {
         StorageUtils::store_with_checksum(shard, filename)
