@@ -32,6 +32,21 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Helper function to print timing
+print_timing() {
+    local step_name=$1
+    local start=$2
+    local end=$(date +%s)
+    local elapsed=$(( end - start ))
+    local min=$(( elapsed / 60 ))
+    local sec=$(( elapsed % 60 ))
+    if [ $min -gt 0 ]; then
+        print_status "[TIMING] $step_name: ${min}m ${sec}s"
+    else
+        print_status "[TIMING] $step_name: ${sec}s"
+    fi
+}
+
 # Check if AWS CLI is installed
 if ! command -v aws &> /dev/null; then
     print_error "AWS CLI is not installed!"
@@ -40,6 +55,7 @@ if ! command -v aws &> /dev/null; then
 fi
 
 # Check if AWS CLI is configured
+step_start=$(date +%s)
 print_status "Checking AWS CLI configuration..."
 if ! aws sts get-caller-identity > /dev/null 2>&1; then
     print_error "AWS CLI is not configured or credentials are invalid"
@@ -55,18 +71,19 @@ if ! aws sts get-caller-identity > /dev/null 2>&1; then
     echo ""
     exit 1
 fi
+print_timing "AWS CLI configuration check" $step_start
 
+step_start=$(date +%s)
 print_status "Using AWS Account: $AWS_ACCOUNT_ID"
 print_status "Using AWS Region: $AWS_REGION"
 print_status "Using Base ECR Repository: $ECR_BASE_REPOSITORY"
 print_status "Using Base Image Tag: $BASE_IMAGE_TAG"
+print_timing "AWS account/region setup" $step_start
 
 # Construct full image URIs
 ECR_BASE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_BASE_REPOSITORY:$BASE_IMAGE_TAG"
-ECR_BASE_CACHE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_BASE_REPOSITORY:cache"
 
 print_status "Full Base ECR URI: $ECR_BASE_URI"
-print_status "Base Cache URI: $ECR_BASE_CACHE_URI"
 
 # Function to create ECR repository if it doesn't exist
 create_ecr_repository() {
@@ -110,18 +127,24 @@ EOF
 }
 
 # Create ECR repository
+step_start=$(date +%s)
 create_ecr_repository $ECR_BASE_REPOSITORY
+print_timing "ECR repository check/creation" $step_start
 
 # Authenticate Docker with ECR
+step_start=$(date +%s)
 print_status "Authenticating Docker with ECR..."
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+print_timing "Docker ECR authentication" $step_start
 
 # Ensure Buildx is available
+step_start=$(date +%s)
 print_status "Ensuring Docker Buildx is available..."
 if ! docker buildx version > /dev/null 2>&1; then
     print_error "Docker Buildx is not available. Please update Docker to a version that includes Buildx."
     exit 1
 fi
+print_timing "Docker Buildx check" $step_start
 
 # Create/use a builder (idempotent)
 docker buildx create --use >/dev/null 2>&1 || true
@@ -142,9 +165,9 @@ build_elapsed=$(( build_end - build_start ))
 build_min=$(( build_elapsed / 60 ))
 build_sec=$(( build_elapsed % 60 ))
 if [ $build_min -gt 0 ]; then
-    print_status "Build completed in ${build_min}m ${build_sec}s"
+    print_status "[TIMING] Docker build: ${build_min}m ${build_sec}s"
 else
-    print_status "Build completed in ${build_sec}s"
+    print_status "[TIMING] Docker build: ${build_sec}s"
 fi
 
 # Tag and push to ECR (for remote builds/CI, but not needed for local colony builds)
@@ -157,9 +180,9 @@ push_elapsed=$(( push_end - push_start ))
 push_min=$(( push_elapsed / 60 ))
 push_sec=$(( push_elapsed % 60 ))
 if [ $push_min -gt 0 ]; then
-    print_status "Push completed in ${push_min}m ${push_sec}s"
+    print_status "[TIMING] ECR push: ${push_min}m ${push_sec}s"
 else
-    print_status "Push completed in ${push_sec}s"
+    print_status "[TIMING] ECR push: ${push_sec}s"
 fi
 
 print_status "Base image successfully built and pushed to ECR!"
@@ -179,4 +202,3 @@ else
     print_status "TOTAL DURATION: ${seconds}s"
 fi
 print_status "=========================================="
-

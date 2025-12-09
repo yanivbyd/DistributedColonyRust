@@ -18,7 +18,7 @@ Thumbs.db
 
 # Build artifacts (we'll build fresh)
 target/
-Cargo.lock
+# Note: Cargo.lock is needed for Docker builds to ensure reproducible dependency versions
 
 # CDK files
 CDK/

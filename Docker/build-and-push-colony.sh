@@ -35,6 +35,21 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Helper function to print timing
+print_timing() {
+    local step_name=$1
+    local start=$2
+    local end=$(date +%s)
+    local elapsed=$(( end - start ))
+    local min=$(( elapsed / 60 ))
+    local sec=$(( elapsed % 60 ))
+    if [ $min -gt 0 ]; then
+        print_status "[TIMING] $step_name: ${min}m ${sec}s"
+    else
+        print_status "[TIMING] $step_name: ${sec}s"
+    fi
+}
+
 # Check if AWS CLI is installed
 if ! command -v aws &> /dev/null; then
     print_error "AWS CLI is not installed!"
@@ -43,6 +58,7 @@ if ! command -v aws &> /dev/null; then
 fi
 
 # Check if AWS CLI is configured
+step_start=$(date +%s)
 print_status "Checking AWS CLI configuration..."
 if ! aws sts get-caller-identity > /dev/null 2>&1; then
     print_error "AWS CLI is not configured or credentials are invalid"
@@ -58,7 +74,9 @@ if ! aws sts get-caller-identity > /dev/null 2>&1; then
     echo ""
     exit 1
 fi
+print_timing "AWS CLI configuration check" $step_start
 
+step_start=$(date +%s)
 print_status "Using AWS Account: $AWS_ACCOUNT_ID"
 print_status "Using AWS Region: $AWS_REGION"
 print_status "Using ECR Repository: $ECR_REPOSITORY"
@@ -66,33 +84,24 @@ print_status "Using Base ECR Repository: $ECR_BASE_REPOSITORY"
 print_status "Using Image Tag: $IMAGE_TAG"
 print_status "Using Base Image Tag: $BASE_IMAGE_TAG"
 print_status "Build version timestamp: $BUILD_VERSION"
+print_timing "AWS account/region setup" $step_start
 
 # Construct full image URIs
 ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
-ECR_BASE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_BASE_REPOSITORY:$BASE_IMAGE_TAG"
-ECR_CACHE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:cache"
 
 print_status "Full ECR URI: $ECR_URI"
-print_status "Full Base ECR URI: $ECR_BASE_URI"
-print_status "Cache URI: $ECR_CACHE_URI"
 
-# Check if base image exists locally first, then in ECR
+# Check if base image exists locally (NEVER pull from ECR)
+step_start=$(date +%s)
 print_status "Checking if base image exists locally..."
 if ! docker image inspect distributed-colony-base:latest > /dev/null 2>&1; then
-    print_warning "Base image 'distributed-colony-base:latest' not found locally!"
-    print_status "Checking if base image exists in ECR..."
-    if ! aws ecr describe-images --repository-name $ECR_BASE_REPOSITORY --image-ids imageTag=$BASE_IMAGE_TAG --region $AWS_REGION > /dev/null 2>&1; then
-        print_error "Base image not found locally or in ECR!"
-        print_status "Please build and push the base image first:"
-        print_status "  ./build-and-push-base.sh"
-        exit 1
-    fi
-    print_status "Base image found in ECR, pulling it locally..."
-    docker pull $ECR_BASE_URI
-    docker tag $ECR_BASE_URI distributed-colony-base:latest
-else
-    print_status "Base image found locally (using local image, no network pull needed)"
+    print_error "Base image 'distributed-colony-base:latest' not found locally!"
+    print_status "Please build the base image first:"
+    print_status "  ./build-and-push-base.sh"
+    exit 1
 fi
+print_status "Base image found locally (using local image, no network pull needed)"
+print_timing "Base image check" $step_start
 
 # Function to create ECR repository if it doesn't exist
 create_ecr_repository() {
@@ -136,44 +145,37 @@ EOF
 }
 
 # Create ECR repository
+step_start=$(date +%s)
 create_ecr_repository $ECR_REPOSITORY
+print_timing "ECR repository check/creation" $step_start
 
 # Authenticate Docker with ECR
+step_start=$(date +%s)
 print_status "Authenticating Docker with ECR..."
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+print_timing "Docker ECR authentication" $step_start
 
-# Ensure Buildx is available
-print_status "Ensuring Docker Buildx is available..."
-if ! docker buildx version > /dev/null 2>&1; then
-    print_error "Docker Buildx is not available. Please update Docker to a version that includes Buildx."
-    exit 1
-fi
-
-# Create/use a builder (idempotent)
-docker buildx create --use >/dev/null 2>&1 || true
-
-# Build colony image using ECR base image URI
-# This ensures the colony image references the base image from ECR, not a local image
-# Docker will pull the base image from ECR during the build, and all layers will be included in the final image
-# Explicitly specify linux/amd64 platform for EC2 compatibility
+# Use DOCKER_BUILDKIT=1 with docker build for cache mounts and platform support
+# BuildKit cache mounts will persist compiled dependencies across builds
+# This ensures fast builds even when Cargo's incremental compilation invalidates its cache
 build_start=$(date +%s)
-print_status "Building COLONY image for linux/amd64 (using ECR base image: $ECR_BASE_URI)..."
-docker buildx build \
+print_status "Building COLONY image for linux/amd64 (using local base image: distributed-colony-base:latest)..."
+print_status "Using Docker BuildKit cache mounts for fast dependency reuse"
+DOCKER_BUILDKIT=1 docker build \
   --platform linux/amd64 \
   --build-arg BUILD_VERSION="$BUILD_VERSION" \
-  --build-arg BASE_IMAGE="$ECR_BASE_URI" \
+  --build-arg BASE_IMAGE="distributed-colony-base:latest" \
   -t $ECR_URI \
   -f Dockerfile \
-  --load \
   ..
 build_end=$(date +%s)
 build_elapsed=$(( build_end - build_start ))
 build_min=$(( build_elapsed / 60 ))
 build_sec=$(( build_elapsed % 60 ))
 if [ $build_min -gt 0 ]; then
-    print_status "Build completed in ${build_min}m ${build_sec}s"
+    print_status "[TIMING] Docker build: ${build_min}m ${build_sec}s"
 else
-    print_status "Build completed in ${build_sec}s"
+    print_status "[TIMING] Docker build: ${build_sec}s"
 fi
 
 # Push colony image to ECR (only the final image, no cache operations)
@@ -185,9 +187,16 @@ push_elapsed=$(( push_end - push_start ))
 push_min=$(( push_elapsed / 60 ))
 push_sec=$(( push_elapsed % 60 ))
 if [ $push_min -gt 0 ]; then
-    print_status "Push completed in ${push_min}m ${push_sec}s"
+    print_status "[TIMING] ECR push: ${push_min}m ${push_sec}s"
 else
-    print_status "Push completed in ${push_sec}s"
+    print_status "[TIMING] ECR push: ${push_sec}s"
+fi
+
+# Get image size for verification
+image_size=$(docker image inspect $ECR_URI --format='{{.Size}}' 2>/dev/null || echo "unknown")
+if [ "$image_size" != "unknown" ]; then
+    image_size_mb=$(( image_size / 1024 / 1024 ))
+    print_status "Colony image size: ${image_size_mb}MB"
 fi
 
 print_status "Colony image successfully built and pushed to ECR!"
@@ -208,4 +217,3 @@ else
     print_status "TOTAL DURATION: ${seconds}s"
 fi
 print_status "=========================================="
-

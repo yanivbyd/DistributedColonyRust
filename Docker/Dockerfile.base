@@ -9,10 +9,13 @@ RUN apk add --no-cache \
     musl-dev \
     openssl-dev \
     pkgconfig \
-    git
+    git \
+    binutils
+
+# Set the target directory for consistency
+ENV CARGO_TARGET_DIR=/app/target
 
 # Planner stage: Generate recipe.json from Cargo.toml files
-# We need to create a temporary Cargo.toml that excludes GUI (which has platform-specific deps)
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY crates/backend/Cargo.toml crates/backend/Cargo.toml
@@ -21,6 +24,7 @@ COPY crates/shared/Cargo.toml crates/shared/Cargo.toml
 
 # Create a temporary Cargo.toml without GUI (since GUI has platform-specific dependencies)
 # This allows cargo-chef to prepare the recipe without GUI
+# Note: Cargo.toml should already exclude GUI, but we ensure it here for safety
 RUN sed -i '/crates\/gui/d' Cargo.toml
 
 # Create minimal source files so cargo-chef can parse the manifests
@@ -37,9 +41,15 @@ RUN cargo chef prepare --recipe-path recipe.json
 # This is the final stage that will be used as the base image
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
+
+# Set RUSTFLAGS to strip symbols during compilation (affects final binaries only)
+# Note: This RUSTFLAGS setting is for consistency, but dependencies won't be stripped
+ENV RUSTFLAGS="-C link-arg=-s"
+
 # Build all dependencies for backend and coordinator
 # cargo-chef cook will only compile dependencies needed for the specified binaries
 RUN cargo chef cook --release --recipe-path recipe.json
 
-# Set the target directory for consistency
-ENV CARGO_TARGET_DIR=/app/target
+# CRITICAL: Do NOT strip .rlib files or dependency artifacts
+# Stripping these corrupts Cargo metadata and breaks incremental compilation
+# Only final binaries will be stripped in the colony image

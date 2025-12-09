@@ -4,41 +4,57 @@ This directory contains Docker configuration for deploying DistributedColony nod
 
 ## Overview
 
-The Docker setup creates a containerized version of the DistributedColony application that includes both the backend and coordinator components. This allows for easy deployment to AWS spot instances without the need to compile Rust code on the target machines.
+The Docker setup uses a two-stage build system:
+1. **Base Image** (`distributed-colony-base`): Pre-compiles all Rust dependencies using cargo-chef
+2. **Colony Image** (`distributed-colony`): Contains only the compiled Rust binaries in a minimal distroless runtime
+
+This separation allows for fast iterative builds while maintaining minimal production images.
 
 ## Files
 
-- `Dockerfile` - Multi-stage Docker build that compiles the Rust application and creates a minimal runtime image
-- `build-and-push.sh` - Script to build and push the Docker image to AWS ECR
+- `Dockerfile.base` - Multi-stage Docker build that pre-compiles all Rust dependencies using cargo-chef
+- `Dockerfile` - Multi-stage Docker build that compiles the application and creates a minimal runtime image
+- `build-and-push-base.sh` - Script to build and push the base Docker image to AWS ECR (slow, run when dependencies change)
+- `build-and-push-colony.sh` - Script to build and push the application Docker image to AWS ECR (fast, run for code changes)
+- `.dockerignore` - Files to exclude from Docker context
 - `README.md` - This documentation file
 
 ## Prerequisites
 
 1. Docker installed locally
-2. AWS CLI configured with appropriate permissions
-3. AWS ECR repository created for the Docker images
+2. Docker BuildKit enabled (included in modern Docker installations)
+3. AWS CLI configured with appropriate permissions
+4. AWS ECR repositories will be created automatically if they don't exist
 
 ## Quick Start
 
-### 1. Create ECR Repository
+### 1. Build and Push Base Image (One Time or When Dependencies Change)
 
 ```bash
-aws ecr create-repository --repository-name distributed-colony --region us-east-1
+cd Docker
+chmod +x build-and-push-base.sh
+./build-and-push-base.sh
 ```
 
-### 2. Build and Push Docker Image
+This will:
+- Build the base image locally (tagged as `distributed-colony-base:latest`)
+- Push it to ECR as `${accountId}.dkr.ecr.${region}.amazonaws.com/distributed-colony-base:latest`
+- Take 5-15 minutes (only needed when `Cargo.toml` or `Cargo.lock` changes)
+
+### 2. Build and Push Colony Image (Fast Iteration)
 
 ```bash
-# Make the script executable
-chmod +x build-and-push.sh
-
-# Build and push the image
-./build-and-push.sh
+chmod +x build-and-push-colony.sh
+./build-and-push-colony.sh
 ```
+
+This will:
+- Check that the base image exists locally (will fail if not found - never pulls from ECR)
+- Build the colony image using the local base image with Docker BuildKit cache mounts
+- Push it to ECR as `${accountId}.dkr.ecr.${region}.amazonaws.com/distributed-colony:latest`
+- Take 30 seconds - 2 minutes (run after every code change)
 
 ### 3. Deploy with CDK
-
-The CDK stack has been updated to use the Docker image instead of compiling on the instance. Deploy with:
 
 ```bash
 cd ../CDK
@@ -48,84 +64,118 @@ npm run deploy
 
 ## Docker Image Details
 
-The Docker image is built using a multi-stage approach:
+### Base Image (`distributed-colony-base`)
 
-1. **Build Stage**: Uses the official Rust image to compile the application
-2. **Runtime Stage**: Uses a minimal Alpine Linux image with only the necessary runtime dependencies
+- **Purpose**: Pre-compiles all Rust dependencies
+- **Size**: Large (~500MB - 1GB)
+- **Contents**: Rust toolchain, compiled dependencies (with full Cargo metadata), build environment
+- **Rebuild**: Only when `Cargo.toml` or `Cargo.lock` changes
+- **Note**: Dependency artifacts are NOT stripped to preserve Cargo metadata
 
-### Image Contents
+### Colony Image (`distributed-colony`)
 
-- Compiled `backend` binary
-- Compiled `coordinator` binary
-- Runtime dependencies (glibc, etc.)
-- Startup script to run the appropriate service
+- **Purpose**: Production runtime image
+- **Size**: Very small (~20-50MB)
+- **Contents**: 
+  - Compiled `backend` binary (stripped)
+  - Compiled `coordinator` binary (stripped)
+  - Minimal distroless runtime (C runtime + CA certificates only)
+- **Rebuild**: Every code change
+- **Build Speed**: Fast (< 2 minutes) using Docker BuildKit cache mounts
 
-### Environment Variables
+## Environment Variables
 
-The container supports the following environment variables:
+### Build Scripts
 
-- `SERVICE_TYPE` - Either "backend" or "coordinator" to determine which service to run
-- `COORDINATOR_HOST` - Hostname/IP of the coordinator (for backend instances)
-- `COORDINATOR_PORT` - Port of the coordinator (for backend instances)
-- `BACKEND_PORT` - Port for the backend service
-- `COORDINATOR_PORT` - Port for the coordinator service
+- `AWS_REGION`: AWS region (default: eu-west-1)
+- `ECR_REPOSITORY`: Colony repository name (default: distributed-colony)
+- `ECR_BASE_REPOSITORY`: Base repository name (default: distributed-colony-base)
+- `IMAGE_TAG`: Colony image tag (default: latest)
+- `BASE_IMAGE_TAG`: Base image tag (default: latest)
 
-## Deployment Architecture
+### Container Runtime
 
+The container supports the following environment variables (for reference, distroless doesn't use them):
+
+- `SERVICE_TYPE` - Either "backend" or "coordinator" (not used, override CMD instead)
+- `COORDINATOR_HOST` - Hostname/IP of the coordinator (default: localhost)
+- `COORDINATOR_PORT` - Port of the coordinator (default: 8083)
+- `BACKEND_HOST` - Bind address for backend (default: 0.0.0.0)
+- `BACKEND_PORT` - Port for the backend service (default: 8082)
+- `BUILD_VERSION` - Build version string
+
+## Running Containers
+
+### Run Backend
+
+```bash
+docker run -p 8082:8082 \
+  <accountId>.dkr.ecr.<region>.amazonaws.com/distributed-colony:latest \
+  /usr/local/bin/backend 0.0.0.0 8082 aws
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Coordinator   │    │    Backend 1    │    │    Backend N    │
-│   (Spot Instance)│    │  (Spot Instance)│    │  (Spot Instance)│
-│                 │    │                 │    │                 │
-│  Docker Image   │    │  Docker Image   │    │  Docker Image   │
-│  - coordinator  │    │  - backend      │    │  - backend      │
-│                 │    │                 │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+
+### Run Coordinator
+
+```bash
+docker run -p 8083:8083 \
+  <accountId>.dkr.ecr.<region>.amazonaws.com/distributed-colony:latest \
+  /usr/local/bin/coordinator aws
 ```
 
-## Cost Optimization
+## Build Workflow
 
-Using Docker images provides several cost benefits:
+### Initial Setup
 
-1. **Faster Startup**: No compilation time on spot instances
-2. **Reduced Instance Time**: Instances can start serving traffic immediately
-3. **Consistent Environment**: Same runtime environment across all instances
-4. **Smaller Instances**: Can use smaller instance types since no compilation is needed
+1. Build base image once: `./build-and-push-base.sh`
+2. Build colony image: `./build-and-push-colony.sh`
+3. Deploy with CDK
 
-## Monitoring and Logs
+### Iterative Development
 
-The Docker containers are configured to:
+1. Make code changes
+2. Build colony image: `./build-and-push-colony.sh` (fast, ~30s-2min)
+3. Deploy with CDK
 
-- Log to stdout/stderr for CloudWatch integration
-- Include health checks for container orchestration
-- Support graceful shutdowns for spot instance termination
+### When Dependencies Change
+
+1. Update `Cargo.toml` or `Cargo.lock`
+2. Rebuild base image: `./build-and-push-base.sh` (slow, ~5-15min)
+3. Build colony image: `./build-and-push-colony.sh` (fast)
+4. Deploy with CDK
+
+## Important Notes
+
+- **Never Pulls from ECR**: The colony build script will fail if the base image doesn't exist locally. This ensures fast builds by using local images only.
+- **AMD64 Only**: All builds target `linux/amd64` platform only (for EC2 compatibility).
+- **Minimal Runtime**: The final colony image uses distroless/cc, which has no shell or package manager for security.
+- **Fast Builds**: Uses Docker BuildKit cache mounts to persist compiled dependencies across builds, ensuring fast iteration even when Cargo's incremental compilation invalidates its cache.
+- **GUI Crate Excluded**: The workspace manifest explicitly excludes the GUI crate to avoid platform-specific issues.
 
 ## Troubleshooting
 
-### Common Issues
+### Base Image Not Found
 
-1. **ECR Authentication**: Ensure AWS CLI is configured and you have ECR permissions
-2. **Image Pull Errors**: Check that the ECR repository exists and the image was pushed successfully
-3. **Service Startup**: Verify environment variables are set correctly for each service type
+If you see: `Base image 'distributed-colony-base:latest' not found locally!`
 
-### Debugging
+**Solution**: Run `./build-and-push-base.sh` first.
 
-To debug container issues:
+### AWS Credentials Invalid
 
-```bash
-# Check container logs
-docker logs <container_id>
+If you see: `AWS CLI is not configured or credentials are invalid`
 
-# Execute shell in running container
-docker exec -it <container_id> /bin/sh
+**Solution**: Run `aws configure` and provide your AWS credentials.
 
-# Check if binaries are present
-docker exec -it <container_id> ls -la /usr/local/bin/
-```
+### Docker BuildKit Not Available
 
-## Security Considerations
+If you see build errors related to cache mounts:
 
-- The Docker image runs as a non-root user
-- Only necessary dependencies are included in the runtime image
-- ECR repository should be configured with appropriate access policies
-- Consider using ECR image scanning for vulnerability detection
+**Solution**: Ensure Docker BuildKit is enabled. Modern Docker installations include it by default. You can enable it explicitly with `DOCKER_BUILDKIT=1`.
+
+### Build Too Slow
+
+If colony builds are taking longer than 2 minutes:
+
+**Solution**: 
+- Ensure the base image was built correctly
+- Check that Docker BuildKit cache mounts are working (look for cache mount messages in build output)
+- Verify that `/app/target` is being copied from the base image before cache mounts

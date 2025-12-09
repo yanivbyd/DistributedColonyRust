@@ -2,9 +2,9 @@
 members = [
     "crates/backend",
     "crates/shared",
-    "crates/gui",
     "crates/coordinator"
 ]
+exclude = ["crates/gui"]
 resolver = "2"
 
 [profile.release]
