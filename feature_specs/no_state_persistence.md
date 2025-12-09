@@ -94,11 +94,6 @@ This feature removes all colony state persistence to disk in both localhost and 
 - Existing error handling code for disk operations can be removed
 - No log messages needed since operations are removed entirely
 
-## Testing Considerations
-- Verify that no state files are created in `output/storage/` in any deployment mode
-- Verify that restarting coordinator/backends always starts fresh in both localhost and AWS modes
-- Test that colony always starts from scratch after restart
-
 ## Files to Modify
 
 ### Coordinator
