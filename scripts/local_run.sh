@@ -17,7 +17,7 @@ BACKEND_RPC_PORTS=(8084 8086 8088 8090)
 BACKEND_HTTP_PORTS=(8085 8087 8089 8091)
 HOSTNAME="127.0.0.1"
 
-./scripts/kill_all.sh
+./scripts/local_kill.sh
 rm -rf output/logs
 rm -rf output/ssm
 

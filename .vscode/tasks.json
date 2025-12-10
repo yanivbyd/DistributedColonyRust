@@ -20,7 +20,7 @@
         {
             "label": "Local - Run",
             "type": "shell",
-            "command": "./build_and_run.sh",
+            "command": "./local_run.sh",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -36,7 +36,7 @@
         {
             "label": "Local - Kill",
             "type": "shell",
-            "command": "./kill_all.sh",
+            "command": "./local_kill.sh",
             "group": "build",
             "presentation": {
                 "echo": true,
