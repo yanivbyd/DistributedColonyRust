@@ -1,7 +1,7 @@
 # SSM Substitution and Replacement for Localhost
 
 ## Acknowledgment
-Not yet acknowledged - specification pending review
+Acknowdleged by Yaniv
 
 ## Overview
 This feature creates a localhost-compatible replacement for AWS Systems Manager (SSM) Parameter Store. The goal is to make localhost development as similar to cloud deployment as possible by supporting SSM registration and discovery, even though coordinator and backend processes run as separate processes on the same machine. This is achieved by introducing a `ClusterRegistry` abstraction that provides a clean interface for service registration and discovery, with implementations for AWS SSM (cloud) and file-based storage (localhost). The static Topology configuration will remain unchanged for localhost mode.

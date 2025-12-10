@@ -54,9 +54,10 @@ pub async fn cloud_start_colony(idempotency_key: Option<String>) {
 }
 
 async fn discover_and_ping_backends() -> Vec<HostInfo> {
+    use crate::http_server::HTTP_SERVER_PORT;
     let mut discovered_topology = DiscoveredTopology::new(
         NodeType::Coordinator,
-        NodeAddress::new("127.0.0.1".to_string(), shared::coordinator_api::COORDINATOR_PORT),
+        NodeAddress::new("127.0.0.1".to_string(), shared::coordinator_api::COORDINATOR_PORT, HTTP_SERVER_PORT),
         None,
         Vec::new(),
     );
@@ -75,7 +76,7 @@ async fn discover_and_ping_backends() -> Vec<HostInfo> {
         // Skip if this backend matches the coordinator's IP (coordinator should not be a backend)
         if let Some(ref coord_ip) = coordinator_ip {
             if backend_info.address.ip == *coord_ip {
-                log_error!("Skipping backend {}:{} (matches coordinator IP)", backend_info.address.ip, backend_info.address.port);
+                log_error!("Skipping backend {}:{} (matches coordinator IP)", backend_info.address.ip, backend_info.address.internal_port);
                 continue;
             }
         }
@@ -83,11 +84,11 @@ async fn discover_and_ping_backends() -> Vec<HostInfo> {
         if backend_info.status == NodeStatus::Active {
             available_backends.push(HostInfo::new(
                 backend_info.address.ip,
-                backend_info.address.port,
+                backend_info.address.internal_port,
             ));
         } else {
             log!("Skipping backend {}:{} (status: {:?})", 
-                 backend_info.address.ip, backend_info.address.port, backend_info.status);
+                 backend_info.address.ip, backend_info.address.internal_port, backend_info.status);
         }
     }
     

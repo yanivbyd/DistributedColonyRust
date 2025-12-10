@@ -11,7 +11,8 @@ mod http_server;
 
 use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry, ColonyMetricStats};
 use std::collections::{BTreeMap, HashMap};
-use shared::cluster_topology::ClusterTopology;
+use shared::cluster_topology::{ClusterTopology, NodeAddress};
+use shared::cluster_registry::{ClusterRegistry, create_cluster_registry, get_instance};
 use shared::be_api::StatMetric;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -21,6 +22,7 @@ use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error, log};
 use bincode;
 use futures_util::SinkExt;
+use crate::http_server::HTTP_SERVER_PORT;
 #[derive(Debug, Clone, PartialEq)]
 enum DeploymentMode {
     Localhost,
@@ -102,7 +104,6 @@ async fn handle_client(socket: TcpStream) {
     log!("handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
     while let Some(Ok(bytes)) = framed.next().await {
-        log!("handle_client: received bytes");
         let response = match bincode::deserialize::<CoordinatorRequest>(&bytes) {
             Ok(CoordinatorRequest::GetRoutingTable) => handle_get_routing_table().await,
             Ok(CoordinatorRequest::GetColonyEvents { limit }) => handle_get_colony_events(limit).await,
@@ -188,11 +189,18 @@ async fn main() {
     }
     
     let deployment_mode = DeploymentMode::from_str(&args[1]).expect("Invalid deployment mode");
+    let deployment_mode_str = match deployment_mode {
+        DeploymentMode::Aws => "aws",
+        DeploymentMode::Localhost => "localhost",
+    };
     
     init_logging(&format!("output/logs/coordinator_{}.log", COORDINATOR_PORT));
     log_startup("COORDINATOR");
     log!("Starting coordinator in {:?} deployment mode, version {}", deployment_mode, BUILD_VERSION);
     set_panic_hook();
+    
+    // Initialize ClusterRegistry early
+    let _registry = create_cluster_registry(deployment_mode_str);
     
     coordinator_ticker::start_coordinator_ticker();
     
@@ -221,6 +229,38 @@ async fn main() {
         }
     };
     log!("Listening on {} for coordinator protocol", addr);
+
+    // Register coordinator in ClusterRegistry
+    let coordinator_ip = match deployment_mode {
+        DeploymentMode::Aws => "0.0.0.0", // Will be replaced with actual IP in AWS
+        DeploymentMode::Localhost => "127.0.0.1",
+    };
+    // In localhost mode, use the same port for both internal and http
+    // In AWS mode, use COORDINATOR_PORT for internal and HTTP_SERVER_PORT for http
+    let http_port = match deployment_mode {
+        DeploymentMode::Aws => HTTP_SERVER_PORT,
+        DeploymentMode::Localhost => COORDINATOR_PORT, // Use same port in localhost mode
+    };
+    let coordinator_address = NodeAddress::new(coordinator_ip.to_string(), COORDINATOR_PORT, http_port);
+    if let Some(registry) = get_instance() {
+        if let Err(e) = registry.register_coordinator(coordinator_address).await {
+            log_error!("Failed to register coordinator: {}", e);
+        }
+    }
+
+    // Setup signal handlers for graceful shutdown
+    let registry_clone = get_instance();
+    tokio::spawn(async move {
+        use tokio::signal;
+        let _ = signal::ctrl_c().await;
+        log!("Received shutdown signal, unregistering coordinator...");
+        if let Some(registry) = registry_clone {
+            if let Err(e) = registry.unregister_coordinator().await {
+                log_error!("Failed to unregister coordinator: {}", e);
+            }
+        }
+        std::process::exit(0);
+    });
 
     loop {
         log!("Waiting for connection...");

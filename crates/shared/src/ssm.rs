@@ -1,4 +1,5 @@
 use crate::cluster_topology::NodeAddress;
+use crate::cluster_registry::{ClusterRegistry, get_instance};
 use crate::{log_error, log};
 use std::sync::{Arc, RwLock, OnceLock};
 use aws_sdk_ssm::error::ProvideErrorMetadata;
@@ -27,6 +28,12 @@ pub async fn discover_coordinator() -> Option<NodeAddress> {
         return provider.discover_coordinator();
     }
 
+    // Try to use ClusterRegistry if available
+    if let Some(registry) = get_instance() {
+        return registry.discover_coordinator().await;
+    }
+
+    // Fallback to direct SSM access (for backward compatibility)
     let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let ssm_client = aws_sdk_ssm::Client::new(&config);
     
@@ -71,6 +78,12 @@ pub async fn discover_backends() -> Vec<NodeAddress> {
         return provider.discover_backends();
     }
 
+    // Try to use ClusterRegistry if available
+    if let Some(registry) = get_instance() {
+        return registry.discover_backends().await;
+    }
+
+    // Fallback to direct SSM access (for backward compatibility)
     let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let ssm_client = aws_sdk_ssm::Client::new(&config);
     let mut backends = Vec::new();
@@ -113,10 +126,17 @@ pub async fn discover_backends() -> Vec<NodeAddress> {
 }
 
 pub fn parse_address(address_str: &str) -> Option<NodeAddress> {
+    // First try to parse as JSON (new format with internal_port and http_port)
+    if let Ok(address) = serde_json::from_str::<NodeAddress>(address_str) {
+        return Some(address);
+    }
+    
+    // Fallback to old format (ip:port) for backward compatibility
     let parts: Vec<&str> = address_str.split(':').collect();
     if parts.len() == 2 {
         if let Ok(port) = parts[1].parse::<u16>() {
-            return Some(NodeAddress::new(parts[0].to_string(), port));
+            // For backward compatibility, use the same port for both internal and http
+            return Some(NodeAddress::new(parts[0].to_string(), port, port));
         }
     }
     None

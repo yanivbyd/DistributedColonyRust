@@ -9,8 +9,10 @@ use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
 use shared::cluster_topology::{DiscoveredTopology, NodeType, NodeAddress, start_periodic_discovery};
+use shared::cluster_registry::{ClusterRegistry, create_cluster_registry, get_instance};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use crate::http_server::HTTP_SERVER_PORT;
 
 #[derive(Debug, Clone, PartialEq)]
 enum DeploymentMode {
@@ -46,11 +48,6 @@ use crate::shard_topography::ShardTopography;
 use crate::http_server::start_http_server;
 
 
-// Debug logging macro that does nothing by default
-macro_rules! log_debug {
-    ($($arg:tt)*) => {};
-}
-
 type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
 
 const BUILD_VERSION: &str = match option_env!("BUILD_VERSION") {
@@ -80,7 +77,6 @@ async fn send_response(framed: &mut FramedStream, response: BackendResponse) {
     if let Err(e) = framed.send(encoded.into()).await {
         log_error!("Failed to send {} response: {}", label, e);
     } else {
-        log_debug!("Sent {} response", label);
     }
 }
 
@@ -90,7 +86,6 @@ async fn handle_client(socket: TcpStream) {
     loop {
         match framed.next().await {
             Some(Ok(bytes)) => {
-                log!("handle_client: received bytes ({} bytes)", bytes.len());
                 let response = match bincode::deserialize::<BackendRequest>(&bytes) {
                     Ok(BackendRequest::Ping) => handle_ping().await,
                     Ok(BackendRequest::InitColony(req)) => handle_init_colony(req).await,
@@ -150,7 +145,6 @@ async fn handle_init_colony_shard(req: InitColonyShardRequest) -> BackendRespons
 }
 
 async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {
-    log_debug!("GetShardImage request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
     if ! Colony::is_initialized() {
         return BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable);
     }
@@ -167,7 +161,6 @@ async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {
 }
 
 async fn handle_get_shard_layer(req: GetShardLayerRequest) -> BackendResponse {
-    log_debug!("GetShardLayer request: shard=({},{},{},{}), layer={:?}", req.shard.x, req.shard.y, req.shard.width, req.shard.height, req.layer);
     if ! Colony::is_initialized() {
         return BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable);
     }
@@ -224,9 +217,7 @@ async fn handle_get_shard_stats(req: GetShardStatsRequest) -> BackendResponse {
     }
 }
 
-async fn handle_updated_shard_contents(req: UpdatedShardContentsRequest) -> BackendResponse {
-    log_debug!("UpdatedShardContents request: shard=({},{},{},{})", req.updated_shard.x, req.updated_shard.y, req.updated_shard.width, req.updated_shard.height);
-    
+async fn handle_updated_shard_contents(req: UpdatedShardContentsRequest) -> BackendResponse {   
     if !Colony::is_initialized() {
         return BackendResponse::UpdatedShardContents(UpdatedShardContentsResponse {});
     }
@@ -243,9 +234,7 @@ async fn handle_updated_shard_contents(req: UpdatedShardContentsRequest) -> Back
     BackendResponse::UpdatedShardContents(UpdatedShardContentsResponse {})
 }
 
-async fn handle_init_shard_topography(req: InitShardTopographyRequest) -> BackendResponse {
-    log_debug!("InitShardTopography request: shard=({},{},{},{})", req.shard.x, req.shard.y, req.shard.width, req.shard.height);
-    
+async fn handle_init_shard_topography(req: InitShardTopographyRequest) -> BackendResponse {   
     if !Colony::is_initialized() {
         return BackendResponse::InitShardTopography(InitShardTopographyResponse::ShardNotInitialized);
     }
@@ -292,7 +281,7 @@ async fn handle_apply_event(req: ApplyEventRequest) -> BackendResponse {
 async fn create_discovered_topology(hostname: &str, port: u16) -> DiscoveredTopology {
     let mut discovered_topology = DiscoveredTopology::new(
         NodeType::Backend, 
-        NodeAddress::new(hostname.to_string(), port), 
+        NodeAddress::new(hostname.to_string(), port, HTTP_SERVER_PORT), 
         None, 
         Vec::new()
     );
@@ -332,6 +321,14 @@ async fn main() {
     log!("Starting the backend in {:?} deployment mode, version {}", deployment_mode, BUILD_VERSION);
     set_panic_hook();
     
+    let deployment_mode_str = match deployment_mode {
+        DeploymentMode::Aws => "aws",
+        DeploymentMode::Localhost => "localhost",
+    };
+    
+    // Initialize ClusterRegistry early
+    let _registry = create_cluster_registry(deployment_mode_str);
+    
     // Create DiscoveredTopology in AWS mode
     if deployment_mode == DeploymentMode::Aws {
         let discovered_topology = create_discovered_topology(&hostname, port).await;
@@ -346,7 +343,7 @@ async fn main() {
         // Validate that this backend's hostname and port are in the cluster topology
         let topology = shared::cluster_topology::ClusterTopology::get_instance();
         let backend_hosts = topology.get_all_backend_hosts();
-        let this_host = shared::cluster_topology::HostInfo::new(normalized_hostname_for_validation, port);    
+        let this_host = shared::cluster_topology::HostInfo::new(normalized_hostname_for_validation.clone(), port);    
         if !backend_hosts.contains(&this_host) {
             panic!("Backend hostname '{}' and port '{}' not found in cluster topology. Available backend hosts: {:?}", 
                 hostname, port, backend_hosts.iter().map(|h| h.to_address()).collect::<Vec<_>>());
@@ -367,6 +364,40 @@ async fn main() {
         }
     };
     log!("Listening on {} (advertised as {})", bind_addr, hostname);
+
+    // Register backend in ClusterRegistry
+    let backend_ip = match deployment_mode {
+        DeploymentMode::Aws => "0.0.0.0".to_string(), // Will be replaced with actual IP in AWS
+        DeploymentMode::Localhost => normalized_hostname_for_validation.clone(),
+    };
+    // In localhost mode, use the same port for both internal and http
+    // In AWS mode, use port for internal and HTTP_SERVER_PORT for http
+    let http_port = match deployment_mode {
+        DeploymentMode::Aws => HTTP_SERVER_PORT,
+        DeploymentMode::Localhost => port, // Use same port in localhost mode
+    };
+    let backend_address = NodeAddress::new(backend_ip, port, http_port);
+    let instance_id = format!("backend_{}", port);
+    if let Some(registry) = get_instance() {
+        if let Err(e) = registry.register_backend(instance_id.clone(), backend_address).await {
+            log_error!("Failed to register backend: {}", e);
+        }
+    }
+
+    // Setup signal handlers for graceful shutdown
+    let registry_clone = get_instance();
+    let instance_id_clone = instance_id.clone();
+    tokio::spawn(async move {
+        use tokio::signal;
+        let _ = signal::ctrl_c().await;
+        log!("Received shutdown signal, unregistering backend...");
+        if let Some(registry) = registry_clone {
+            if let Err(e) = registry.unregister_backend(instance_id_clone).await {
+                log_error!("Failed to unregister backend: {}", e);
+            }
+        }
+        std::process::exit(0);
+    });
 
     loop {
         log!("Waiting for connection...");

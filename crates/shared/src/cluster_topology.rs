@@ -28,16 +28,25 @@ pub enum NodeStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeAddress {
     pub ip: String,
-    pub port: u16,
+    pub internal_port: u16,
+    pub http_port: u16,
 }
 
 impl NodeAddress {
-    pub fn new(ip: String, port: u16) -> Self {
-        Self { ip, port }
+    pub fn new(ip: String, internal_port: u16, http_port: u16) -> Self {
+        Self { ip, internal_port, http_port }
     }
 
     pub fn to_address(&self) -> String {
-        format!("{}:{}", self.ip, self.port)
+        format!("{}:{}", self.ip, self.internal_port)
+    }
+
+    pub fn to_internal_address(&self) -> String {
+        format!("{}:{}", self.ip, self.internal_port)
+    }
+
+    pub fn to_http_address(&self) -> String {
+        format!("{}:{}", self.ip, self.http_port)
     }
 }
 
