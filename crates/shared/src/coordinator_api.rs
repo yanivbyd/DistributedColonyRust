@@ -2,7 +2,7 @@ use serde::{Serialize, Deserialize};
 use crate::colony_model::Shard;
 use crate::be_api::{StatMetric, StatBucket};
 
-pub const COORDINATOR_PORT: u16 = 8083;
+pub const COORDINATOR_PORT: u16 = 8082;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum CoordinatorRequest {

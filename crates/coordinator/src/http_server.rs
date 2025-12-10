@@ -7,11 +7,10 @@ use crate::coordinator_storage::ColonyStatus;
 use shared::ssm;
 use std::fmt::Write;
 
-pub const HTTP_SERVER_PORT: u16 = 8084;
 const HTTP_BIND_HOST: &str = "0.0.0.0";
 
-fn build_http_bind_addr() -> String {
-    format!("{}:{}", HTTP_BIND_HOST, HTTP_SERVER_PORT)
+fn build_http_bind_addr(port: u16) -> String {
+    format!("{}:{}", HTTP_BIND_HOST, port)
 }
 
 fn is_colony_already_started() -> bool {
@@ -51,8 +50,8 @@ fn parse_query_param(request: &str, param_name: &str) -> Option<String> {
     None
 }
 
-pub async fn start_http_server() {
-    let addr = build_http_bind_addr();
+pub async fn start_http_server(http_port: u16) {
+    let addr = build_http_bind_addr(http_port);
     let listener = TcpListener::bind(&addr).await.expect("Failed to bind HTTP server");
     log!("HTTP server listening on {}", addr);
     

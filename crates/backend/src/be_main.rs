@@ -12,7 +12,6 @@ use shared::cluster_topology::{DiscoveredTopology, NodeType, NodeAddress, start_
 use shared::cluster_registry::{ClusterRegistry, create_cluster_registry, get_instance};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::http_server::HTTP_SERVER_PORT;
 
 #[derive(Debug, Clone, PartialEq)]
 enum DeploymentMode {
@@ -278,10 +277,15 @@ async fn handle_apply_event(req: ApplyEventRequest) -> BackendResponse {
     }
 }
 
-async fn create_discovered_topology(hostname: &str, port: u16) -> DiscoveredTopology {
+async fn create_discovered_topology(hostname: &str, rpc_port: u16) -> DiscoveredTopology {
+    // In AWS mode, HTTP port comes from HTTP_PORT env var
+    let http_port = std::env::var("HTTP_PORT")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(8085); // Default fallback
     let mut discovered_topology = DiscoveredTopology::new(
         NodeType::Backend, 
-        NodeAddress::new(hostname.to_string(), port, HTTP_SERVER_PORT), 
+        NodeAddress::new(hostname.to_string(), rpc_port, http_port), 
         None, 
         Vec::new()
     );
@@ -289,24 +293,76 @@ async fn create_discovered_topology(hostname: &str, port: u16) -> DiscoveredTopo
     discovered_topology
 }
 
+fn check_port_available(port: u16) -> Result<(), String> {
+    use std::net::TcpListener;
+    match TcpListener::bind(format!("127.0.0.1:{}", port)) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::AddrInUse {
+                Err(format!("Port {} is already in use", port))
+            } else {
+                Err(format!("Failed to check port {}: {}", port, e))
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 4 {
-        eprintln!("Usage: {} <hostname> <port> <deployment_mode>", args[0]);
-        eprintln!("Example: {} 127.0.0.1 8082 localhost", args[0]);
+    
+    // In AWS mode, get ports from environment variables if not provided as arguments
+    let (rpc_port, http_port, hostname, deployment_mode) = if args.len() == 2 {
+        // AWS mode: get from environment variables
+        let deployment_mode = DeploymentMode::from_str(&args[1]).expect("Invalid deployment mode");
+        if deployment_mode != DeploymentMode::Aws {
+            eprintln!("Usage: {} <hostname> <rpc_port> <http_port> <deployment_mode>", args[0]);
+            eprintln!("Example: {} 127.0.0.1 8084 8085 localhost", args[0]);
+            eprintln!("Deployment modes: localhost, aws");
+            std::process::exit(1);
+        }
+        let rpc_port = std::env::var("RPC_PORT")
+            .ok()
+            .and_then(|v| v.parse::<u16>().ok())
+            .expect("RPC_PORT environment variable must be set in AWS mode");
+        let http_port = std::env::var("HTTP_PORT")
+            .ok()
+            .and_then(|v| v.parse::<u16>().ok())
+            .expect("HTTP_PORT environment variable must be set in AWS mode");
+        let hostname = std::env::var("BACKEND_HOST")
+            .unwrap_or_else(|_| "0.0.0.0".to_string());
+        (rpc_port, http_port, hostname, deployment_mode)
+    } else if args.len() == 5 {
+        // Localhost mode: get from command line arguments
+        let hostname = args[1].clone();
+        let rpc_port: u16 = args[2].parse().expect("RPC port must be a valid number");
+        let http_port: u16 = args[3].parse().expect("HTTP port must be a valid number");
+        let deployment_mode = DeploymentMode::from_str(&args[4]).expect("Invalid deployment mode");
+        (rpc_port, http_port, hostname, deployment_mode)
+    } else {
+        eprintln!("Usage: {} <hostname> <rpc_port> <http_port> <deployment_mode>", args[0]);
+        eprintln!("Example: {} 127.0.0.1 8084 8085 localhost", args[0]);
         eprintln!("Deployment modes: localhost, aws");
+        eprintln!("In AWS mode, RPC_PORT and HTTP_PORT environment variables are used");
+        std::process::exit(1);
+    };
+    
+    // Validate ports are available
+    if let Err(e) = check_port_available(rpc_port) {
+        log_error!("RPC port validation failed: {}", e);
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+    if let Err(e) = check_port_available(http_port) {
+        log_error!("HTTP port validation failed: {}", e);
+        eprintln!("Error: {}", e);
         std::process::exit(1);
     }
     
-    let hostname = args[1].clone();
-    let port: u16 = args[2].parse().expect("Port must be a valid number");
-    let deployment_mode = DeploymentMode::from_str(&args[3]).expect("Invalid deployment mode");
-    
     // Initialize global variables
     backend_config::set_backend_hostname(hostname.clone());
-    backend_config::set_backend_port(port);
+    backend_config::set_backend_port(rpc_port);
     
     // When running in containers, services often bind on 0.0.0.0, but the cluster
     // topology may list 127.0.0.1. Normalize just for validation.
@@ -316,9 +372,10 @@ async fn main() {
         hostname.clone()
     };
     
-    init_logging(&format!("output/logs/be_{}.log", port));
+    init_logging(&format!("output/logs/be_{}.log", rpc_port));
     log_startup("BE");
     log!("Starting the backend in {:?} deployment mode, version {}", deployment_mode, BUILD_VERSION);
+    log!("RPC port: {}, HTTP port: {}", rpc_port, http_port);
     set_panic_hook();
     
     let deployment_mode_str = match deployment_mode {
@@ -331,22 +388,25 @@ async fn main() {
     
     // Create DiscoveredTopology in AWS mode
     if deployment_mode == DeploymentMode::Aws {
-        let discovered_topology = create_discovered_topology(&hostname, port).await;
+        let discovered_topology = create_discovered_topology(&hostname, rpc_port).await;
         discovered_topology.log_self();
         start_periodic_discovery(Arc::new(Mutex::new(discovered_topology)));
         
-        // Start HTTP server for debug endpoints (only in AWS mode)
-        tokio::spawn(start_http_server());
+        // Start HTTP server for debug endpoints (in both AWS and localhost modes)
+        tokio::spawn(start_http_server(http_port));
+    } else {
+        // Start HTTP server in localhost mode as well
+        tokio::spawn(start_http_server(http_port));
     }
     
     if deployment_mode == DeploymentMode::Localhost {
         // Validate that this backend's hostname and port are in the cluster topology
         let topology = shared::cluster_topology::ClusterTopology::get_instance();
         let backend_hosts = topology.get_all_backend_hosts();
-        let this_host = shared::cluster_topology::HostInfo::new(normalized_hostname_for_validation.clone(), port);    
+        let this_host = shared::cluster_topology::HostInfo::new(normalized_hostname_for_validation.clone(), rpc_port);    
         if !backend_hosts.contains(&this_host) {
-            panic!("Backend hostname '{}' and port '{}' not found in cluster topology. Available backend hosts: {:?}", 
-                hostname, port, backend_hosts.iter().map(|h| h.to_address()).collect::<Vec<_>>());
+            panic!("Backend hostname '{}' and RPC port '{}' not found in cluster topology. Available backend hosts: {:?}", 
+                hostname, rpc_port, backend_hosts.iter().map(|h| h.to_address()).collect::<Vec<_>>());
         }
     }
 
@@ -355,7 +415,7 @@ async fn main() {
         DeploymentMode::Aws => "0.0.0.0".to_string(),
         DeploymentMode::Localhost => hostname.clone(),
     };
-    let bind_addr = format!("{}:{}", bind_host, port);
+    let bind_addr = format!("{}:{}", bind_host, rpc_port);
     let listener = match TcpListener::bind(&bind_addr).await {
         Ok(listener) => listener,
         Err(err) => {
@@ -370,14 +430,9 @@ async fn main() {
         DeploymentMode::Aws => "0.0.0.0".to_string(), // Will be replaced with actual IP in AWS
         DeploymentMode::Localhost => normalized_hostname_for_validation.clone(),
     };
-    // In localhost mode, use the same port for both internal and http
-    // In AWS mode, use port for internal and HTTP_SERVER_PORT for http
-    let http_port = match deployment_mode {
-        DeploymentMode::Aws => HTTP_SERVER_PORT,
-        DeploymentMode::Localhost => port, // Use same port in localhost mode
-    };
-    let backend_address = NodeAddress::new(backend_ip, port, http_port);
-    let instance_id = format!("backend_{}", port);
+    // Use RPC port for internal communication and HTTP port for HTTP endpoints
+    let backend_address = NodeAddress::new(backend_ip, rpc_port, http_port);
+    let instance_id = format!("backend_{}", rpc_port);
     if let Some(registry) = get_instance() {
         if let Err(e) = registry.register_backend(instance_id.clone(), backend_address).await {
             log_error!("Failed to register backend: {}", e);

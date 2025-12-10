@@ -54,10 +54,18 @@ pub async fn cloud_start_colony(idempotency_key: Option<String>) {
 }
 
 async fn discover_and_ping_backends() -> Vec<HostInfo> {
-    use crate::http_server::HTTP_SERVER_PORT;
+    // Get RPC and HTTP ports from environment variables (AWS mode) or use defaults
+    let rpc_port = std::env::var("RPC_PORT")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(8082); // Default fallback
+    let http_port = std::env::var("HTTP_PORT")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(8083); // Default fallback
     let mut discovered_topology = DiscoveredTopology::new(
         NodeType::Coordinator,
-        NodeAddress::new("127.0.0.1".to_string(), shared::coordinator_api::COORDINATOR_PORT, HTTP_SERVER_PORT),
+        NodeAddress::new("127.0.0.1".to_string(), rpc_port, http_port),
         None,
         Vec::new(),
     );

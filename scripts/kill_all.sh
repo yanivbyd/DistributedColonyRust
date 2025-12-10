@@ -1,8 +1,13 @@
 #!/bin/bash
 
 # Configuration - matches cluster topology
-BACKEND_PORTS=(8082 8084 8085 8086)
-COORDINATOR_PORT=8083
+# Port pairs: (RPC_PORT, HTTP_PORT)
+# Coordinator: RPC=8082, HTTP=8083
+# Backends: RPC=8084,8086,8088,8090 and HTTP=8085,8087,8089,8091
+COORDINATOR_RPC_PORT=8082
+COORDINATOR_HTTP_PORT=8083
+BACKEND_RPC_PORTS=(8084 8086 8088 8090)
+BACKEND_HTTP_PORTS=(8085 8087 8089 8091)
 
 echo "🔄 Killing all backend, coordinator, and GUI processes..."
 
@@ -22,13 +27,19 @@ pkill -9 -x gui || true
 # Also kill by port usage as a backup
 echo "🔫 Force killing processes by port usage..."
 
-# Kill backend ports
-for port in "${BACKEND_PORTS[@]}"; do
+# Kill backend RPC ports
+for port in "${BACKEND_RPC_PORTS[@]}"; do
     lsof -ti :$port | xargs kill -9 2>/dev/null || true
 done
 
-# Kill coordinator port
-lsof -ti :$COORDINATOR_PORT | xargs kill -9 2>/dev/null || true
+# Kill backend HTTP ports
+for port in "${BACKEND_HTTP_PORTS[@]}"; do
+    lsof -ti :$port | xargs kill -9 2>/dev/null || true
+done
+
+# Kill coordinator ports
+lsof -ti :$COORDINATOR_RPC_PORT | xargs kill -9 2>/dev/null || true
+lsof -ti :$COORDINATOR_HTTP_PORT | xargs kill -9 2>/dev/null || true
 
 # Wait for forceful termination
 sleep 1
@@ -38,8 +49,8 @@ echo "🔍 Checking if ports are still in use..."
 
 timeout=30
 
-# Check backend ports with timeout
-for port in "${BACKEND_PORTS[@]}"; do
+# Check backend RPC ports with timeout
+for port in "${BACKEND_RPC_PORTS[@]}"; do
     counter=0
     while lsof -i :$port >/dev/null 2>&1 && [ $counter -lt $timeout ]; do
         echo "⏳ Port $port still in use, waiting for release... ($counter/$timeout)"
@@ -54,17 +65,47 @@ for port in "${BACKEND_PORTS[@]}"; do
     fi
 done
 
-# Check coordinator port with timeout
+# Check backend HTTP ports with timeout
+for port in "${BACKEND_HTTP_PORTS[@]}"; do
+    counter=0
+    while lsof -i :$port >/dev/null 2>&1 && [ $counter -lt $timeout ]; do
+        echo "⏳ Port $port still in use, waiting for release... ($counter/$timeout)"
+        sleep 1
+        counter=$((counter + 1))
+    done
+
+    if [ $counter -eq $timeout ]; then
+        echo "❌ Timeout waiting for port $port to be released. Force killing..."
+        lsof -ti :$port | xargs kill -9 2>/dev/null || true
+        sleep 2
+    fi
+done
+
+# Check coordinator RPC port with timeout
 counter=0
-while lsof -i :$COORDINATOR_PORT >/dev/null 2>&1 && [ $counter -lt $timeout ]; do
-    echo "⏳ Port $COORDINATOR_PORT still in use, waiting for release... ($counter/$timeout)"
+while lsof -i :$COORDINATOR_RPC_PORT >/dev/null 2>&1 && [ $counter -lt $timeout ]; do
+    echo "⏳ Port $COORDINATOR_RPC_PORT still in use, waiting for release... ($counter/$timeout)"
     sleep 1
     counter=$((counter + 1))
 done
 
 if [ $counter -eq $timeout ]; then
-    echo "❌ Timeout waiting for port $COORDINATOR_PORT to be released. Force killing..."
-    lsof -ti :$COORDINATOR_PORT | xargs kill -9 2>/dev/null || true
+    echo "❌ Timeout waiting for port $COORDINATOR_RPC_PORT to be released. Force killing..."
+    lsof -ti :$COORDINATOR_RPC_PORT | xargs kill -9 2>/dev/null || true
+    sleep 2
+fi
+
+# Check coordinator HTTP port with timeout
+counter=0
+while lsof -i :$COORDINATOR_HTTP_PORT >/dev/null 2>&1 && [ $counter -lt $timeout ]; do
+    echo "⏳ Port $COORDINATOR_HTTP_PORT still in use, waiting for release... ($counter/$timeout)"
+    sleep 1
+    counter=$((counter + 1))
+done
+
+if [ $counter -eq $timeout ]; then
+    echo "❌ Timeout waiting for port $COORDINATOR_HTTP_PORT to be released. Force killing..."
+    lsof -ti :$COORDINATOR_HTTP_PORT | xargs kill -9 2>/dev/null || true
     sleep 2
 fi
 

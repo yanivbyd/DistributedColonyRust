@@ -93,14 +93,14 @@ export class UserDataBuilder {
       scripts.push(
         '',
         '# Trigger cloud-start workflow:',
-        'curl -X POST -i http://127.0.0.1:8084/cloud-start',
+        'curl -X POST -i http://127.0.0.1:8083/cloud-start',
       );
     } 
       
     scripts.push(
         '',
         '# Inspect current SSM registrations:',
-        'curl -X GET -i http://127.0.0.1:8084/debug-ssm'
+        `curl -X GET -i http://127.0.0.1:${instanceType === ColonyInstanceType.COORDINATOR ? '8083' : '8085'}/debug-ssm`
     );
     
 
@@ -188,10 +188,10 @@ export class UserDataBuilder {
       `docker rm ${containerName} 2>/dev/null || true`,
       '',
       'echo "[INFO] Starting new container..."',
-      ...this.buildDockerRunCommand(instanceType, port).map(line => {
-        // For the last line (the image), add failure handling
-        if (line.trim() === '"$ECR_URI"') {
-          return '  "$ECR_URI" || fail "Docker run failed"';
+      ...this.buildDockerRunCommand(instanceType, port).map((line, index, array) => {
+        // For the last line (the command), add failure handling
+        if (index === array.length - 1) {
+          return `${line} || fail "Docker run failed"`;
         }
         return line;
       }),
@@ -232,22 +232,22 @@ export class UserDataBuilder {
   }
 
   private buildDockerRunCommand(instanceType: ColonyInstanceType, port: number): string[] {
-    const httpPort = 8084;
+    // Port assignments per instance type:
+    // Coordinator: RPC_PORT=8082, HTTP_PORT=8083
+    // Backend: RPC_PORT=8084, HTTP_PORT=8085
+    const rpcPort = port; // port parameter is the RPC port
+    const httpPort = instanceType === ColonyInstanceType.COORDINATOR ? 8083 : 8085;
     const containerName = instanceType === ColonyInstanceType.COORDINATOR ? 'distributed-coordinator' : 'distributed-colony';
     const serviceType = instanceType === ColonyInstanceType.COORDINATOR ? 'coordinator' : 'backend';
-    const portEnvVar = instanceType === ColonyInstanceType.COORDINATOR ? 'COORDINATOR_PORT' : 'BACKEND_PORT';
     
     // Get the local IP for backend instances (coordinator uses 127.0.0.1)
     const hostname = instanceType === ColonyInstanceType.COORDINATOR ? '127.0.0.1' : '$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)';
     
     const baseCommand: string[] = [];
 
-    if (instanceType === ColonyInstanceType.COORDINATOR) {
-      baseCommand.push(`COORDINATOR_PORT=${port}`);
-      baseCommand.push(`HTTP_PORT=${httpPort}`);
-    } else {
-      baseCommand.push(`BACKEND_PORT=${port}`);
-    }
+    // Set environment variables for both coordinator and backend
+    baseCommand.push(`RPC_PORT=${rpcPort}`);
+    baseCommand.push(`HTTP_PORT=${httpPort}`);
 
     baseCommand.push(
       'docker run -d \\',
@@ -255,7 +255,8 @@ export class UserDataBuilder {
       '  --network host \\',
       '  -v /data/distributed-colony/output:/app/output \\',
       `  -e SERVICE_TYPE=${serviceType} \\`,
-      `  -e ${portEnvVar}=$${portEnvVar} \\`,
+      `  -e RPC_PORT=${rpcPort} \\`,
+      `  -e HTTP_PORT=${httpPort} \\`,
       `  -e AWS_DEFAULT_REGION=${this.region} \\`,
       `  -e AWS_REGION=${this.region} \\`,
       '  -e DEPLOYMENT_MODE=aws \\',
@@ -263,11 +264,15 @@ export class UserDataBuilder {
     
     if (instanceType === ColonyInstanceType.BACKEND) {
       baseCommand.push(`  -e BACKEND_HOST=${hostname} \\`);
-    } else {
-      baseCommand.push(`  -e HTTP_PORT=${httpPort} \\`);
     }
     
-    baseCommand.push('  "$ECR_URI"');
+    // Build command arguments based on instance type
+    // Use environment variable substitution for ports
+    if (instanceType === ColonyInstanceType.COORDINATOR) {
+      baseCommand.push(`  "$ECR_URI" /usr/local/bin/coordinator $RPC_PORT $HTTP_PORT aws`);
+    } else {
+      baseCommand.push(`  "$ECR_URI" /usr/local/bin/backend $${hostname} $RPC_PORT $HTTP_PORT aws`);
+    }
     
     return baseCommand;
   }

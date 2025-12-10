@@ -1,7 +1,7 @@
 # Port Canonization for Localhost & Cloud
 
 ## Acknowledgment
-[Status: Pending Review]
+Yaniv: ack
 
 ## Overview
 This specification defines a canonical approach for port number management across localhost and cloud deployments. Each node requires two distinct ports: one for internal TCP communication (coordinator/backend protocol) and one for external HTTP REST API. The port assignment strategy differs between localhost (where all processes share the same machine) and AWS cloud (where each spot instance has constant port assignments).

@@ -59,10 +59,9 @@ ENV BUILD_VERSION=${BUILD_VERSION}
 # Note: In distroless, shell scripts cannot be used, so these are for reference
 # The actual binary selection must be done via CMD override
 ENV SERVICE_TYPE=backend
-ENV COORDINATOR_HOST=localhost
-ENV COORDINATOR_PORT=8083
 ENV BACKEND_HOST=0.0.0.0
-ENV BACKEND_PORT=8082
+ENV RPC_PORT=8084
+ENV HTTP_PORT=8085
 
 # Copy both binaries from builder stage
 # Both are needed since the image can run either backend or coordinator
@@ -70,10 +69,10 @@ COPY --from=builder /app/target/release/backend /usr/local/bin/backend
 COPY --from=builder /app/target/release/coordinator /usr/local/bin/coordinator
 
 # Expose ports (will be overridden by environment variables in deployment)
-EXPOSE 8082 8083
+EXPOSE 8082 8083 8084 8085
 
 # Default command: run backend with default arguments
-# To run coordinator instead, override CMD: docker run ... /usr/local/bin/coordinator aws
-# To run backend with custom args: docker run ... /usr/local/bin/backend <host> <port> aws
-# Note: Using CMD instead of ENTRYPOINT allows complete override for coordinator
-CMD ["/usr/local/bin/backend", "0.0.0.0", "8082", "aws"]
+# To run coordinator: docker run ... /usr/local/bin/coordinator 8082 8083 aws
+# To run backend: docker run ... /usr/local/bin/backend <host> <rpc_port> <http_port> aws
+# Note: Using CMD instead of ENTRYPOINT allows complete override
+CMD ["/usr/local/bin/backend", "0.0.0.0", "8084", "8085", "aws"]

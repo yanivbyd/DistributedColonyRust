@@ -5,8 +5,8 @@ use std::sync::{Arc, OnceLock, RwLock};
 use crate::log;
 
 // Configuration constants
-const COORDINATOR_PORT: u16 = 8083;
-const BACKEND_PORTS: &[u16] = &[8082, 8084, 8085, 8086];
+const COORDINATOR_PORT: u16 = 8082;
+const BACKEND_PORTS: &[u16] = &[8084, 8086, 8088, 8090];
 const HOSTNAME: &str = "127.0.0.1";
 const WIDTH_IN_SHARDS: i32 = 8;
 const HEIGHT_IN_SHARDS: i32 = 5;

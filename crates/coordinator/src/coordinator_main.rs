@@ -17,12 +17,10 @@ use shared::be_api::StatMetric;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
-use shared::coordinator_api::{COORDINATOR_PORT };
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error, log};
 use bincode;
 use futures_util::SinkExt;
-use crate::http_server::HTTP_SERVER_PORT;
 #[derive(Debug, Clone, PartialEq)]
 enum DeploymentMode {
     Localhost,
@@ -177,26 +175,78 @@ async fn handle_get_colony_stats(metrics: Vec<StatMetric>) -> CoordinatorRespons
     CoordinatorResponse::GetColonyStatsResponse { metrics: results, tick_count: min_tick.unwrap_or(0) }
 }
 
+fn check_port_available(port: u16) -> Result<(), String> {
+    use std::net::TcpListener;
+    match TcpListener::bind(format!("127.0.0.1:{}", port)) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::AddrInUse {
+                Err(format!("Port {} is already in use", port))
+            } else {
+                Err(format!("Failed to check port {}: {}", port, e))
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 2 {
-        eprintln!("Usage: {} <deployment_mode>", args[0]);
-        eprintln!("Example: {} localhost", args[0]);
-        eprintln!("Deployment modes: localhost, aws");
-        std::process::exit(1);
-    }
     
-    let deployment_mode = DeploymentMode::from_str(&args[1]).expect("Invalid deployment mode");
+    // In AWS mode, get ports from environment variables if not provided as arguments
+    let (rpc_port, http_port, deployment_mode) = if args.len() == 2 {
+        // AWS mode: get from environment variables
+        let deployment_mode = DeploymentMode::from_str(&args[1]).expect("Invalid deployment mode");
+        if deployment_mode != DeploymentMode::Aws {
+            eprintln!("Usage: {} <rpc_port> <http_port> <deployment_mode>", args[0]);
+            eprintln!("Example: {} 8082 8083 localhost", args[0]);
+            eprintln!("Deployment modes: localhost, aws");
+            std::process::exit(1);
+        }
+        let rpc_port = std::env::var("RPC_PORT")
+            .ok()
+            .and_then(|v| v.parse::<u16>().ok())
+            .expect("RPC_PORT environment variable must be set in AWS mode");
+        let http_port = std::env::var("HTTP_PORT")
+            .ok()
+            .and_then(|v| v.parse::<u16>().ok())
+            .expect("HTTP_PORT environment variable must be set in AWS mode");
+        (rpc_port, http_port, deployment_mode)
+    } else if args.len() == 4 {
+        // Localhost mode: get from command line arguments
+        let rpc_port: u16 = args[1].parse().expect("RPC port must be a valid number");
+        let http_port: u16 = args[2].parse().expect("HTTP port must be a valid number");
+        let deployment_mode = DeploymentMode::from_str(&args[3]).expect("Invalid deployment mode");
+        (rpc_port, http_port, deployment_mode)
+    } else {
+        eprintln!("Usage: {} <rpc_port> <http_port> <deployment_mode>", args[0]);
+        eprintln!("Example: {} 8082 8083 localhost", args[0]);
+        eprintln!("Deployment modes: localhost, aws");
+        eprintln!("In AWS mode, RPC_PORT and HTTP_PORT environment variables are used");
+        std::process::exit(1);
+    };
     let deployment_mode_str = match deployment_mode {
         DeploymentMode::Aws => "aws",
         DeploymentMode::Localhost => "localhost",
     };
     
-    init_logging(&format!("output/logs/coordinator_{}.log", COORDINATOR_PORT));
+    // Validate ports are available
+    if let Err(e) = check_port_available(rpc_port) {
+        log_error!("RPC port validation failed: {}", e);
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+    if let Err(e) = check_port_available(http_port) {
+        log_error!("HTTP port validation failed: {}", e);
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+    
+    init_logging(&format!("output/logs/coordinator_{}.log", rpc_port));
     log_startup("COORDINATOR");
     log!("Starting coordinator in {:?} deployment mode, version {}", deployment_mode, BUILD_VERSION);
+    log!("RPC port: {}, HTTP port: {}", rpc_port, http_port);
     set_panic_hook();
     
     // Initialize ClusterRegistry early
@@ -210,17 +260,17 @@ async fn main() {
         tokio::spawn(initialize_colony());
     } else {
         log!("AWS mode: Waiting for cloud-start HTTP request to initialize colony");
-
-        // Start HTTP server for cloud-start endpoint (only in AWS mode)
-        tokio::spawn(start_http_server());
     }
+
+    // Start HTTP server (in both AWS and localhost modes)
+    tokio::spawn(start_http_server(http_port));
 
     // Start TCP listener for coordinator protocol
     let bind_host = match deployment_mode {
         DeploymentMode::Aws => "0.0.0.0",
         DeploymentMode::Localhost => "127.0.0.1",
     };
-    let addr = format!("{}:{}", bind_host, COORDINATOR_PORT);
+    let addr = format!("{}:{}", bind_host, rpc_port);
     let listener = match TcpListener::bind(&addr).await {
         Ok(listener) => listener,
         Err(err) => {
@@ -235,13 +285,8 @@ async fn main() {
         DeploymentMode::Aws => "0.0.0.0", // Will be replaced with actual IP in AWS
         DeploymentMode::Localhost => "127.0.0.1",
     };
-    // In localhost mode, use the same port for both internal and http
-    // In AWS mode, use COORDINATOR_PORT for internal and HTTP_SERVER_PORT for http
-    let http_port = match deployment_mode {
-        DeploymentMode::Aws => HTTP_SERVER_PORT,
-        DeploymentMode::Localhost => COORDINATOR_PORT, // Use same port in localhost mode
-    };
-    let coordinator_address = NodeAddress::new(coordinator_ip.to_string(), COORDINATOR_PORT, http_port);
+    // Use RPC port for internal communication and HTTP port for HTTP endpoints
+    let coordinator_address = NodeAddress::new(coordinator_ip.to_string(), rpc_port, http_port);
     if let Some(registry) = get_instance() {
         if let Err(e) = registry.register_coordinator(coordinator_address).await {
             log_error!("Failed to register coordinator: {}", e);
