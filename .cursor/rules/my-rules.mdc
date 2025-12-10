@@ -21,6 +21,7 @@ Never clone large objects, such as ColonyShard
 - **If not acknowledged**: Only work on the specification itself (updates, clarifications, etc.) - do NOT start implementation
 - **After acknowledgment**: Proceed with implementation according to the specification
 - **Recommended options in specs**: When a specification presents multiple options and one is recommended, indicate this in the section title by adding "(Recommended)" to the recommended option, e.g., "Option 1: Description (Recommended)". For each alternative option, clearly state the pros and cons compared to the recommended option, and explain the motivation for presenting that alternative option.
+- Implementation alternatives should always be in the last section, once the leading option is approved we should remove move the alternatives to an appendix
 
 ## Code Architecture Guidelines
 - **High-level functions** should focus on business logic and orchestration
