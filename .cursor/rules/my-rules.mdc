@@ -1,47 +1,57 @@
----
-description: 
-globs: 
-alwaysApply: true
----
-Write simple, easy-to-read code.
-Avoid code repetition.
-Keep changes minimal and aligned with the prompt.
-Prioritize efficient yet readable code.
-Always build after doing changes, make sure no errors or warnings.
-Do not ask for changes, always apply without asking.
-Logging error should be done via log_error.
-Do not run the crates - only check if they build without errors/warnings.
-Do not use Rayon, always use tokio for parallelism
-Never clone large objects, such as ColonyShard
+# my-rules.mdc
 
-## Specification Workflow
-- **Acknowledgment section location**: The "Acknowledgment" section must always be the **first section** in any specification file (placed immediately after the title)
-- **NEVER implement before specification is acknowledged**: All feature specifications in `feature_specs/` directory must have an "Acknowledgment" section at the beginning
-- **Check for acknowledgment**: Before implementing any feature from a spec file, verify that the "Acknowledgment" section shows the specification has been reviewed and approved AND marked as "Ready for implementation"
-- **If not acknowledged**: Only work on the specification itself (updates, clarifications, etc.) - do NOT start implementation
-- **After acknowledgment**: Proceed with implementation according to the specification
-- **Recommended options in specs**: When a specification presents multiple options and one is recommended, indicate this in the section title by adding "(Recommended)" to the recommended option, e.g., "Option 1: Description (Recommended)". For each alternative option, clearly state the pros and cons compared to the recommended option, and explain the motivation for presenting that alternative option.
-- Implementation alternatives should always be in the last section, once the leading option is approved we should remove move the alternatives to an appendix
-- No migration consideration is needed
-- "Open Questions" section should be first, as it asks the human author questions
-- No need for "Decisions" section, they should be integrated into the doc organically
+## CursorAI Rules
 
-## Code Architecture Guidelines
-- **High-level functions** should focus on business logic and orchestration
-- **Low-level details** (TCP connections, serialization, file I/O, error handling) should be abstracted into separate helper functions
-- Functions should read like API calls, not implementation details
-- Abstract low-level operations into reusable helper functions
+### Specification Workflow Rules
+- Each spec begins when the **Human Author** requests CursorAI to generate a specification based on an explanation.
+- **Spec Status: waiting answers**  
+  CursorAI generates the initial version, including a **Clarifications** section at the top.
+- The **Human Author** answers the questions and may add more details inside the Clarifications section.
+- CursorAI integrates these answers and updates the spec status to **draft**.
+- A ping-pong iteration continues until the **Human Author** explicitly approves the specification.
+- CursorAI begins implementation **only** when the **Human Author** explicitly instructs it to do so.
+- Every specification document contains **two sections**:
+  1. **Spec Header** at the top, containing:  
+     - Spec status  
+     - Open questions for the **Human Author**  
+     - If applicable: **Required Human Author decisions** (e.g., choice among design options)
+  2. **Main specification**, limited to **150 lines or fewer**, unless explicitly permitted otherwise.
+- When a spec presents multiple design options:
+  - The recommended option’s title must end with **"(Recommended)"**.
+  - Alternative options must include pros, cons, and a short motivation.
+  - A **Human Author decision** is required to select the recommended option before proceeding.
+  - After the **Human Author** approves the recommended option, alternatives are moved to an **Appendix**.
 
-## Rust-Specific Guidelines
-- Use the log! macro for logging in Rust code instead of crate::log!
-- Prefer using .expect over macros like log_expect for error handling
-- Use imports to refer to types like TCPStream and Request rather than fully qualified names
-- Import Request classes and refer to them by simple names instead of fully qualified shared::be_api::Request
-- Main.rs should be thin and shard-related logic should be placed in shard utils or colony modules
-- Always clean up compiler warnings in the code
-- Prefer passing random number generator objects (rng) to helper functions and using the random range function consistently
-- Always use `shared::utils::new_random_generator()` for random number generation, never use `SmallRng::from_entropy()` directly
-- Place duplicate code and constants under the shared crate instead of copying code from one module to another
-- Avoid using global counters or global state
-- Include the region parameter when logging colony events in backend code
-- Do not include the [COORD] or [BE] prefix in log lines
+
+### General Coding Rules
+- Write simple, easy-to-read code.
+- Avoid code repetition.
+- Keep changes minimal and aligned with the prompt.
+- Prioritize efficient yet readable code.
+- Always build after changes and ensure zero errors or warnings.
+- Do not ask for permission before applying changes; apply directly.
+- Log errors using `log_error`.
+- Do not run crates — only verify they build cleanly.
+- Use **tokio** for parallelism; never use **Rayon**.
+- Never clone large objects (e.g., `ColonyShard`).
+
+### Code Architecture Rules
+- High-level functions focus on business logic and orchestration.
+- Low-level operations (TCP, serialization, file I/O, error handling) belong in helper utilities.
+- Functions should read like clean, well-defined API calls rather than exposing implementation details.
+- Extract repetitive or low-level logic into shared helper functions.
+
+### Rust-Specific Rules
+- Use `log!` for logging; avoid `crate::log!`.
+- Prefer `.expect(...)` over custom logging macros like `log_expect`.
+- Import commonly used types (e.g., `TcpStream`, `Request`) instead of using fully qualified paths.
+- Import request types directly instead of `shared::be_api::Request`.
+- Keep `main.rs` minimal; move colony/shard logic into appropriate modules.
+- Resolve all compiler warnings.
+- Pass RNG objects to helper functions; avoid unnecessary re-creation.
+- Always use `shared::utils::new_random_generator()` for RNG creation.
+- Do not use `SmallRng::from_entropy()` directly.
+- Consolidate duplicate constants or logic into the `shared` crate.
+- Avoid global counters or global mutable state.
+- Include the **region** parameter when logging colony events in backend code.
+- Do not use `[COORD]` or `[BE]` prefixes in logs.
