@@ -6,7 +6,7 @@ use crate::init_colony::initialize_colony;
 use crate::coordinator_context::CoordinatorContext;
 
 pub async fn cloud_start_colony(idempotency_key: Option<String>) {
-    log!("Starting cloud-start process: discovering backends and creating shard map");
+    log!("Starting colony-start process: discovering backends and creating shard map");
     
     // Step 1: Discover available backend nodes from AWS config
     let available_backends = discover_and_ping_backends().await;
@@ -50,7 +50,7 @@ pub async fn cloud_start_colony(idempotency_key: Option<String>) {
         stored_info.cloud_start_idempotency_key = Some(key.clone());
     }
     
-    log!("Cloud-start completed successfully");
+    log!("Colony-start completed successfully");
 }
 
 async fn discover_and_ping_backends() -> Vec<HostInfo> {

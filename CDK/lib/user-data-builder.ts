@@ -92,8 +92,8 @@ export class UserDataBuilder {
     if (instanceType === ColonyInstanceType.COORDINATOR) {
       scripts.push(
         '',
-        '# Trigger cloud-start workflow:',
-        'curl -X POST -i http://127.0.0.1:8083/cloud-start',
+        '# Trigger colony-start workflow:',
+        'curl -X POST -i http://127.0.0.1:8083/colony-start',
       );
     } 
       

@@ -22,6 +22,7 @@ pub enum BackendRequest {
     InitShardTopography(InitShardTopographyRequest),
     GetShardCurrentTick(GetShardCurrentTickRequest),
     ApplyEvent(ApplyEventRequest),
+    StartTicking(StartTickingRequest),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -37,6 +38,7 @@ pub enum BackendResponse {
     InitShardTopography(InitShardTopographyResponse),
     GetShardCurrentTick(GetShardCurrentTickResponse),
     ApplyEvent(ApplyEventResponse),
+    StartTicking(StartTickingResponse),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -191,4 +193,17 @@ pub struct ApplyEventRequest {
 pub enum ApplyEventResponse {
     Ok,
     ColonyNotInitialized,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StartTickingRequest {
+    // Empty for now, can be extended with parameters if needed
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum StartTickingResponse {
+    Ok,
+    ColonyNotInitialized,
+    TopologyNotInitialized,
+    Error(String),
 }

@@ -64,7 +64,7 @@ pub async fn start_http_server(http_port: u16) {
                     if let Ok(n) = stream.read(&mut buffer).await {
                         let request = String::from_utf8_lossy(&buffer[..n]);
                         
-                        if request.starts_with("POST /cloud-start") {
+                        if request.starts_with("POST /colony-start") || request.starts_with("POST /cloud-start") {
                             let idempotency_key = parse_query_param(&request, "idempotency_key");
                             
                             if idempotency_key.is_none() {
@@ -82,7 +82,7 @@ pub async fn start_http_server(http_port: u16) {
                                         let _ = stream.write_all(response.as_bytes()).await;
                                     }
                                 } else {
-                                    log!("Received cloud-start request via HTTP with idempotency_key: {}", idempotency_key);
+                                    log!("Received colony-start request via HTTP with idempotency_key: {}", idempotency_key);
                                     let key_clone = idempotency_key.clone();
                                     tokio::spawn(async move {
                                         cloud_start_colony(Some(key_clone)).await;
@@ -102,8 +102,8 @@ pub async fn start_http_server(http_port: u16) {
                                 body
                             );
                             let _ = stream.write_all(response.as_bytes()).await;
-                        } else if request.starts_with("GET /cloud-start") || request.starts_with("GET /") {
-                            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nCloud-start API";
+                        } else if request.starts_with("GET /colony-start") || request.starts_with("GET /cloud-start") || request.starts_with("GET /") {
+                            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nColony-start API";
                             let _ = stream.write_all(response.as_bytes()).await;
                         } else {
                             let response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";

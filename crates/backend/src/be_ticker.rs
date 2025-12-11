@@ -5,9 +5,13 @@ use crate::shard_utils::ShardUtils;
 use shared::utils::new_random_generator;
 use shared::cluster_topology::{ClusterTopology, HostInfo};
 use crate::backend_config::{get_backend_hostname, get_backend_port};
-use std::sync::{Arc};
+use std::sync::{Arc, OnceLock};
+
+static TICKER_STARTED: OnceLock<()> = OnceLock::new();
 
 pub fn start_be_ticker() {
+    // Ensure ticker is only started once (idempotent)
+    TICKER_STARTED.get_or_init(|| {
     tokio::spawn(async move {
         loop {
             if Colony::is_initialized() {
@@ -72,5 +76,6 @@ pub fn start_be_ticker() {
 
             tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
         }
+    });
     });
 }

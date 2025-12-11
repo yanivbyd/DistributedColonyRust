@@ -4,7 +4,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, GetShardLayerRequest, GetShardLayerResponse, InitShardTopographyRequest, InitShardTopographyResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse, GetShardStatsRequest, GetShardStatsResponse};
+use shared::be_api::{BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, GetShardLayerRequest, GetShardLayerResponse, InitShardTopographyRequest, InitShardTopographyResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse, GetShardStatsRequest, GetShardStatsResponse, StartTickingRequest, StartTickingResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
@@ -71,6 +71,7 @@ fn call_label(response: &BackendResponse) -> &'static str {
         BackendResponse::InitShardTopography(_) => "InitShardTopography",
         BackendResponse::GetShardCurrentTick(_) => "GetShardCurrentTick",
         BackendResponse::ApplyEvent(_) => "ApplyEvent",
+        BackendResponse::StartTicking(_) => "StartTicking",
     }
 }
 
@@ -101,6 +102,7 @@ async fn handle_client(socket: TcpStream) {
                     Ok(BackendRequest::GetShardCurrentTick(req)) => handle_get_shard_current_tick(req).await,
                     Ok(BackendRequest::GetShardStats(req)) => handle_get_shard_stats(req).await,
                     Ok(BackendRequest::ApplyEvent(req)) => handle_apply_event(req).await,
+                    Ok(BackendRequest::StartTicking(req)) => handle_start_ticking(req).await,
                     Err(e) => {
                         log_error!("Failed to deserialize BackendRequest: {}", e);
                         continue;
@@ -328,6 +330,23 @@ async fn handle_apply_event(req: ApplyEventRequest) -> BackendResponse {
     }
 }
 
+async fn handle_start_ticking(_req: StartTickingRequest) -> BackendResponse {
+    if !Colony::is_initialized() {
+        return BackendResponse::StartTicking(StartTickingResponse::ColonyNotInitialized);
+    }
+    
+    // Check if topology is initialized using the same flag used elsewhere in the backend
+    let topology_initialized = TOPOLOGY_INITIALIZED.get().copied().unwrap_or(false);
+    if !topology_initialized {
+        return BackendResponse::StartTicking(StartTickingResponse::TopologyNotInitialized);
+    }
+    
+    // Start ticking (idempotent - start_be_ticker uses OnceLock to ensure only called once)
+    be_ticker::start_be_ticker();
+    
+    BackendResponse::StartTicking(StartTickingResponse::Ok)
+}
+
 async fn create_discovered_topology(hostname: &str, rpc_port: u16) -> DiscoveredTopology {
     // In AWS mode, HTTP port comes from HTTP_PORT env var
     let http_port = std::env::var("HTTP_PORT")
@@ -453,7 +472,9 @@ async fn main() {
     // Note: Topology validation is now done during InitColonyShard processing using routing table from coordinator
     // No static topology access needed at startup
 
-    be_ticker::start_be_ticker();
+    // Backend ticker will be started by coordinator via StartTicking RPC after colony initialization
+    // Do NOT start ticker automatically here
+
     let bind_host = match deployment_mode {
         DeploymentMode::Aws => "0.0.0.0".to_string(),
         DeploymentMode::Localhost => hostname.clone(),

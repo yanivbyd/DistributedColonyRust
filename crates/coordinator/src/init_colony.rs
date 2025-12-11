@@ -1,8 +1,10 @@
 use shared::be_api::{
     BackendRequest, BackendResponse, ColonyLifeRules, GetColonyInfoRequest, 
     GetColonyInfoResponse, InitColonyRequest, InitColonyResponse, 
-    InitColonyShardRequest, InitColonyShardResponse, Shard
+    InitColonyShardRequest, InitColonyShardResponse, Shard, StartTickingRequest, StartTickingResponse
 };
+use shared::cluster_topology::HostInfo;
+use std::collections::HashSet;
 use shared::cluster_topology::ClusterTopology;
 use shared::{log, log_error};
 use tokio::net::TcpStream;
@@ -237,4 +239,68 @@ pub async fn initialize_colony() {
     }
     
     log!("Colony initialization completed with status: {:?}", context.get_coord_stored_info().status);
+    
+    // Step 4: Start colony ticking (coordinator ticker + notify all backends)
+    start_colony_ticking().await;
+}
+
+pub async fn start_colony_ticking() {
+    log!("Starting colony ticking: initiating coordinator ticker and notifying all backends");
+    
+    // Step 1: Start coordinator ticker
+    crate::coordinator_ticker::start_coordinator_ticker();
+    
+    // Step 2: Get topology and all backends
+    let topology_arc = ClusterTopology::get_instance();
+    
+    // Step 3: Send StartTicking to all unique backends
+    let backend_hosts = topology_arc.get_all_backend_hosts();
+    let mut unique_backends: HashSet<HostInfo> = HashSet::new();
+    for host in backend_hosts.iter() {
+        unique_backends.insert(host.clone());
+    }
+    
+    let backend_count = unique_backends.len();
+    for backend_host in unique_backends {
+        match send_start_ticking_to_backend(&backend_host).await {
+            Ok(StartTickingResponse::Ok) => {
+                log!("Backend {}:{} started ticking", backend_host.hostname, backend_host.port);
+            }
+            Ok(StartTickingResponse::ColonyNotInitialized) => {
+                log_error!("Backend {}:{} cannot start ticking: colony not initialized", 
+                          backend_host.hostname, backend_host.port);
+            }
+            Ok(StartTickingResponse::TopologyNotInitialized) => {
+                log_error!("Backend {}:{} cannot start ticking: topology not initialized", 
+                          backend_host.hostname, backend_host.port);
+            }
+            Ok(StartTickingResponse::Error(msg)) => {
+                log_error!("Backend {}:{} failed to start ticking: {}", 
+                          backend_host.hostname, backend_host.port, msg);
+            }
+            Err(e) => {
+                log_error!("Failed to send StartTicking to {}:{}: {}", 
+                          backend_host.hostname, backend_host.port, e);
+            }
+        }
+    }
+    
+    log!("Colony ticking started: coordinator ticker active, {} backends notified", backend_count);
+}
+
+async fn send_start_ticking_to_backend(backend_host: &HostInfo) -> Result<StartTickingResponse, String> {
+    let mut stream = connect_to_backend(&backend_host.hostname, backend_host.port).await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+    
+    let request = BackendRequest::StartTicking(StartTickingRequest {});
+    send_message(&mut stream, &request).await;
+    
+    if let Some(response) = receive_message::<BackendResponse>(&mut stream).await {
+        match response {
+            BackendResponse::StartTicking(resp) => Ok(resp),
+            _ => Err("Unexpected response type".to_string()),
+        }
+    } else {
+        Err("Failed to receive response".to_string())
+    }
 } 

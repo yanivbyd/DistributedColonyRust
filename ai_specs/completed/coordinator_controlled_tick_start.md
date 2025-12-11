@@ -2,7 +2,7 @@
 
 ## Spec Header
 
-**Status**: draft
+**Status**: approved
 
 ---
 

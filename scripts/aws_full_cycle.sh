@@ -405,12 +405,12 @@ print_status "Coordinator Public IP: $COORDINATOR_IP"
 print_status "Waiting 10 more seconds for services to start..."
 sleep 10
 
-# Test coordinator HTTP endpoint (using GET to verify server is up without triggering cloud-start)
+# Test coordinator HTTP endpoint (using GET to verify server is up without triggering colony-start)
 print_status "Testing coordinator HTTP endpoint (health check)..."
-COORDINATOR_URL="http://${COORDINATOR_IP}:${COORDINATOR_HTTP_PORT}/cloud-start"
+COORDINATOR_URL="http://${COORDINATOR_IP}:${COORDINATOR_HTTP_PORT}/colony-start"
 
 # Try to curl the endpoint with GET (don't fail script on HTTP errors)
-# GET /cloud-start returns "Cloud-start API" without triggering the actual cloud-start process
+# GET /colony-start returns "Colony-start API" without triggering the actual colony-start process
 RESPONSE_FILE="/tmp/coordinator_curl_response.txt"
 log_output "Running: curl -X GET $COORDINATOR_URL"
 
@@ -527,23 +527,23 @@ else
     fi
 fi
 
-# Step 5c: Trigger cloud-start on coordinator
-print_step "Step 5c: Triggering cloud-start on coordinator..."
+# Step 5c: Trigger colony-start on coordinator
+print_step "Step 5c: Triggering colony-start on coordinator..."
 
-CLOUD_START_SCRIPT="${SCRIPT_DIR}/cloud_start.sh"
+COLONY_START_SCRIPT="${SCRIPT_DIR}/colony_start.sh"
 
-if [ ! -f "$CLOUD_START_SCRIPT" ]; then
-    print_warning "cloud_start.sh not found at: $CLOUD_START_SCRIPT, skipping cloud-start step"
-    log_output "WARNING: cloud_start.sh not found, skipping cloud-start step"
+if [ ! -f "$COLONY_START_SCRIPT" ]; then
+    print_warning "colony_start.sh not found at: $COLONY_START_SCRIPT, skipping colony-start step"
+    log_output "WARNING: colony_start.sh not found, skipping colony-start step"
 else
-    log_output "Calling cloud_start.sh to trigger cloud-start on coordinator..."
+    log_output "Calling colony_start.sh to trigger colony-start on coordinator..."
     if AWS_REGION="$AWS_REGION" \
         HTTP_PORT="$COORDINATOR_HTTP_PORT" \
         LOG_FILE="$LOG_FILE" \
-        "$CLOUD_START_SCRIPT" 2>&1 | tee -a "$LOG_FILE"; then
-        print_status "Cloud-start triggered successfully!"
+        "$COLONY_START_SCRIPT" 2>&1 | tee -a "$LOG_FILE"; then
+        print_status "Colony-start triggered successfully!"
     else
-        print_warning "Cloud-start script encountered errors (non-fatal)"
+        print_warning "Colony-start script encountered errors (non-fatal)"
     fi
 fi
 

@@ -252,14 +252,15 @@ async fn main() {
     // Initialize ClusterRegistry early
     let _registry = create_cluster_registry(deployment_mode_str);
     
-    coordinator_ticker::start_coordinator_ticker();
+    // Coordinator ticker will be started by start_colony_ticking() after colony initialization
+    // Do NOT start ticker automatically here
     
-    // In AWS mode, skip normal initialization - wait for cloud-start HTTP call
+    // In AWS mode, skip normal initialization - wait for colony-start HTTP call
     // In localhost mode, initialize normally
     if deployment_mode == DeploymentMode::Localhost {
         tokio::spawn(initialize_colony());
     } else {
-        log!("AWS mode: Waiting for cloud-start HTTP request to initialize colony");
+        log!("AWS mode: Waiting for colony-start HTTP request to initialize colony");
     }
 
     // Start HTTP server (in both AWS and localhost modes)
