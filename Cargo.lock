@@ -1867,6 +1867,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shared",
+ "tokio",
 ]
 
 [[package]]

@@ -6,6 +6,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use shared::be_api::{ShardLayer, ColonyLifeRules};
 use shared::cluster_topology::ClusterTopology;
+use shared::cluster_registry::create_cluster_registry;
+use shared::ssm;
 use shared::coordinator_api::ColonyEventDescription;
 
 use crate::call_be::get_colony_stats;
@@ -39,12 +41,12 @@ pub struct ShardConfig {
     pub rows: usize,
 }
 
-impl Default for ShardConfig {
-    fn default() -> Self {
-        let width_in_shards = ClusterTopology::get_width_in_shards();
-        let height_in_shards = ClusterTopology::get_height_in_shards();
-        let shard_width = ClusterTopology::get_shard_width();
-        let shard_height = ClusterTopology::get_shard_height();
+impl ShardConfig {
+    fn from_topology(topology: &ClusterTopology) -> Self {
+        let width_in_shards = topology.calculate_width_in_shards();
+        let height_in_shards = topology.calculate_height_in_shards();
+        let shard_width = topology.get_shard_width_from_mapping();
+        let shard_height = topology.get_shard_height_from_mapping();
         
         Self {
             total_width: width_in_shards * shard_width,
@@ -57,11 +59,21 @@ impl Default for ShardConfig {
 
 impl ShardConfig {
     fn shard_width(&self) -> i32 {
-        ClusterTopology::get_shard_width()
+        // Calculate from total width and cols
+        if self.cols > 0 {
+            self.total_width / self.cols as i32
+        } else {
+            0
+        }
     }
     
     fn shard_height(&self) -> i32 {
-        ClusterTopology::get_shard_height()
+        // Calculate from total height and rows
+        if self.rows > 0 {
+            self.total_height / self.rows as i32
+        } else {
+            0
+        }
     }
     
     fn total_shards(&self) -> usize {
@@ -72,8 +84,8 @@ impl ShardConfig {
         let row = index / self.cols;
         let col = index % self.cols;
         
-        let shard_width = ClusterTopology::get_shard_width();
-        let shard_height = ClusterTopology::get_shard_height();
+        let shard_width = self.shard_width();
+        let shard_height = self.shard_height();
         
         let x = col as i32 * shard_width;
         let y = row as i32 * shard_height;
@@ -111,16 +123,14 @@ struct BEImageApp {
     cached_stats: Option<(u64, Vec<shared::coordinator_api::ColonyMetricStats>)>, 
 }
 
-impl Default for BEImageApp {
-    fn default() -> Self {
-        let shard_config = Arc::new(Mutex::new(ShardConfig::default()));
+impl BEImageApp {
+    fn new(cluster_topology: Arc<ClusterTopology>) -> Self {
+        let shard_config = Arc::new(Mutex::new(ShardConfig::from_topology(&cluster_topology)));
         let total_shards = {
             let config_guard = shard_config.lock().unwrap();
             config_guard.total_shards()
         };
         
-        // Initialize cluster topology
-        let cluster_topology = call_be::get_cluster_topology();
         let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images(&shard_config.lock().unwrap(), cluster_topology.as_ref())));
         let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap(), cluster_topology.as_ref())));
         let extra_food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
@@ -879,16 +889,74 @@ impl BEImageApp {
     }
 }
 
+fn retrieve_topology(mode: &str) -> Result<Arc<ClusterTopology>, String> {
+    // Initialize cluster registry
+    let _registry = create_cluster_registry(mode);
+    
+    // Discover coordinator
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
+    let coordinator_addr = rt.block_on(ssm::discover_coordinator())
+        .ok_or_else(|| "Failed to discover coordinator".to_string())?;
+    
+    // Extract HTTP port from NodeAddress
+    let http_port = coordinator_addr.http_port;
+    let coordinator_ip = coordinator_addr.ip;
+    
+    // Make HTTP GET request to /topology
+    let url = format!("http://{}:{}/topology", coordinator_ip, http_port);
+    let response = reqwest::blocking::Client::new()
+        .get(&url)
+        .send()
+        .map_err(|e| format!("Failed to connect to coordinator at {}: {}", url, e))?;
+    
+    // Check status code
+    let status = response.status();
+    if status.as_u16() == 404 {
+        return Err("Topology not initialized (colony not started)".to_string());
+    }
+    
+    if !status.is_success() {
+        let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(format!("HTTP error {}: {}", status, error_text));
+    }
+    
+    // Deserialize JSON into ClusterTopology
+    let topology: ClusterTopology = response.json()
+        .map_err(|e| format!("Failed to deserialize topology: {}", e))?;
+    
+    Ok(Arc::new(topology))
+}
+
 fn main() -> eframe::Result<()> {
+    // Parse command line arguments for mode
+    let args: Vec<String> = std::env::args().collect();
+    let mode = args.get(1).map(|s| s.as_str()).unwrap_or("localhost");
+    
+    if mode != "localhost" && mode != "aws" {
+        eprintln!("Error: Mode must be 'localhost' or 'aws'");
+        eprintln!("Usage: {} [localhost|aws]", args[0]);
+        std::process::exit(1);
+    }
+    
+    // Retrieve topology from coordinator
+    let topology = match retrieve_topology(mode) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Error: Failed to retrieve topology: {}", e);
+            eprintln!("Please ensure the coordinator is running and the colony is started.");
+            std::process::exit(1);
+        }
+    };
+    
     let options = eframe::NativeOptions::default();
     eframe::run_native(
         "Colony Viewer",
         options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             // Ensure default fonts are installed
             let fonts = egui::FontDefinitions::default();
             cc.egui_ctx.set_fonts(fonts);
-            Ok(Box::new(BEImageApp::default()))
+            Ok(Box::new(BEImageApp::new(Arc::clone(&topology))))
         }),
     )
 }

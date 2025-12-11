@@ -5,6 +5,7 @@ use crate::cloud_start::cloud_start_colony;
 use crate::coordinator_context::CoordinatorContext;
 use crate::coordinator_storage::ColonyStatus;
 use shared::ssm;
+use shared::cluster_topology::ClusterTopology;
 use std::fmt::Write;
 
 const HTTP_BIND_HOST: &str = "0.0.0.0";
@@ -91,6 +92,8 @@ pub async fn start_http_server(http_port: u16) {
                                     let _ = stream.write_all(response.as_bytes()).await;
                                 }
                             }
+                        } else if request.starts_with("GET /topology") {
+                            handle_get_topology(&mut stream).await;
                         } else if request.starts_with("GET /debug-ssm") {
                             let body = render_ssm_state().await;
                             let response = format!(
@@ -137,5 +140,46 @@ async fn render_ssm_state() -> String {
     }
 
     body
+}
+
+async fn handle_get_topology(stream: &mut tokio::net::TcpStream) {
+    // Check if topology is initialized
+    if !ClusterTopology::is_initialized() {
+        let error_json = r#"{"error":"Topology not initialized"}"#;
+        let response = format!(
+            "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            error_json.len(),
+            error_json
+        );
+        let _ = stream.write_all(response.as_bytes()).await;
+        return;
+    }
+
+    // Get topology instance
+    let topology = ClusterTopology::get_instance();
+    
+    // Serialize to JSON
+    match serde_json::to_string(&*topology) {
+        Ok(json) => {
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                json.len(),
+                json
+            );
+            if let Err(e) = stream.write_all(response.as_bytes()).await {
+                log_error!("Failed to write topology response: {}", e);
+            }
+        }
+        Err(e) => {
+            let error_json = format!(r#"{{"error":"Failed to serialize topology: {}"}}"#, e);
+            let response = format!(
+                "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                error_json.len(),
+                error_json
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+            log_error!("Failed to serialize topology: {}", e);
+        }
+    }
 }
 

@@ -322,7 +322,28 @@ impl std::hash::Hash for HostInfo {
 pub struct ClusterTopology {
     pub coordinator_host: HostInfo,
     pub backend_hosts: Vec<HostInfo>,
+    #[serde(serialize_with = "serialize_shard_to_host", deserialize_with = "deserialize_shard_to_host")]
     pub shard_to_host: HashMap<Shard, HostInfo>
+}
+
+// Custom serialization for HashMap<Shard, HostInfo> to work with JSON
+// JSON requires object keys to be strings, so we serialize as a Vec of tuples
+fn serialize_shard_to_host<S>(map: &HashMap<Shard, HostInfo>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::Serialize;
+    let vec: Vec<(Shard, HostInfo)> = map.iter().map(|(k, v)| (*k, v.clone())).collect();
+    vec.serialize(serializer)
+}
+
+fn deserialize_shard_to_host<'de, D>(deserializer: D) -> Result<HashMap<Shard, HostInfo>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let vec: Vec<(Shard, HostInfo)> = Vec::deserialize(deserializer)?;
+    Ok(vec.into_iter().collect())
 }
 
 static INSTANCE: OnceLock<RwLock<Arc<ClusterTopology>>> = OnceLock::new();
@@ -495,6 +516,84 @@ impl ClusterTopology {
     /// Get the total number of backend hosts
     pub fn backend_host_count(&self) -> usize {
         self.backend_hosts.len()
+    }
+    
+    /// Calculate width in shards from the shard mapping (grid layout)
+    pub fn calculate_width_in_shards(&self) -> i32 {
+        if self.shard_to_host.is_empty() {
+            return 0;
+        }
+        
+        // Find the maximum x coordinate
+        let max_x = self.shard_to_host.keys()
+            .map(|shard| shard.x + shard.width)
+            .max()
+            .unwrap_or(0);
+        
+        // Find the minimum x coordinate
+        let min_x = self.shard_to_host.keys()
+            .map(|shard| shard.x)
+            .min()
+            .unwrap_or(0);
+        
+        // Get shard width from any shard
+        let shard_width = self.shard_to_host.keys()
+            .next()
+            .map(|shard| shard.width)
+            .unwrap_or(1);
+        
+        if shard_width == 0 {
+            return 0;
+        }
+        
+        ((max_x - min_x) / shard_width).max(1)
+    }
+    
+    /// Calculate height in shards from the shard mapping (grid layout)
+    pub fn calculate_height_in_shards(&self) -> i32 {
+        if self.shard_to_host.is_empty() {
+            return 0;
+        }
+        
+        // Find the maximum y coordinate
+        let max_y = self.shard_to_host.keys()
+            .map(|shard| shard.y + shard.height)
+            .max()
+            .unwrap_or(0);
+        
+        // Find the minimum y coordinate
+        let min_y = self.shard_to_host.keys()
+            .map(|shard| shard.y)
+            .min()
+            .unwrap_or(0);
+        
+        // Get shard height from any shard
+        let shard_height = self.shard_to_host.keys()
+            .next()
+            .map(|shard| shard.height)
+            .unwrap_or(1);
+        
+        if shard_height == 0 {
+            return 0;
+        }
+        
+        ((max_y - min_y) / shard_height).max(1)
+    }
+    
+    /// Get shard width from any shard in the mapping
+    pub fn get_shard_width_from_mapping(&self) -> i32 {
+        self.shard_to_host.keys()
+            .next()
+            .map(|shard| shard.width)
+            .unwrap_or(0)
+    }
+    
+    /// Get shard height from any shard in the mapping
+    pub fn get_shard_height_from_mapping(&self) -> i32 {
+        self.shard_to_host.keys()
+            .next()
+            .map(|shard| shard.height)
+            .unwrap_or(0)
     }
     
     /// Get all shards that are adjacent to the given shard

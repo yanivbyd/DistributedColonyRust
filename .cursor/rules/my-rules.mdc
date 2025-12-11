@@ -21,7 +21,7 @@
   - Alternative options must include pros, cons, and a short motivation.
   - A **Human Author decision** is required to select the recommended option before proceeding.
   - After the **Human Author** approves the recommended option, alternatives are moved to an **Appendix**.
-
+- Before creating a fix try to create failing a unit test that correspond to the bug (unless creating the unit test involves too many changes). Always ask permission before touching unit or integration tests.
 
 ### General Coding Rules
 - Write simple, easy-to-read code.

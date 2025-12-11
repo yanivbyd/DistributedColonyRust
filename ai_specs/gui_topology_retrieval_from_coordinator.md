@@ -1,7 +1,7 @@
 # GUI Topology Retrieval from Coordinator
 
 ## Acknowledgment
-Status: Pending approval
+Status: Approved
 
 ## Overview
 
