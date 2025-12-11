@@ -31,6 +31,7 @@ enum Tab {
     Age,
     Info,
     Stats,
+    Cluster,
 }
 
 #[derive(Clone)]
@@ -120,11 +121,14 @@ struct BEImageApp {
     cluster_topology: Arc<ClusterTopology>,
     last_update_time: Arc<Mutex<Instant>>,
     combined_texture: Option<egui::TextureHandle>,
-    cached_stats: Option<(u64, Vec<shared::coordinator_api::ColonyMetricStats>)>, 
+    cached_stats: Option<(u64, Vec<shared::coordinator_api::ColonyMetricStats>)>,
+    deployment_mode: String,
+    coordinator_http_port: Option<u16>,
+    backend_http_ports: std::collections::HashMap<shared::cluster_topology::HostInfo, u16>,
 }
 
 impl BEImageApp {
-    fn new(cluster_topology: Arc<ClusterTopology>) -> Self {
+    fn new(cluster_topology: Arc<ClusterTopology>, deployment_mode: String, coordinator_http_port: Option<u16>, backend_http_ports: std::collections::HashMap<shared::cluster_topology::HostInfo, u16>) -> Self {
         let shard_config = Arc::new(Mutex::new(ShardConfig::from_topology(&cluster_topology)));
         let total_shards = {
             let config_guard = shard_config.lock().unwrap();
@@ -166,6 +170,9 @@ impl BEImageApp {
             last_update_time: Arc::new(Mutex::new(Instant::now())),
             combined_texture: None,
             cached_stats: None,
+            deployment_mode,
+            coordinator_http_port,
+            backend_http_ports,
         }
     }
 }
@@ -285,6 +292,9 @@ impl App for BEImageApp {
                         Tab::Info => {
                             // No automatic polling for Info tab - data is loaded once when tab is first accessed
                     }
+                    Tab::Cluster => {
+                            // No automatic polling for Cluster tab - data is static and retrieved at startup
+                    }
                     Tab::Stats => {
                             // No background polling for stats
                         }
@@ -311,6 +321,7 @@ impl App for BEImageApp {
                 ui.selectable_value(&mut self.current_tab, Tab::Age, "Age");
                 ui.selectable_value(&mut self.current_tab, Tab::Info, "Info");
                 ui.selectable_value(&mut self.current_tab, Tab::Stats, "Stats");
+                ui.selectable_value(&mut self.current_tab, Tab::Cluster, "Cluster");
                 
                 // Update shared tab if changed
                 if self.current_tab != old_tab {
@@ -319,8 +330,8 @@ impl App for BEImageApp {
                     }
                 }
                 
-                // Show status indicator only when there are issues and not on Info or Stats tabs
-                if self.current_tab != Tab::Info && self.current_tab != Tab::Stats {
+                // Show status indicator only when there are issues and not on Info, Stats, or Cluster tabs
+                if self.current_tab != Tab::Info && self.current_tab != Tab::Stats && self.current_tab != Tab::Cluster {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let last_update = *self.last_update_time.lock().unwrap();
                         let time_since_update = last_update.elapsed();
@@ -347,6 +358,7 @@ impl App for BEImageApp {
                 Tab::Age => self.show_age_tab(ui),
                 Tab::Info => self.show_info_tab(ui),
                 Tab::Stats => self.show_stats_tab(ui),
+                Tab::Cluster => self.show_cluster_tab(ui),
             }
         });
     }
@@ -887,6 +899,130 @@ impl BEImageApp {
             ui.label("Click 'Update Stats' to load metrics.");
         }
     }
+    
+    fn show_cluster_tab(&mut self, ui: &mut egui::Ui) {
+        ui.vertical(|ui| {
+            // Deployment mode header
+            ui.heading(format!("Deployment Mode: {}", self.deployment_mode));
+            ui.add_space(20.0);
+            
+            // Node list
+            ui.group(|ui| {
+                egui::Grid::new("cluster_nodes_grid")
+                    .num_columns(5)
+                    .spacing([20.0, 4.0])
+                    .show(ui, |ui| {
+                        // Header row
+                        ui.label(egui::RichText::new("Role").strong());
+                        ui.label(egui::RichText::new("Hostname").strong());
+                        ui.label(egui::RichText::new("RPC Port").strong());
+                        ui.label(egui::RichText::new("HTTP Port").strong());
+                        ui.label(egui::RichText::new("Shards").strong());
+                        ui.end_row();
+                        
+                        ui.separator();
+                        ui.separator();
+                        ui.separator();
+                        ui.separator();
+                        ui.separator();
+                        ui.end_row();
+                        
+                        // Coordinator node
+                        let coordinator_host = self.cluster_topology.get_coordinator_host();
+                        let coordinator_http = self.coordinator_http_port
+                            .map(|p| p.to_string())
+                            .unwrap_or_else(|| "N/A".to_string());
+                        
+                        ui.label("Coordinator");
+                        ui.label(&coordinator_host.hostname);
+                        ui.label(coordinator_host.port.to_string());
+                        ui.label(coordinator_http);
+                        ui.label("—"); // Coordinator doesn't have shards
+                        ui.end_row();
+                        
+                        // Backend nodes
+                        let backend_hosts = self.cluster_topology.get_all_backend_hosts();
+                        let shard_to_host = &self.cluster_topology.shard_to_host;
+                        
+                        // Calculate shard counts per backend
+                        let mut backend_shard_counts: std::collections::HashMap<shared::cluster_topology::HostInfo, usize> = 
+                            std::collections::HashMap::new();
+                        for (_, host) in shard_to_host.iter() {
+                            *backend_shard_counts.entry(host.clone()).or_insert(0) += 1;
+                        }
+                        
+                        // Sort backends for consistent display
+                        let mut sorted_backends = backend_hosts.clone();
+                        sorted_backends.sort_by(|a, b| {
+                            a.hostname.cmp(&b.hostname)
+                                .then_with(|| a.port.cmp(&b.port))
+                        });
+                        
+                        for backend in sorted_backends {
+                            let shard_count = backend_shard_counts.get(&backend).copied().unwrap_or(0);
+                            let backend_http = self.backend_http_ports
+                                .get(&backend)
+                                .map(|p| p.to_string())
+                                .unwrap_or_else(|| "N/A".to_string());
+                            
+                            ui.label("Backend");
+                            ui.label(&backend.hostname);
+                            ui.label(backend.port.to_string());
+                            ui.label(backend_http);
+                            ui.label(shard_count.to_string());
+                            ui.end_row();
+                        }
+                    });
+            });
+        });
+    }
+}
+
+fn retrieve_http_ports(
+    mode: &str,
+    topology: &ClusterTopology,
+) -> Result<(Option<u16>, std::collections::HashMap<shared::cluster_topology::HostInfo, u16>), String> {
+    // Initialize cluster registry
+    let _registry = create_cluster_registry(mode);
+    
+    // Create tokio runtime for async operations
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
+    
+    // Discover coordinator and get HTTP port
+    let coordinator_addr = rt.block_on(ssm::discover_coordinator())
+        .ok_or_else(|| "Failed to discover coordinator".to_string())?;
+    let coordinator_http_port = Some(coordinator_addr.http_port);
+    
+    // Discover backends and match with topology
+    let backend_addresses = rt.block_on(ssm::discover_backends());
+    let mut backend_http_ports = std::collections::HashMap::new();
+    
+    // Match backend addresses with topology hosts
+    // Compare by IP/hostname and internal port
+    for backend_addr in backend_addresses {
+        // Try to match with coordinator host first (in case coordinator is in backend list)
+        let coordinator_host = topology.get_coordinator_host();
+        if (backend_addr.ip == coordinator_host.hostname || 
+            backend_addr.ip == "127.0.0.1" && coordinator_host.hostname == "127.0.0.1" ||
+            backend_addr.ip == "localhost" && coordinator_host.hostname == "localhost") &&
+           backend_addr.internal_port == coordinator_host.port {
+            // This is the coordinator, skip it
+            continue;
+        }
+        
+        // Match with backend hosts
+        for backend_host in topology.get_all_backend_hosts() {
+            if (backend_addr.ip == backend_host.hostname ||
+                backend_addr.ip == "127.0.0.1" && backend_host.hostname == "127.0.0.1" ||
+                backend_addr.ip == "localhost" && backend_host.hostname == "localhost") &&
+               backend_addr.internal_port == backend_host.port {
+                backend_http_ports.insert(backend_host.clone(), backend_addr.http_port);
+                break;
+            }
+        }
+    }
+    
+    Ok((coordinator_http_port, backend_http_ports))
 }
 
 fn retrieve_topology(mode: &str) -> Result<Arc<ClusterTopology>, String> {
@@ -1003,6 +1139,21 @@ fn main() -> eframe::Result<()> {
         }
     };
     
+    // Retrieve HTTP ports from ClusterRegistry
+    let (coordinator_http_port, backend_http_ports) = match retrieve_http_ports(mode, topology.as_ref()) {
+        Ok(ports) => ports,
+        Err(e) => {
+            eprintln!("Warning: Failed to retrieve HTTP ports: {}", e);
+            eprintln!("HTTP ports will be shown as N/A in the Cluster tab.");
+            (None, std::collections::HashMap::new())
+        }
+    };
+    
+    let deployment_mode = mode.to_string();
+    let topology_clone = Arc::clone(&topology);
+    let coordinator_http_port_clone = coordinator_http_port;
+    let backend_http_ports_clone = backend_http_ports;
+    
     let options = eframe::NativeOptions::default();
     eframe::run_native(
         "Colony Viewer",
@@ -1011,7 +1162,12 @@ fn main() -> eframe::Result<()> {
             // Ensure default fonts are installed
             let fonts = egui::FontDefinitions::default();
             cc.egui_ctx.set_fonts(fonts);
-            Ok(Box::new(BEImageApp::new(Arc::clone(&topology))))
+            Ok(Box::new(BEImageApp::new(
+                Arc::clone(&topology_clone),
+                deployment_mode.clone(),
+                coordinator_http_port_clone,
+                backend_http_ports_clone.clone(),
+            )))
         }),
     )
 }
