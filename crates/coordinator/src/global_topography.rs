@@ -44,7 +44,13 @@ impl GlobalTopography {
             topography_data,
         });
 
-        let topology = ClusterTopology::get_instance();
+        let topology = match ClusterTopology::get_instance() {
+            Some(t) => t,
+            None => {
+                log_error!("Topology not initialized");
+                return;
+            }
+        };
         let host_info = match topology.get_host_for_shard(&shard) {
             Some(host) => host,
             None => {

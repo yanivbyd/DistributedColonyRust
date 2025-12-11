@@ -26,8 +26,8 @@ pub const COLONY_LIFE_INITIAL_RULES: ColonyLifeRules = ColonyLifeRules {
 };
 
 
-fn generate_shards() -> Vec<Shard> {
-    ClusterTopology::get_instance().get_all_shards()
+fn generate_shards(topology: &ClusterTopology) -> Vec<Shard> {
+    topology.get_all_shards()
 }
 
 async fn send_message<T: serde::Serialize>(stream: &mut TcpStream, msg: &T) {
@@ -91,10 +91,10 @@ async fn connect_to_backend(hostname: &str, port: u16) -> Result<TcpStream, std:
     backoff::future::retry(backoff, operation).await
 }
 
-async fn send_init_colony(stream: &mut TcpStream) {
+async fn send_init_colony(stream: &mut TcpStream, topology: Arc<ClusterTopology>) {
     let init = BackendRequest::InitColony(InitColonyRequest { 
-        width: ClusterTopology::get_width_in_shards() * ClusterTopology::get_shard_width(), 
-        height: ClusterTopology::get_height_in_shards() * ClusterTopology::get_shard_height(), 
+        width: topology.width_in_shards() * topology.shard_width(), 
+        height: topology.height_in_shards() * topology.shard_height(), 
         colony_life_rules: COLONY_LIFE_INITIAL_RULES 
     });
     send_message(stream, &init).await;
@@ -139,13 +139,26 @@ async fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard, topology: 
 }
 
 pub async fn initialize_colony() {
-    // Step 1: Initialize context with fresh state
-    CoordinatorContext::initialize_with_stored_info(CoordinatorStoredInfo::new());
+    // Step 1: Get or initialize context
+    // Note: Context may already be initialized, so we just get the instance
+    // and reset the stored info if needed
     let context = CoordinatorContext::get_instance();
+    
+    // Reset stored info to fresh state (context is already initialized, so we just update the data)
+    {
+        let mut stored_info = context.get_coord_stored_info();
+        *stored_info = CoordinatorStoredInfo::new();
+    }
     
     log!("Starting colony initialization with status: {:?}", context.get_coord_stored_info().status);
     
-    let topology = ClusterTopology::get_instance();
+    let topology = match ClusterTopology::get_instance() {
+        Some(t) => t,
+        None => {
+            log_error!("Topology not initialized. Cannot initialize colony.");
+            return;
+        }
+    };
     let backend_hosts = topology.get_all_backend_hosts();
     
     // Step 1: Initialize colony if not already done - should ALWAYS be done
@@ -181,11 +194,11 @@ pub async fn initialize_colony() {
                         continue;
                     }
                 };
-                send_init_colony(&mut stream).await;
+                send_init_colony(&mut stream, topology.clone()).await;
             }
             let mut coord_info = context.get_coord_stored_info();
-            coord_info.colony_width = Some(ClusterTopology::get_width_in_shards() * ClusterTopology::get_shard_width());
-            coord_info.colony_height = Some(ClusterTopology::get_height_in_shards() * ClusterTopology::get_shard_height());
+            coord_info.colony_width = Some(topology.width_in_shards() * topology.shard_width());
+            coord_info.colony_height = Some(topology.height_in_shards() * topology.shard_height());
             coord_info.colony_life_rules = Some(COLONY_LIFE_INITIAL_RULES);
         }
     }
@@ -193,7 +206,7 @@ pub async fn initialize_colony() {
     // Step 2: Initialize shards - should ALWAYS be done
     log!("Step 2: Initializing shards");
     
-    let all_shards = generate_shards();
+    let all_shards = generate_shards(&topology);
     
     // Initialize shards on their respective backends
     for shard in all_shards.iter() {
@@ -218,10 +231,10 @@ pub async fn initialize_colony() {
         
         use crate::global_topography::{GlobalTopography, GlobalTopographyInfo};
         let topography_info = GlobalTopographyInfo {
-            total_width: (ClusterTopology::get_width_in_shards() * ClusterTopology::get_shard_width()) as usize,
-            total_height: (ClusterTopology::get_height_in_shards() * ClusterTopology::get_shard_height()) as usize,
-            shard_width: ClusterTopology::get_shard_width() as usize,
-            shard_height: ClusterTopology::get_shard_height() as usize,
+            total_width: (topology.width_in_shards() * topology.shard_width()) as usize,
+            total_height: (topology.height_in_shards() * topology.shard_height()) as usize,
+            shard_width: topology.shard_width() as usize,
+            shard_height: topology.shard_height() as usize,
 
             base_elevation: 5,
             river_elevation_range: 45, 
@@ -251,7 +264,13 @@ pub async fn start_colony_ticking() {
     crate::coordinator_ticker::start_coordinator_ticker();
     
     // Step 2: Get topology and all backends
-    let topology_arc = ClusterTopology::get_instance();
+    let topology_arc = match ClusterTopology::get_instance() {
+        Some(t) => t,
+        None => {
+            log_error!("Topology not initialized. Cannot start colony ticking.");
+            return;
+        }
+    };
     
     // Step 3: Send StartTicking to all unique backends
     let backend_hosts = topology_arc.get_all_backend_hosts();

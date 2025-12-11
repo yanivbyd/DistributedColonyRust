@@ -4,14 +4,47 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock, RwLock};
 use crate::log;
 
-// Configuration constants
-const COORDINATOR_PORT: u16 = 8082;
-const BACKEND_PORTS: &[u16] = &[8084, 8086, 8088, 8090];
-const HOSTNAME: &str = "127.0.0.1";
-const WIDTH_IN_SHARDS: i32 = 8;
-const HEIGHT_IN_SHARDS: i32 = 5;
-const SHARD_WIDTH: i32 = 250;
-const SHARD_HEIGHT: i32 = 250;
+// Default shard dimensions for first initialization
+const DEFAULT_WIDTH_IN_SHARDS: i32 = 8;
+const DEFAULT_HEIGHT_IN_SHARDS: i32 = 5;
+const DEFAULT_SHARD_WIDTH: i32 = 250;
+const DEFAULT_SHARD_HEIGHT: i32 = 250;
+
+/// Configuration for initializing topology
+#[derive(Debug, Clone)]
+pub struct TopologyConfig {
+    pub coordinator_host: HostInfo,
+    pub backend_hosts: Vec<HostInfo>,
+    pub shard_to_host: HashMap<Shard, HostInfo>,
+}
+
+impl TopologyConfig {
+    pub fn new(coordinator_host: HostInfo, backend_hosts: Vec<HostInfo>, shard_to_host: HashMap<Shard, HostInfo>) -> Self {
+        Self {
+            coordinator_host,
+            backend_hosts,
+            shard_to_host,
+        }
+    }
+}
+
+/// Error type for topology operations
+#[derive(Debug, Clone)]
+pub enum TopologyError {
+    AlreadyInitialized,
+    NotInitialized,
+    LockPoisoned,
+}
+
+impl std::fmt::Display for TopologyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            TopologyError::AlreadyInitialized => write!(f, "Topology already initialized"),
+            TopologyError::NotInitialized => write!(f, "Topology not initialized"),
+            TopologyError::LockPoisoned => write!(f, "Topology lock poisoned"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NodeType {
@@ -346,133 +379,82 @@ where
     Ok(vec.into_iter().collect())
 }
 
-static INSTANCE: OnceLock<RwLock<Arc<ClusterTopology>>> = OnceLock::new();
+static INSTANCE: OnceLock<RwLock<Option<Arc<ClusterTopology>>>> = OnceLock::new();
 
 impl ClusterTopology {
-    fn topology_lock() -> &'static RwLock<Arc<ClusterTopology>> {
-        INSTANCE.get_or_init(|| RwLock::new(Arc::new(Self::new_fixed_topology())))
+    fn topology_lock() -> &'static RwLock<Option<Arc<ClusterTopology>>> {
+        INSTANCE.get_or_init(|| RwLock::new(None))
     }
 
-    pub fn get_instance() -> Arc<ClusterTopology> {
-        Self::topology_lock().read().expect("ClusterTopology lock poisoned").clone()
+    /// Get the topology instance if initialized, None otherwise
+    pub fn get_instance() -> Option<Arc<ClusterTopology>> {
+        Self::topology_lock().read()
+            .expect("ClusterTopology lock poisoned")
+            .clone()
     }
     
     /// Check if ClusterTopology has been initialized
     pub fn is_initialized() -> bool {
-        INSTANCE.get().is_some()
+        Self::topology_lock().read()
+            .expect("ClusterTopology lock poisoned")
+            .is_some()
     }
     
-    /// Initialize ClusterTopology with a dynamic topology (for cloud-start mode)
-    /// This must be called before get_instance() is called for the first time
-    /// Returns Ok(()) if successful
-    pub fn initialize_with_dynamic_topology(backend_hosts: Vec<HostInfo>, shard_to_host: HashMap<Shard, HostInfo>) -> Result<(), String> {
-        let coordinator_host = HostInfo::new(HOSTNAME.to_string(), COORDINATOR_PORT);
+    /// Initialize ClusterTopology with a configuration
+    /// Returns an error if already initialized
+    pub fn initialize(config: TopologyConfig) -> Result<Arc<ClusterTopology>, TopologyError> {
         let topology = ClusterTopology {
-            coordinator_host,
-            backend_hosts,
-            shard_to_host,
+            coordinator_host: config.coordinator_host,
+            backend_hosts: config.backend_hosts,
+            shard_to_host: config.shard_to_host,
         };
         let topology = Arc::new(topology);
-        match Self::topology_lock().write() {
-            Ok(mut guard) => {
-                *guard = topology;
-                Ok(())
-            }
-            Err(_) => Err("ClusterTopology lock poisoned".to_string()),
+        
+        let mut guard = Self::topology_lock().write()
+            .map_err(|_| TopologyError::LockPoisoned)?;
+        
+        if guard.is_some() {
+            return Err(TopologyError::AlreadyInitialized);
         }
+        
+        *guard = Some(topology.clone());
+        Ok(topology)
     }
     
     /// Initialize ClusterTopology from a ClusterTopology object (for backend use)
-    /// This must be called before get_instance() is called for the first time
-    /// Returns Ok(()) if successful
-    pub fn initialize_from_topology(topology: ClusterTopology) -> Result<(), String> {
+    /// Returns an error if already initialized
+    pub fn initialize_from_topology(topology: ClusterTopology) -> Result<Arc<ClusterTopology>, TopologyError> {
         let topology = Arc::new(topology);
-        match Self::topology_lock().write() {
-            Ok(mut guard) => {
-                *guard = topology;
-                Ok(())
-            }
-            Err(_) => Err("ClusterTopology lock poisoned".to_string()),
-        }
-    }
-    
-    /// Get the configured backend ports
-    pub fn get_backend_ports() -> &'static [u16] {
-        BACKEND_PORTS
-    }
-    
-    /// Get the coordinator port
-    pub fn get_coordinator_port() -> u16 {
-        COORDINATOR_PORT
-    }
-    
-    /// Get the hostname used for all services
-    pub fn get_hostname() -> &'static str {
-        HOSTNAME
-    }
-    
-    /// Get the grid width in shards
-    pub fn get_width_in_shards() -> i32 {
-        WIDTH_IN_SHARDS
-    }
-    
-    /// Get the grid height in shards
-    pub fn get_height_in_shards() -> i32 {
-        HEIGHT_IN_SHARDS
-    }
-    
-    /// Get the individual shard width
-    pub fn get_shard_width() -> i32 {
-        SHARD_WIDTH
-    }
-    
-    /// Get the individual shard height
-    pub fn get_shard_height() -> i32 {
-        SHARD_HEIGHT
-    }
-    
-    fn new_fixed_topology() -> Self {
-        let coordinator_host = HostInfo::new(HOSTNAME.to_string(), COORDINATOR_PORT);
         
-        // Create backend hosts from the configured ports
-        let backend_hosts: Vec<HostInfo> = BACKEND_PORTS.iter()
-            .map(|&port| HostInfo::new(HOSTNAME.to_string(), port))
-            .collect();
+        let mut guard = Self::topology_lock().write()
+            .map_err(|_| TopologyError::LockPoisoned)?;
         
-        let shards = Self::create_fixed_shards();
-        let mut shard_to_host = HashMap::new();
-        
-        // Distribute shards evenly across all backends
-        for (index, shard) in shards.iter().enumerate() {
-            let backend_index = index % backend_hosts.len();
-            let host = backend_hosts[backend_index].clone();
-            shard_to_host.insert(*shard, host);
+        if guard.is_some() {
+            return Err(TopologyError::AlreadyInitialized);
         }
         
-        Self {
-            coordinator_host,
-            backend_hosts,
-            shard_to_host
-        }
+        *guard = Some(topology.clone());
+        Ok(topology)
     }
     
-    fn create_fixed_shards() -> Vec<Shard> {
-        let mut shards = Vec::new();
-        
-        // Create grid of shards using configured dimensions
-        for y in 0..HEIGHT_IN_SHARDS {
-            for x in 0..WIDTH_IN_SHARDS {
-                let shard = Shard {
-                    x: x * SHARD_WIDTH,
-                    y: y * SHARD_HEIGHT,
-                    width: SHARD_WIDTH,
-                    height: SHARD_HEIGHT,
-                };
-                shards.push(shard);
-            }
-        }
-        
-        shards
+    /// Get default width in shards for first initialization
+    pub fn default_width_in_shards() -> i32 {
+        DEFAULT_WIDTH_IN_SHARDS
+    }
+    
+    /// Get default height in shards for first initialization
+    pub fn default_height_in_shards() -> i32 {
+        DEFAULT_HEIGHT_IN_SHARDS
+    }
+    
+    /// Get default shard width for first initialization
+    pub fn default_shard_width() -> i32 {
+        DEFAULT_SHARD_WIDTH
+    }
+    
+    /// Get default shard height for first initialization
+    pub fn default_shard_height() -> i32 {
+        DEFAULT_SHARD_HEIGHT
     }
     
     pub fn get_all_backend_hosts(&self) -> &Vec<HostInfo> {
@@ -594,6 +576,26 @@ impl ClusterTopology {
             .next()
             .map(|shard| shard.height)
             .unwrap_or(0)
+    }
+    
+    /// Get width in shards (instance method)
+    pub fn width_in_shards(&self) -> i32 {
+        self.calculate_width_in_shards()
+    }
+    
+    /// Get height in shards (instance method)
+    pub fn height_in_shards(&self) -> i32 {
+        self.calculate_height_in_shards()
+    }
+    
+    /// Get shard width (instance method)
+    pub fn shard_width(&self) -> i32 {
+        self.get_shard_width_from_mapping()
+    }
+    
+    /// Get shard height (instance method)
+    pub fn shard_height(&self) -> i32 {
+        self.get_shard_height_from_mapping()
     }
     
     /// Get all shards that are adjacent to the given shard

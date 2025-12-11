@@ -1,7 +1,7 @@
 use shared::{log, log_error};
 use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::cloud_start::cloud_start_colony;
+use crate::colony_start::colony_start_colony;
 use crate::coordinator_context::CoordinatorContext;
 use crate::coordinator_storage::ColonyStatus;
 use shared::ssm;
@@ -23,7 +23,7 @@ fn is_colony_already_started() -> bool {
 fn matches_stored_idempotency_key(key: &str) -> bool {
     let context = CoordinatorContext::get_instance();
     let stored_info = context.get_coord_stored_info();
-    stored_info.cloud_start_idempotency_key.as_ref()
+    stored_info.colony_start_idempotency_key.as_ref()
         .map(|stored_key| stored_key == key)
         .unwrap_or(false)
 }
@@ -64,7 +64,7 @@ pub async fn start_http_server(http_port: u16) {
                     if let Ok(n) = stream.read(&mut buffer).await {
                         let request = String::from_utf8_lossy(&buffer[..n]);
                         
-                        if request.starts_with("POST /colony-start") || request.starts_with("POST /cloud-start") {
+                        if request.starts_with("POST /colony-start") {
                             let idempotency_key = parse_query_param(&request, "idempotency_key");
                             
                             if idempotency_key.is_none() {
@@ -73,8 +73,12 @@ pub async fn start_http_server(http_port: u16) {
                             } else {
                                 let idempotency_key = idempotency_key.unwrap();
                                 
-                                if is_colony_already_started() {
-                                    if matches_stored_idempotency_key(&idempotency_key) {
+                                // Check colony status and idempotency key before spawning
+                                let colony_started = is_colony_already_started();
+                                let idempotent_match = matches_stored_idempotency_key(&idempotency_key);
+                                
+                                if colony_started {
+                                    if idempotent_match {
                                         let response = "HTTP/1.1 200 OK\r\nContent-Length: 40\r\n\r\nColony already started (idempotent)";
                                         let _ = stream.write_all(response.as_bytes()).await;
                                     } else {
@@ -85,7 +89,7 @@ pub async fn start_http_server(http_port: u16) {
                                     log!("Received colony-start request via HTTP with idempotency_key: {}", idempotency_key);
                                     let key_clone = idempotency_key.clone();
                                     tokio::spawn(async move {
-                                        cloud_start_colony(Some(key_clone)).await;
+                                        colony_start_colony(Some(key_clone)).await;
                                     });
                                     
                                     let response = "HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n";
@@ -102,7 +106,7 @@ pub async fn start_http_server(http_port: u16) {
                                 body
                             );
                             let _ = stream.write_all(response.as_bytes()).await;
-                        } else if request.starts_with("GET /colony-start") || request.starts_with("GET /cloud-start") || request.starts_with("GET /") {
+                        } else if request.starts_with("GET /colony-start") || request.starts_with("GET /") {
                             let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nColony-start API";
                             let _ = stream.write_all(response.as_bytes()).await;
                         } else {
@@ -143,20 +147,20 @@ async fn render_ssm_state() -> String {
 }
 
 async fn handle_get_topology(stream: &mut tokio::net::TcpStream) {
-    // Check if topology is initialized
-    if !ClusterTopology::is_initialized() {
-        let error_json = r#"{"error":"Topology not initialized"}"#;
-        let response = format!(
-            "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-            error_json.len(),
-            error_json
-        );
-        let _ = stream.write_all(response.as_bytes()).await;
-        return;
-    }
-
-    // Get topology instance
-    let topology = ClusterTopology::get_instance();
+    // Get topology instance (returns None if not initialized)
+    let topology = match ClusterTopology::get_instance() {
+        Some(t) => t,
+        None => {
+            let error_json = r#"{"error":"Topology not initialized"}"#;
+            let response = format!(
+                "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                error_json.len(),
+                error_json
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+            return;
+        }
+    };
     
     // Serialize to JSON
     match serde_json::to_string(&*topology) {

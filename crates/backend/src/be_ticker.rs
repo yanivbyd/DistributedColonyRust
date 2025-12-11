@@ -4,6 +4,7 @@ use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
 use shared::utils::new_random_generator;
 use shared::cluster_topology::{ClusterTopology, HostInfo};
+use shared::log;
 use crate::backend_config::{get_backend_hostname, get_backend_port};
 use std::sync::{Arc, OnceLock};
 
@@ -39,7 +40,13 @@ pub fn start_be_ticker() {
                 let exported = join_all(tasks).await
                     .into_iter().map(|r| r.expect("tick task panicked")).collect::<Vec<_>>();
 
-                let topology = ClusterTopology::get_instance();
+                let topology = match ClusterTopology::get_instance() {
+                    Some(t) => t,
+                    None => {
+                        log!("Topology not initialized, skipping tick");
+                        continue;
+                    }
+                };
                 let this_backend_host = HostInfo::new(get_backend_hostname().to_string(), get_backend_port());
 
                 for req in &exported {

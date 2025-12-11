@@ -7,7 +7,7 @@ use shared::backend_communication::{send_request, receive_response};
 use std::net::TcpStream;
 
 pub fn call_backend_for_tick_count(shard: ColonyShard) -> Option<u64> {
-    let topology = ClusterTopology::get_instance();
+    let topology = ClusterTopology::get_instance()?;
     let host_info = topology.get_host_for_shard(&shard)?;
     let addr = host_info.to_address();
     let mut stream = TcpStream::connect(&addr).ok()?;
@@ -35,7 +35,7 @@ pub fn call_backend_for_tick_count(shard: ColonyShard) -> Option<u64> {
 }
 
 pub fn call_backend_get_shard_stats(shard: ColonyShard, metrics: Vec<StatMetric>) -> Option<(u64, Vec<(StatMetric, Vec<shared::be_api::StatBucket>)>)> {
-    let topology = ClusterTopology::get_instance();
+    let topology = ClusterTopology::get_instance()?;
     let host_info = topology.get_host_for_shard(&shard)?;
     let addr = host_info.to_address();
     let mut stream = TcpStream::connect(&addr).ok()?;
@@ -55,7 +55,10 @@ pub fn call_backend_get_shard_stats(shard: ColonyShard, metrics: Vec<StatMetric>
 }
 
 fn get_unique_backends() -> Vec<(String, u16)> {
-    let topology = ClusterTopology::get_instance();
+    let topology = match ClusterTopology::get_instance() {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
     topology.get_all_backend_hosts()
         .iter()
         .map(|host_info| (host_info.hostname.clone(), host_info.port))
@@ -108,7 +111,7 @@ pub fn broadcast_event_to_backends(event: ColonyEvent) -> bool {
 }
 
 pub fn call_backend_get_colony_info() -> Option<(i32, i32)> {
-    let topology = ClusterTopology::get_instance();
+    let topology = ClusterTopology::get_instance()?;
     let backend_hosts = topology.get_all_backend_hosts();
     if backend_hosts.is_empty() {
         return None;

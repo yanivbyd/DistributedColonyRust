@@ -6,7 +6,7 @@ mod coordinator_ticker;
 mod backend_client;
 mod tick_monitor;
 mod colony_event_generator;
-mod cloud_start;
+mod colony_start;
 mod http_server;
 
 use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry, ColonyMetricStats};
@@ -37,7 +37,6 @@ impl DeploymentMode {
     }
 }
 
-use crate::init_colony::initialize_colony;
 use crate::coordinator_context::CoordinatorContext;
 use crate::http_server::start_http_server;
 
@@ -67,7 +66,13 @@ async fn send_response(framed: &mut FramedStream, response: CoordinatorResponse)
 }
 
 async fn handle_get_routing_table() -> CoordinatorResponse {
-    let topology = ClusterTopology::get_instance();
+    let topology = match ClusterTopology::get_instance() {
+        Some(t) => t,
+        None => {
+            log_error!("Topology not initialized");
+            return CoordinatorResponse::GetRoutingTableResponse { entries: Vec::new() };
+        }
+    };
     let mut entries = Vec::new();
     
     for shard in topology.get_all_shards() {
@@ -118,7 +123,13 @@ async fn handle_client(socket: TcpStream) {
 
 async fn handle_get_colony_stats(metrics: Vec<StatMetric>) -> CoordinatorResponse {
     // Aggregate across all shards
-    let topology = ClusterTopology::get_instance();
+    let topology = match ClusterTopology::get_instance() {
+        Some(t) => t,
+        None => {
+            log_error!("Topology not initialized");
+            return CoordinatorResponse::GetColonyStatsResponse { metrics: Vec::new(), tick_count: 0 };
+        }
+    };
     let shards = topology.get_all_shards();
     if shards.is_empty() {
         return CoordinatorResponse::GetColonyStatsResponse { metrics: Vec::new(), tick_count: 0 };
@@ -255,13 +266,9 @@ async fn main() {
     // Coordinator ticker will be started by start_colony_ticking() after colony initialization
     // Do NOT start ticker automatically here
     
-    // In AWS mode, skip normal initialization - wait for colony-start HTTP call
-    // In localhost mode, initialize normally
-    if deployment_mode == DeploymentMode::Localhost {
-        tokio::spawn(initialize_colony());
-    } else {
-        log!("AWS mode: Waiting for colony-start HTTP request to initialize colony");
-    }
+    // Topology is never initialized automatically - it must be created explicitly via POST /colony-start
+    // This applies to both localhost and AWS modes
+    log!("Waiting for colony-start HTTP request to initialize topology and colony");
 
     // Start HTTP server (in both AWS and localhost modes)
     tokio::spawn(start_http_server(http_port));

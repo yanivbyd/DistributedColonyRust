@@ -904,7 +904,8 @@ fn retrieve_topology(mode: &str) -> Result<Arc<ClusterTopology>, String> {
     
     // Make HTTP GET request to /topology
     let url = format!("http://{}:{}/topology", coordinator_ip, http_port);
-    let response = reqwest::blocking::Client::new()
+    let client = reqwest::blocking::Client::new();
+    let response = client
         .get(&url)
         .send()
         .map_err(|e| format!("Failed to connect to coordinator at {}: {}", url, e))?;
@@ -912,7 +913,61 @@ fn retrieve_topology(mode: &str) -> Result<Arc<ClusterTopology>, String> {
     // Check status code
     let status = response.status();
     if status.as_u16() == 404 {
-        return Err("Topology not initialized (colony not started)".to_string());
+        // Topology not initialized - automatically initiate colony-start
+        eprintln!("Topology not initialized. Automatically initiating colony-start...");
+        
+        // Generate idempotency key
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let idempotency_key = format!("gui-auto-{}", 
+            SystemTime::now().duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs());
+        
+        // Make POST request to /colony-start
+        let colony_start_url = format!("http://{}:{}/colony-start?idempotency_key={}", 
+            coordinator_ip, http_port, idempotency_key);
+        let colony_start_response = client
+            .post(&colony_start_url)
+            .send()
+            .map_err(|e| format!("Failed to initiate colony-start: {}", e))?;
+        
+        let colony_start_status = colony_start_response.status();
+        if !colony_start_status.is_success() && colony_start_status.as_u16() != 202 {
+            let error_text = colony_start_response.text().unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("Failed to initiate colony-start: HTTP {}: {}", colony_start_status, error_text));
+        }
+        
+        eprintln!("Colony-start initiated. Waiting for topology to be available...");
+        
+        // Wait and retry with exponential backoff (up to 10 seconds total)
+        let mut retry_count = 0;
+        let max_retries = 10;
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(500 * (retry_count + 1)));
+            
+            let retry_response = client
+                .get(&url)
+                .send()
+                .map_err(|e| format!("Failed to retry topology request: {}", e))?;
+            
+            let retry_status = retry_response.status();
+            if retry_status.is_success() {
+                // Success! Deserialize and return
+                let topology: ClusterTopology = retry_response.json()
+                    .map_err(|e| format!("Failed to deserialize topology: {}", e))?;
+                return Ok(Arc::new(topology));
+            } else if retry_status.as_u16() != 404 {
+                // Some other error
+                let error_text = retry_response.text().unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(format!("HTTP error {}: {}", retry_status, error_text));
+            }
+            
+            // Still 404, retry if we haven't exceeded max retries
+            retry_count += 1;
+            if retry_count >= max_retries {
+                return Err("Topology still not initialized after colony-start. Please wait and try again.".to_string());
+            }
+        }
     }
     
     if !status.is_success() {
