@@ -318,10 +318,11 @@ impl std::hash::Hash for HostInfo {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusterTopology {
-    coordinator_host: HostInfo,
-    backend_hosts: Vec<HostInfo>,
-    shard_to_host: HashMap<Shard, HostInfo>
+    pub coordinator_host: HostInfo,
+    pub backend_hosts: Vec<HostInfo>,
+    pub shard_to_host: HashMap<Shard, HostInfo>
 }
 
 static INSTANCE: OnceLock<RwLock<Arc<ClusterTopology>>> = OnceLock::new();
@@ -350,6 +351,20 @@ impl ClusterTopology {
             backend_hosts,
             shard_to_host,
         };
+        let topology = Arc::new(topology);
+        match Self::topology_lock().write() {
+            Ok(mut guard) => {
+                *guard = topology;
+                Ok(())
+            }
+            Err(_) => Err("ClusterTopology lock poisoned".to_string()),
+        }
+    }
+    
+    /// Initialize ClusterTopology from a ClusterTopology object (for backend use)
+    /// This must be called before get_instance() is called for the first time
+    /// Returns Ok(()) if successful
+    pub fn initialize_from_topology(topology: ClusterTopology) -> Result<(), String> {
         let topology = Arc::new(topology);
         match Self::topology_lock().write() {
             Ok(mut guard) => {

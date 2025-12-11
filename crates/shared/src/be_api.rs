@@ -7,6 +7,7 @@ pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
 // Re-export colony model types for backward compatibility
 pub use crate::colony_model::{Color, Cell, ColonyLifeRules, Shard, ShardLayer, Traits};
 pub use crate::colony_events::ColonyEvent;
+pub use crate::cluster_topology::ClusterTopology;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum BackendRequest {
@@ -49,6 +50,7 @@ pub struct InitColonyRequest {
 pub struct InitColonyShardRequest {
     pub shard: Shard,
     pub colony_life_rules: ColonyLifeRules,
+    pub topology: Option<ClusterTopology>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -56,7 +58,8 @@ pub enum InitColonyShardResponse {
     Ok,
     ShardAlreadyInitialized,
     ColonyNotInitialized,
-    InvalidShardDimensions
+    InvalidShardDimensions,
+    Error,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

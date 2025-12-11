@@ -8,9 +8,10 @@ use shared::be_api::{BackendRequest, BackendResponse, GetShardImageResponse, Ini
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
-use shared::cluster_topology::{DiscoveredTopology, NodeType, NodeAddress, start_periodic_discovery};
+use shared::cluster_topology::{DiscoveredTopology, NodeType, NodeAddress, start_periodic_discovery, ClusterTopology, HostInfo};
 use shared::cluster_registry::{ClusterRegistry, create_cluster_registry, get_instance};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -45,7 +46,10 @@ use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
 use crate::shard_topography::ShardTopography;
 use crate::http_server::start_http_server;
+use crate::backend_config::{get_backend_hostname, get_backend_port};
 
+// Track if topology has been initialized from routing table
+static TOPOLOGY_INITIALIZED: OnceLock<bool> = OnceLock::new();
 
 type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
 
@@ -130,6 +134,53 @@ async fn handle_init_colony(req: InitColonyRequest) -> BackendResponse {
 }
 
 async fn handle_init_colony_shard(req: InitColonyShardRequest) -> BackendResponse {
+    // Initialize topology from ClusterTopology object on first call
+    let topology_initialized = TOPOLOGY_INITIALIZED.get().copied().unwrap_or(false);
+    if !topology_initialized {
+        // Extract ClusterTopology from request
+        let topology = match req.topology {
+            Some(t) => t,
+            None => {
+                log_error!("ClusterTopology missing from InitColonyShardRequest");
+                return BackendResponse::InitColonyShard(InitColonyShardResponse::Error);
+            }
+        };
+        
+        // Initialize topology from ClusterTopology object
+        if let Err(e) = ClusterTopology::initialize_from_topology(topology.clone()) {
+            log_error!("Failed to initialize topology: {}", e);
+            return BackendResponse::InitColonyShard(InitColonyShardResponse::Error);
+        }
+        
+        // Validate that this backend's host info exists in the topology's backend hosts
+        let this_backend_host = HostInfo::new(get_backend_hostname().to_string(), get_backend_port());
+        let normalized_hostname = if this_backend_host.hostname == "0.0.0.0" {
+            "127.0.0.1".to_string()
+        } else {
+            this_backend_host.hostname.clone()
+        };
+        let normalized_backend_host = HostInfo::new(normalized_hostname, this_backend_host.port);
+        
+        let backend_exists = topology.backend_hosts.iter().any(|host| {
+            let normalized_host = if host.hostname == "0.0.0.0" {
+                HostInfo::new("127.0.0.1".to_string(), host.port)
+            } else {
+                host.clone()
+            };
+            normalized_host == normalized_backend_host
+        });
+        
+        if !backend_exists {
+            log_error!("Backend host {}:{} not found in topology backend hosts", 
+                      this_backend_host.hostname, this_backend_host.port);
+            return BackendResponse::InitColonyShard(InitColonyShardResponse::Error);
+        }
+        
+        // Mark topology as initialized
+        TOPOLOGY_INITIALIZED.set(true).expect("Failed to set topology initialized flag");
+        log!("Topology initialized from ClusterTopology object");
+    }
+    
     if !Colony::is_initialized() {
         BackendResponse::InitColonyShard(InitColonyShardResponse::ColonyNotInitialized)
     } else if Colony::instance().is_hosting_shard(req.shard) {
@@ -399,16 +450,8 @@ async fn main() {
         tokio::spawn(start_http_server(http_port));
     }
     
-    if deployment_mode == DeploymentMode::Localhost {
-        // Validate that this backend's hostname and port are in the cluster topology
-        let topology = shared::cluster_topology::ClusterTopology::get_instance();
-        let backend_hosts = topology.get_all_backend_hosts();
-        let this_host = shared::cluster_topology::HostInfo::new(normalized_hostname_for_validation.clone(), rpc_port);    
-        if !backend_hosts.contains(&this_host) {
-            panic!("Backend hostname '{}' and RPC port '{}' not found in cluster topology. Available backend hosts: {:?}", 
-                hostname, rpc_port, backend_hosts.iter().map(|h| h.to_address()).collect::<Vec<_>>());
-        }
-    }
+    // Note: Topology validation is now done during InitColonyShard processing using routing table from coordinator
+    // No static topology access needed at startup
 
     be_ticker::start_be_ticker();
     let bind_host = match deployment_mode {

@@ -10,6 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use bincode;
 use backoff::{ExponentialBackoff, Error as BackoffError};
 use std::time::Duration;
+use std::sync::Arc;
 use crate::coordinator_storage::{CoordinatorStoredInfo, ColonyStatus};
 use crate::coordinator_context::CoordinatorContext;
 
@@ -105,8 +106,16 @@ async fn send_init_colony(stream: &mut TcpStream) {
     }
 }
 
-async fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
-    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { shard: shard, colony_life_rules: COLONY_LIFE_INITIAL_RULES });
+async fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard, topology: Arc<ClusterTopology>) {
+    // Clone the topology to send to backend
+    // Note: ClusterTopology is now Clone and serializable, so we can clone it directly
+    let topology_clone = (*topology).clone();
+    
+    let req = BackendRequest::InitColonyShard(InitColonyShardRequest { 
+        shard: shard, 
+        colony_life_rules: COLONY_LIFE_INITIAL_RULES,
+        topology: Some(topology_clone),
+    });
     send_message(stream, &req).await;
     if let Some(response) = receive_message::<BackendResponse>(stream).await {
         match response {
@@ -118,6 +127,9 @@ async fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard) {
             },
             BackendResponse::InitColonyShard(InitColonyShardResponse::ColonyNotInitialized) => {
                 log_error!("Colony not initialized");
+            },
+            BackendResponse::InitColonyShard(InitColonyShardResponse::Error) => {
+                log_error!("Error initializing shard (missing or invalid topology)");
             },
             _ => log_error!("Unexpected response to InitColonyShard"),
         }
@@ -192,7 +204,7 @@ pub async fn initialize_colony() {
                     continue;
                 }
             };
-            send_init_colony_shard(&mut stream, *shard).await;
+            send_init_colony_shard(&mut stream, *shard, topology.clone()).await;
         } else {
             log_error!("No backend found for shard {:?}", shard);
         }
