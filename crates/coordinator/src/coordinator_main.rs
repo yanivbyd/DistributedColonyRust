@@ -9,11 +9,9 @@ mod colony_event_generator;
 mod colony_start;
 mod http_server;
 
-use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry, ColonyMetricStats};
-use std::collections::{BTreeMap, HashMap};
+use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry};
 use shared::cluster_topology::{ClusterTopology, NodeAddress};
 use shared::cluster_registry::{ClusterRegistry, create_cluster_registry, get_instance};
-use shared::be_api::StatMetric;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
@@ -37,7 +35,6 @@ impl DeploymentMode {
     }
 }
 
-use crate::coordinator_context::CoordinatorContext;
 use crate::http_server::start_http_server;
 
 type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
@@ -50,8 +47,6 @@ const BUILD_VERSION: &str = match option_env!("BUILD_VERSION") {
 fn call_label(response: &CoordinatorResponse) -> &'static str {
     match response {
         CoordinatorResponse::GetRoutingTableResponse { .. } => "GetRoutingTable",
-        CoordinatorResponse::GetColonyEventsResponse { .. } => "GetColonyEvents",
-        CoordinatorResponse::GetColonyStatsResponse { .. } => "GetColonyStats",
     }
 }
 
@@ -87,20 +82,6 @@ async fn handle_get_routing_table() -> CoordinatorResponse {
     CoordinatorResponse::GetRoutingTableResponse { entries }
 }
 
-async fn handle_get_colony_events(limit: usize) -> CoordinatorResponse {
-    let context = CoordinatorContext::get_instance();
-    let mut events = context.get_colony_events();
-    
-    // Sort by tick in descending order (most recent first)
-    events.sort_by(|a, b| b.tick.cmp(&a.tick));
-    
-    // Take only the top K events
-    let limited_events = events.into_iter().take(limit).collect();
-    
-    CoordinatorResponse::GetColonyEventsResponse { 
-        events: limited_events
-    }
-}
 
 
 async fn handle_client(socket: TcpStream) {
@@ -109,8 +90,6 @@ async fn handle_client(socket: TcpStream) {
     while let Some(Ok(bytes)) = framed.next().await {
         let response = match bincode::deserialize::<CoordinatorRequest>(&bytes) {
             Ok(CoordinatorRequest::GetRoutingTable) => handle_get_routing_table().await,
-            Ok(CoordinatorRequest::GetColonyEvents { limit }) => handle_get_colony_events(limit).await,
-            Ok(CoordinatorRequest::GetColonyStats { metrics }) => handle_get_colony_stats(metrics).await,
             Err(e) => {
                 log_error!("Failed to deserialize CoordinatorRequest: {}", e);
                 continue;
@@ -121,70 +100,6 @@ async fn handle_client(socket: TcpStream) {
     log!("handle_client: connection closed");
 }
 
-async fn handle_get_colony_stats(metrics: Vec<StatMetric>) -> CoordinatorResponse {
-    // Aggregate across all shards
-    let topology = match ClusterTopology::get_instance() {
-        Some(t) => t,
-        None => {
-            log_error!("Topology not initialized");
-            return CoordinatorResponse::GetColonyStatsResponse { metrics: Vec::new(), tick_count: 0 };
-        }
-    };
-    let shards = topology.get_all_shards();
-    if shards.is_empty() {
-        return CoordinatorResponse::GetColonyStatsResponse { metrics: Vec::new(), tick_count: 0 };
-    }
-
-    // Prepare index mapping for requested metrics
-    fn metric_id(m: shared::be_api::StatMetric) -> u8 {
-        match m {
-            shared::be_api::StatMetric::Health => 0,
-            shared::be_api::StatMetric::CreatureSize => 1,
-            shared::be_api::StatMetric::CreateCanKill => 2,
-            shared::be_api::StatMetric::CreateCanMove => 3,
-            shared::be_api::StatMetric::Food => 4,
-            shared::be_api::StatMetric::Age => 5,
-        }
-    }
-    let mut pos_by_id: HashMap<u8, usize> = HashMap::new();
-    for (idx, m) in metrics.iter().copied().enumerate() {
-        pos_by_id.insert(metric_id(m), idx);
-    }
-    // counts_per_metric: per requested metric (by index) -> value -> occs
-    let mut counts_per_metric: Vec<BTreeMap<i32, u64>> = vec![BTreeMap::new(); metrics.len()];
-
-    let mut min_tick: Option<u64> = None;
-    for shard in shards {
-        if let Some((tick, per_metric)) = crate::backend_client::call_backend_get_shard_stats(shard, metrics.clone()) {
-            min_tick = Some(match min_tick { Some(t) => t.min(tick), None => tick });
-            for (metric, buckets) in per_metric {
-                if let Some(&idx) = pos_by_id.get(&metric_id(metric)) {
-                    let entry = counts_per_metric.get_mut(idx).unwrap();
-                    for b in buckets {
-                        *entry.entry(b.value).or_insert(0) += b.occs;
-                    }
-                }
-            }
-        }
-    }
-
-    // Build ordered results following the requested metrics order
-    let mut results: Vec<ColonyMetricStats> = Vec::with_capacity(metrics.len());
-    for (i, metric) in metrics.into_iter().enumerate() {
-        let counts = std::mem::take(&mut counts_per_metric[i]);
-        let mut sum: i64 = 0;
-        let mut total: i64 = 0;
-        for (value, occs) in &counts {
-            sum += *value as i64 * *occs as i64;
-            total += *occs as i64;
-        }
-        let avg = if total > 0 { sum as f64 / total as f64 } else { 0.0 };
-        let buckets = counts.into_iter().map(|(value, occs)| shared::be_api::StatBucket { value, occs }).collect();
-        results.push(ColonyMetricStats { metric, avg, buckets });
-    }
-
-    CoordinatorResponse::GetColonyStatsResponse { metrics: results, tick_count: min_tick.unwrap_or(0) }
-}
 
 fn check_port_available(port: u16) -> Result<(), String> {
     use std::net::TcpListener;

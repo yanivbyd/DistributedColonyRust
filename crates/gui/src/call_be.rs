@@ -1,8 +1,8 @@
 #![allow(deprecated)]
 use eframe::egui;
 use egui_extras::RetainedImage;
-use shared::be_api::{BackendRequest, BackendResponse, GetShardImageRequest, GetShardImageResponse, GetShardLayerRequest, GetShardLayerResponse, GetColonyInfoRequest, GetColonyInfoResponse, ShardLayer, Shard, Color, ColonyLifeRules};
-use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, ColonyEventDescription, ColonyMetricStats};
+use shared::be_api::{BackendRequest, BackendResponse, GetShardImageRequest, GetShardImageResponse, GetShardLayerRequest, GetShardLayerResponse, ShardLayer, Shard, Color, ColonyLifeRules};
+use shared::coordinator_api::{ColonyEventDescription, ColonyMetricStats};
 use shared::be_api::{StatMetric};
 use shared::cluster_topology::{ClusterTopology, HostInfo};
 use std::net::TcpStream;
@@ -11,6 +11,8 @@ use std::time::Duration;
 use bincode;
 use crate::connection_pool::ConnectionPool;
 use std::sync::OnceLock;
+use shared::ssm;
+use shared::cluster_registry::create_cluster_registry;
 
 static CONNECTION_POOL: OnceLock<ConnectionPool> = OnceLock::new();
 
@@ -140,55 +142,153 @@ pub fn get_colony_info(topology: &ClusterTopology) -> Option<(Option<ColonyLifeR
     }
     
     let host_info = &backend_hosts[0];
-    let req = BackendRequest::GetColonyInfo(GetColonyInfoRequest);
+    let http_port = get_backend_http_port(host_info)?;
     
-    let response: BackendResponse = send_request_with_pool(host_info, &req)?;
-    if let BackendResponse::GetColonyInfo(GetColonyInfoResponse::Ok { colony_life_rules, current_tick, .. }) = response {
-        Some((colony_life_rules, current_tick))
+    let url = format!("http://{}:{}/api/colony-info", host_info.hostname, http_port);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .build()
+        .ok()?;
+    
+    let response = client.get(&url).send().ok()?;
+    
+    if response.status().is_success() {
+        #[derive(serde::Deserialize)]
+        struct Response {
+            #[serde(rename = "width")]
+            _width: i32,
+            #[serde(rename = "height")]
+            _height: i32,
+            #[serde(rename = "shards")]
+            _shards: Vec<Shard>,
+            colony_life_rules: Option<ColonyLifeRules>,
+            current_tick: Option<u64>,
+        }
+        
+        let resp_data = response.json::<Response>().ok()?;
+        Some((resp_data.colony_life_rules, resp_data.current_tick))
     } else {
         None
     }
 }
 
-fn send_coordinator_request(request: &CoordinatorRequest) -> Option<CoordinatorResponse> {
-    let coordinator_port = shared::coordinator_api::COORDINATOR_PORT;
-    let addr = format!("127.0.0.1:{}", coordinator_port);
-    
-    let mut stream = TcpStream::connect_timeout(&addr.parse().ok()?, Duration::from_millis(500)).ok()?;
-    stream.set_read_timeout(Some(Duration::from_millis(1000))).ok()?;
-    stream.set_write_timeout(Some(Duration::from_millis(500))).ok()?;
-    
-    // Send request
-    let encoded = bincode::serialize(request).ok()?;
-    let len = (encoded.len() as u32).to_be_bytes();
-    stream.write_all(&len).ok()?;
-    stream.write_all(&encoded).ok()?;
-    
-    // Read response
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).ok()?;
-    let resp_len = u32::from_be_bytes(len_buf) as usize;
-    let mut buf = vec![0u8; resp_len];
-    stream.read_exact(&mut buf).ok()?;
-    
-    bincode::deserialize(&buf).ok()
+fn get_coordinator_http_info() -> Option<(String, u16)> {
+    // Try to discover coordinator HTTP info using SSM
+    // We need to determine the deployment mode - try both localhost and aws
+    for mode in &["localhost", "aws"] {
+        let _registry = create_cluster_registry(mode);
+        let rt = tokio::runtime::Runtime::new().ok()?;
+        if let Some(addr) = rt.block_on(ssm::discover_coordinator()) {
+            return Some((addr.ip, addr.http_port));
+        }
+    }
+    None
+}
+
+fn get_backend_http_port(host_info: &HostInfo) -> Option<u16> {
+    // Try to discover backend HTTP port using SSM
+    for mode in &["localhost", "aws"] {
+        let _registry = create_cluster_registry(mode);
+        let rt = tokio::runtime::Runtime::new().ok()?;
+        let backend_addresses = rt.block_on(ssm::discover_backends());
+        for backend_addr in backend_addresses {
+            if (backend_addr.ip == host_info.hostname ||
+                backend_addr.ip == "127.0.0.1" && host_info.hostname == "127.0.0.1" ||
+                backend_addr.ip == "localhost" && host_info.hostname == "localhost") &&
+               backend_addr.internal_port == host_info.port {
+                return Some(backend_addr.http_port);
+            }
+        }
+    }
+    None
 }
 
 pub fn get_colony_events(limit: usize) -> Option<Vec<ColonyEventDescription>> {
-    let req = CoordinatorRequest::GetColonyEvents { limit };
-    let response = send_coordinator_request(&req)?;
-    if let CoordinatorResponse::GetColonyEventsResponse { events } = response {
-        Some(events)
+    let (coordinator_host, http_port) = get_coordinator_http_info()?;
+    
+    let url = format!("http://{}:{}/api/colony-events?limit={}", coordinator_host, http_port, limit);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .build()
+        .ok()?;
+    
+    let response = client.get(&url).send().ok()?;
+    
+    if response.status().is_success() {
+        #[derive(serde::Deserialize)]
+        struct Response {
+            events: Vec<ColonyEventDescription>,
+        }
+        response.json::<Response>().ok().map(|r| r.events)
     } else {
         None
     }
 }
 
 pub fn get_colony_stats(metrics: Vec<StatMetric>) -> Option<(u64, Vec<ColonyMetricStats>)> {
-    let req = CoordinatorRequest::GetColonyStats { metrics };
-    let response = send_coordinator_request(&req)?;
-    if let CoordinatorResponse::GetColonyStatsResponse { metrics, tick_count } = response {
-        Some((tick_count, metrics))
+    let (coordinator_host, http_port) = get_coordinator_http_info()?;
+    
+    // Convert StatMetric enum to string
+    let metric_strings: Vec<String> = metrics.iter().map(|m| {
+        match m {
+            StatMetric::Health => "Health",
+            StatMetric::CreatureSize => "CreatureSize",
+            StatMetric::CreateCanKill => "CreateCanKill",
+            StatMetric::CreateCanMove => "CreateCanMove",
+            StatMetric::Food => "Food",
+            StatMetric::Age => "Age",
+        }.to_string()
+    }).collect();
+    
+    let url = format!("http://{}:{}/api/colony-stats", coordinator_host, http_port);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .build()
+        .ok()?;
+    
+    #[derive(serde::Serialize)]
+    struct Request {
+        metrics: Vec<String>,
+    }
+    
+    let request_body = Request { metrics: metric_strings };
+    let response = client.post(&url).json(&request_body).send().ok()?;
+    
+    if response.status().is_success() {
+        #[derive(serde::Deserialize)]
+        struct MetricResponse {
+            metric: String,
+            avg: f64,
+            buckets: Vec<shared::be_api::StatBucket>,
+        }
+        
+        #[derive(serde::Deserialize)]
+        struct Response {
+            tick_count: u64,
+            metrics: Vec<MetricResponse>,
+        }
+        
+        let resp_data = response.json::<Response>().ok()?;
+        
+        // Convert back to StatMetric enum
+        let metric_stats: Vec<ColonyMetricStats> = resp_data.metrics.into_iter().map(|m| {
+            let metric = match m.metric.as_str() {
+                "Health" => StatMetric::Health,
+                "CreatureSize" => StatMetric::CreatureSize,
+                "CreateCanKill" => StatMetric::CreateCanKill,
+                "CreateCanMove" => StatMetric::CreateCanMove,
+                "Food" => StatMetric::Food,
+                "Age" => StatMetric::Age,
+                _ => StatMetric::Health, // Default fallback
+            };
+            ColonyMetricStats {
+                metric,
+                avg: m.avg,
+                buckets: m.buckets,
+            }
+        }).collect();
+        
+        Some((resp_data.tick_count, metric_stats))
     } else {
         None
     }

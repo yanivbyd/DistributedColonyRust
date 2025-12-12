@@ -7,15 +7,11 @@ pub const COORDINATOR_PORT: u16 = 8082;
 #[derive(Serialize, Deserialize, Debug)]
 pub enum CoordinatorRequest {
     GetRoutingTable,
-    GetColonyEvents { limit: usize },
-    GetColonyStats { metrics: Vec<StatMetric> },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum CoordinatorResponse {
     GetRoutingTableResponse { entries: Vec<RoutingEntry> },
-    GetColonyEventsResponse { events: Vec<ColonyEventDescription> },
-    GetColonyStatsResponse { metrics: Vec<ColonyMetricStats>, tick_count: u64 },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
