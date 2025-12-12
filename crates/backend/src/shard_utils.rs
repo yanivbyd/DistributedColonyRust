@@ -80,14 +80,10 @@ impl ShardUtils {
         };
 
         // State persistence removed - always start with randomized shard
-        log!("Randomizing shard: {}", Self::shard_id(shard));
+        log!("Randomizing shard: {}", shard.to_id());
         colony_shard.randomize_at_start(rng);
 
         colony_shard
-    }
-
-    pub fn shard_id(shard: &Shard) -> String {
-        format!("{}_{}_{}_{}", shard.x, shard.y, shard.width, shard.height)
     }
 
     pub fn get_shard_image(shard: &ColonyShard, req_shard: &Shard) -> Option<Vec<Color>> {
@@ -258,7 +254,7 @@ impl ShardUtils {
 
     #[allow(dead_code)]
     fn get_shard_filename(shard: &Shard) -> String {
-        format!("output/storage/{}.dat", ShardUtils::shard_id(shard))
+        format!("output/storage/{}.dat", shard.to_id())
     }
 
     #[allow(dead_code)]

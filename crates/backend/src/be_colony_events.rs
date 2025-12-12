@@ -153,7 +153,7 @@ fn apply_colony_rule_change(colony: &Colony, rule_change: &ColonyRuleChange) {
         // Apply the new rules object
         shard.colony_life_rules = rule_change.new_rules;
         
-        log!("Updated shard {} rules: {}", ShardUtils::shard_id(&shard.shard), rule_change.description);
+        log!("Updated shard {} rules: {}", shard.shard.to_id(), rule_change.description);
         
         log_colony_rules(&old_rules, "Old rules: ");
         log_colony_rules(&shard.colony_life_rules, "New rules: ");

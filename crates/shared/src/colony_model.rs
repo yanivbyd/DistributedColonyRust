@@ -54,6 +54,31 @@ pub struct Shard {
     pub height: i32,
 }
 
+impl Shard {
+    /// Converts `Shard` struct to shard_id string format: `{x}_{y}_{width}_{height}`
+    pub fn to_id(&self) -> String {
+        format!("{}_{}_{}_{}", self.x, self.y, self.width, self.height)
+    }
+    
+    /// Parses shard_id string to `Shard` struct
+    /// Returns `Ok(Shard)` if format is valid, `Err(String)` with error message if invalid
+    pub fn from_id(id: &str) -> Result<Self, String> {
+        let parts: Vec<&str> = id.split('_').collect();
+        if parts.len() != 4 {
+            return Err(format!("Invalid shard_id format: expected 4 parts separated by '_', got {}", parts.len()));
+        }
+        let x = parts[0].parse::<i32>()
+            .map_err(|e| format!("Invalid x coordinate '{}': {}", parts[0], e))?;
+        let y = parts[1].parse::<i32>()
+            .map_err(|e| format!("Invalid y coordinate '{}': {}", parts[1], e))?;
+        let width = parts[2].parse::<i32>()
+            .map_err(|e| format!("Invalid width '{}': {}", parts[2], e))?;
+        let height = parts[3].parse::<i32>()
+            .map_err(|e| format!("Invalid height '{}': {}", parts[3], e))?;
+        Ok(Shard { x, y, width, height })
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum ShardLayer {
     CreatureSize,
