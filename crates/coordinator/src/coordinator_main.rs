@@ -8,6 +8,7 @@ mod tick_monitor;
 mod colony_event_generator;
 mod colony_start;
 mod http_server;
+mod colony_capture;
 
 use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry};
 use shared::cluster_topology::{ClusterTopology, NodeAddress};
@@ -228,6 +229,19 @@ async fn main() {
             }
         }
         std::process::exit(0);
+    });
+
+    // Start periodic creature image capture task (runs every 60 seconds)
+    tokio::spawn(async move {
+        use tokio::time::{interval, Duration};
+        let mut capture_interval = interval(Duration::from_secs(60));
+        // Skip the first tick which fires immediately, then start capturing
+        capture_interval.tick().await;
+        
+        loop {
+            capture_interval.tick().await;
+            crate::colony_capture::capture_colony().await;
+        }
     });
 
     loop {
