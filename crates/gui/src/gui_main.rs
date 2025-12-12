@@ -12,7 +12,6 @@ use shared::coordinator_api::ColonyEventDescription;
 
 use crate::call_be::get_colony_stats;
 mod call_be;
-mod connection_pool;
 
 const REFRESH_INTERVAL_MS: u64 = 100;
 const MIN_CREATURE_SIZE_LEGEND_MAX: i32 = 30;

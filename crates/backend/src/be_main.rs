@@ -4,7 +4,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tokio_stream::StreamExt;
 use futures_util::SinkExt;
-use shared::be_api::{BackendRequest, BackendResponse, GetShardImageResponse, InitColonyShardResponse, InitColonyRequest, GetShardImageRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, GetShardLayerRequest, GetShardLayerResponse, InitShardTopographyRequest, InitShardTopographyResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse, GetShardStatsRequest, GetShardStatsResponse, StartTickingRequest, StartTickingResponse};
+use shared::be_api::{BackendRequest, BackendResponse, InitColonyShardResponse, InitColonyRequest, InitColonyShardRequest, InitColonyResponse, GetColonyInfoRequest, GetColonyInfoResponse, UpdatedShardContentsRequest, UpdatedShardContentsResponse, InitShardTopographyRequest, InitShardTopographyResponse, GetShardCurrentTickRequest, GetShardCurrentTickResponse, ApplyEventRequest, ApplyEventResponse, GetShardStatsRequest, GetShardStatsResponse, StartTickingRequest, StartTickingResponse};
 use bincode;
 use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error};
@@ -62,8 +62,6 @@ fn call_label(response: &BackendResponse) -> &'static str {
     match response {
         BackendResponse::Ping => "Ping",
         BackendResponse::InitColony(_) => "InitColony",
-        BackendResponse::GetShardImage(_) => "GetShardImage",
-        BackendResponse::GetShardLayer(_) => "GetShardLayer",
         BackendResponse::GetShardStats(_) => "GetShardStats",
         BackendResponse::InitColonyShard(_) => "InitColonyShard",
         BackendResponse::GetColonyInfo(_) => "GetColonyInfo",
@@ -93,8 +91,6 @@ async fn handle_client(socket: TcpStream) {
                 let response = match bincode::deserialize::<BackendRequest>(&bytes) {
                     Ok(BackendRequest::Ping) => handle_ping().await,
                     Ok(BackendRequest::InitColony(req)) => handle_init_colony(req).await,
-                    Ok(BackendRequest::GetShardImage(req)) => handle_get_shard_image(req).await,
-                    Ok(BackendRequest::GetShardLayer(req)) => handle_get_shard_layer(req).await,
                     Ok(BackendRequest::InitColonyShard(req)) => handle_init_colony_shard(req).await,
                     Ok(BackendRequest::GetColonyInfo(req)) => handle_get_colony_info(req).await,
                     Ok(BackendRequest::UpdatedShardContents(req)) => handle_updated_shard_contents(req).await,
@@ -193,38 +189,6 @@ async fn handle_init_colony_shard(req: InitColonyShardRequest) -> BackendRespons
         let mut rng = shared::utils::new_random_generator();
         Colony::instance().add_hosted_shard(ShardUtils::new_colony_shard(&req.shard, &req.colony_life_rules, &mut rng));
         BackendResponse::InitColonyShard(InitColonyShardResponse::Ok)
-    }
-}
-
-async fn handle_get_shard_image(req: GetShardImageRequest) -> BackendResponse {
-    if ! Colony::is_initialized() {
-        return BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable);
-    }
-    let colony = Colony::instance();
-    if let Some(shard_arc) = colony.get_hosted_colony_shard_arc(&req.shard) {
-        let shard = shard_arc.lock().unwrap();
-        match ShardUtils::get_shard_image(&shard, &req.shard) {
-            Some(image) => BackendResponse::GetShardImage(GetShardImageResponse::Image { image }),
-            None => BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable),
-        }
-    } else {
-        BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable)
-    }
-}
-
-async fn handle_get_shard_layer(req: GetShardLayerRequest) -> BackendResponse {
-    if ! Colony::is_initialized() {
-        return BackendResponse::GetShardImage(GetShardImageResponse::ShardNotAvailable);
-    }
-    let colony = Colony::instance();
-    if let Some(shard_arc) = colony.get_hosted_colony_shard_arc(&req.shard) {
-        let shard = shard_arc.lock().unwrap();
-        match ShardUtils::get_shard_layer(&shard, &req.shard, &req.layer) {
-            Some(data) => BackendResponse::GetShardLayer(GetShardLayerResponse::Ok { data }),
-            None => BackendResponse::GetShardLayer(GetShardLayerResponse::ShardNotAvailable),
-        }
-    } else {
-        BackendResponse::GetShardLayer(GetShardLayerResponse::ShardNotAvailable)
     }
 }
 

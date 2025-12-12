@@ -13,8 +13,6 @@ pub use crate::cluster_topology::ClusterTopology;
 pub enum BackendRequest {
     Ping,
     InitColony(InitColonyRequest),
-    GetShardImage(GetShardImageRequest),
-    GetShardLayer(GetShardLayerRequest),
     GetShardStats(GetShardStatsRequest),
     InitColonyShard(InitColonyShardRequest),
     GetColonyInfo(GetColonyInfoRequest),
@@ -29,8 +27,6 @@ pub enum BackendRequest {
 pub enum BackendResponse {
     Ping,
     InitColony(InitColonyResponse),
-    GetShardImage(GetShardImageResponse),
-    GetShardLayer(GetShardLayerResponse),
     GetShardStats(GetShardStatsResponse),
     InitColonyShard(InitColonyShardResponse),
     GetColonyInfo(GetColonyInfoResponse),
@@ -68,29 +64,6 @@ pub enum InitColonyShardResponse {
 pub enum InitColonyResponse {
     Ok,
     ColonyAlreadyInitialized,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct GetShardImageRequest {
-    pub shard: Shard,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum GetShardImageResponse {
-    Image { image: Vec<Color> },
-    ShardNotAvailable,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct GetShardLayerRequest {
-    pub shard: Shard,
-    pub layer: ShardLayer,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum GetShardLayerResponse {
-    Ok { data: Vec<i32> },
-    ShardNotAvailable,
 }
 
 // ===== Shard Stats API =====
