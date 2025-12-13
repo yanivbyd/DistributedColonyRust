@@ -5,7 +5,7 @@ use crate::shard_utils::ShardUtils;
 use shared::utils::new_random_generator;
 use shared::cluster_topology::{ClusterTopology, HostInfo};
 use shared::log;
-use crate::backend_config::{get_backend_hostname, get_backend_port};
+use crate::backend_config::{get_backend_hostname, get_backend_port, is_aws_deployment};
 use std::sync::{Arc, OnceLock};
 
 static TICKER_STARTED: OnceLock<()> = OnceLock::new();
@@ -81,7 +81,12 @@ pub fn start_be_ticker() {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
+            let sleep_duration = if is_aws_deployment() {
+                1
+            } else {
+                25
+            };
+            tokio::time::sleep(tokio::time::Duration::from_millis(sleep_duration)).await;
         }
     });
     });

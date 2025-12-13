@@ -417,6 +417,9 @@ async fn main() {
         DeploymentMode::Localhost => "localhost",
     };
     
+    // Store deployment mode globally
+    crate::backend_config::set_deployment_mode(deployment_mode_str.to_string());
+    
     // Initialize ClusterRegistry early
     let _registry = create_cluster_registry(deployment_mode_str);
     
