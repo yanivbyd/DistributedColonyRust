@@ -268,11 +268,15 @@ export class UserDataBuilder {
     }
     
     // Build command arguments based on instance type
-    // Use environment variable substitution for ports
+    // In AWS mode, both coordinator and backend read ports from environment variables
+    // Coordinator: reads RPC_PORT and HTTP_PORT from env vars
+    // Backend: reads BACKEND_HOST, RPC_PORT, and HTTP_PORT from env vars
     if (instanceType === ColonyInstanceType.COORDINATOR) {
-      baseCommand.push(`  "$ECR_URI" /usr/local/bin/coordinator $RPC_PORT $HTTP_PORT aws`);
+      // AWS mode: pass only "aws" as argument, ports come from env vars
+      baseCommand.push(`  "$ECR_URI" /usr/local/bin/coordinator aws`);
     } else {
-      baseCommand.push(`  "$ECR_URI" /usr/local/bin/backend $${hostname} $RPC_PORT $HTTP_PORT aws`);
+      // AWS mode: pass only "aws" as argument, hostname and ports come from env vars
+      baseCommand.push(`  "$ECR_URI" /usr/local/bin/backend aws`);
     }
     
     return baseCommand;

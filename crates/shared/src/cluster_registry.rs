@@ -255,13 +255,30 @@ impl ClusterRegistry for SsmClusterRegistry {
             Ok(response) => {
                 if let Some(param) = response.parameter {
                     if let Some(value) = param.value {
+                        // Try JSON format first (new format with internal_port and http_port)
                         match parse_address_json(&value) {
                             Some(address) => {
-                                log!("SSM ClusterRegistry: coordinator entry = {}", address.to_internal_address());
+                                log!("SSM ClusterRegistry: coordinator entry = {} (internal), {} (http)", 
+                                     address.to_internal_address(), address.to_http_address());
                                 return Some(address);
                             }
                             None => {
-                                log_error!("SSM: coordinator entry has invalid format");
+                                // Fallback to simple format (IP:port) for backward compatibility
+                                // This handles the case where user-data script writes simple format before coordinator starts
+                                let parts: Vec<&str> = value.split(':').collect();
+                                if parts.len() == 2 {
+                                    if let Ok(port) = parts[1].parse::<u16>() {
+                                        // For backward compatibility with legacy format, use the same port for both internal and http
+                                        // The coordinator's Rust code will overwrite this with correct JSON format once it starts
+                                        // Coordinator in AWS mode: RPC port 8082, HTTP port 8083
+                                        let http_port = if port == 8082 { 8083 } else { port };
+                                        let address = NodeAddress::new(parts[0].to_string(), port, http_port);
+                                        log!("SSM ClusterRegistry: coordinator entry (legacy format IP:port) = {} (internal), {} (http)", 
+                                             address.to_internal_address(), address.to_http_address());
+                                        return Some(address);
+                                    }
+                                }
+                                log_error!("SSM: coordinator entry has invalid format: {}", value);
                             }
                         }
                     }
