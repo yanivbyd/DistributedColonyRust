@@ -9,12 +9,13 @@ COORDINATOR_HTTP_PORT=8083
 BACKEND_RPC_PORTS=(8084 8086 8088 8090)
 BACKEND_HTTP_PORTS=(8085 8087 8089 8091)
 
-echo "🔄 Killing all backend, coordinator, and GUI processes..."
+echo "🔄 Killing all backend, coordinator, GUI, and S3 upload daemon processes..."
 
 # First try graceful termination
 pkill -x backend || true
 pkill -x coordinator || true
 pkill -x gui || true
+pkill -f "s3_upload_daemon.sh" || true
 
 # Wait a moment for graceful termination
 sleep 2
@@ -23,6 +24,12 @@ sleep 2
 pkill -9 -x backend || true
 pkill -9 -x coordinator || true
 pkill -9 -x gui || true
+pkill -9 -f "s3_upload_daemon.sh" || true
+
+# Clean up PID file if it exists
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+rm -f "$PROJECT_ROOT/output/s3_upload_daemon.pid" 2>/dev/null || true
 
 # Also kill by port usage as a backup
 echo "🔫 Force killing processes by port usage..."

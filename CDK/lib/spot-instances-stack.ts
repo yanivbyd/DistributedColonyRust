@@ -142,6 +142,30 @@ export class SpotInstancesStack extends cdk.Stack {
       },
     }));
 
+    // S3 permissions for upload daemon
+    instanceRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        's3:PutObject',
+        's3:PutObjectAcl',
+        's3:GetObject',
+        's3:HeadObject',
+      ],
+      resources: [
+        `arn:aws:s3:::distributed-colony/*`,
+      ],
+    }));
+
+    instanceRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        's3:ListBucket',
+      ],
+      resources: [
+        `arn:aws:s3:::distributed-colony`,
+      ],
+    }));
+
     const instanceProfile = new iam.CfnInstanceProfile(this, 'BackendInstanceProfile', {
       roles: [instanceRole.roleName],
     });

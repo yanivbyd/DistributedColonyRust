@@ -62,5 +62,21 @@ echo "📡 Starting coordinator in localhost mode (RPC port $COORDINATOR_RPC_POR
 (cd "$PROJECT_ROOT" && cargo run --profile=balanced -p coordinator -- $COORDINATOR_RPC_PORT $COORDINATOR_HTTP_PORT localhost) &
 sleep 1
 
+# Start S3 upload daemon
+echo "☁️  Starting S3 upload daemon..."
+# Check if daemon is already running
+if pgrep -f "s3_upload_daemon.sh" > /dev/null; then
+    echo "⚠️  S3 upload daemon is already running, skipping start"
+else
+    # Create output/s3 directory if it doesn't exist
+    mkdir -p "$PROJECT_ROOT/output/s3"
+    mkdir -p "$PROJECT_ROOT/output/logs"
+    # Start daemon in background with logging
+    nohup "$PROJECT_ROOT/scripts/s3_upload_daemon.sh" > "$PROJECT_ROOT/output/logs/s3_upload_daemon.log" 2>&1 &
+    S3_DAEMON_PID=$!
+    echo "$S3_DAEMON_PID" > "$PROJECT_ROOT/output/s3_upload_daemon.pid"
+    echo "✅ S3 upload daemon started (PID: $S3_DAEMON_PID)"
+fi
+
 echo "🖥️  Starting GUI..."
 (cd "$PROJECT_ROOT" && cargo run --profile=balanced -p gui)
