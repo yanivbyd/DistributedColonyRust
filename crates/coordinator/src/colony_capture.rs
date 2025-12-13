@@ -189,6 +189,15 @@ fn combine_shard_images(shard_images: &[(Shard, Vec<Color>)], colony_width: i32,
     // For each shard image, place pixels in correct position
     for (shard, colors) in shard_images {
         let shard_width = shard.width as usize;
+        let shard_height = shard.height as usize;
+        
+        // Validate shard dimensions match expected color count
+        let expected_colors = shard_width * shard_height;
+        if colors.len() != expected_colors {
+            log_error!("Shard {:?} has {} colors but expected {} ({}x{})", 
+                      shard, colors.len(), expected_colors, shard_width, shard_height);
+            continue;
+        }
         
         // Calculate global position from shard coordinates
         let global_x = shard.x;

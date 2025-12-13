@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Complete AWS deployment cycle script for DistributedColony
-# This script builds, pushes, deploys, tests, and collects logs
+# This script builds, pushes, deploys, tests, and launches GUI in AWS mode
 
 set -e
 
@@ -527,126 +527,65 @@ else
     fi
 fi
 
-# Step 5c: Trigger colony-start on coordinator
-print_step "Step 5c: Triggering colony-start on coordinator..."
+# Step 5c: Build and run GUI in AWS mode
+print_step "Step 5c: Building and running GUI in AWS mode..."
 
-COLONY_START_SCRIPT="${SCRIPT_DIR}/colony_start.sh"
+cd "${WORKSPACE_ROOT}"
 
-if [ ! -f "$COLONY_START_SCRIPT" ]; then
-    print_warning "colony_start.sh not found at: $COLONY_START_SCRIPT, skipping colony-start step"
-    log_output "WARNING: colony_start.sh not found, skipping colony-start step"
-else
-    log_output "Calling colony_start.sh to trigger colony-start on coordinator..."
-    if AWS_REGION="$AWS_REGION" \
-        HTTP_PORT="$COORDINATOR_HTTP_PORT" \
-        LOG_FILE="$LOG_FILE" \
-        "$COLONY_START_SCRIPT" 2>&1 | tee -a "$LOG_FILE"; then
-        print_status "Colony-start triggered successfully!"
+# Check if GUI binary exists, build if needed
+GUI_BINARY="${WORKSPACE_ROOT}/target/balanced/gui"
+if [ ! -f "$GUI_BINARY" ]; then
+    print_status "GUI binary not found, building GUI..."
+    log_output "Building GUI with balanced profile..."
+    if cargo build --profile=balanced -p gui 2>&1 | tee -a "$LOG_FILE"; then
+        print_status "GUI built successfully!"
     else
-        print_warning "Colony-start script encountered errors (non-fatal)"
+        BUILD_EXIT_CODE=$?
+        print_error "GUI build failed!"
+        {
+            echo ""
+            echo "=========================================="
+            echo "Deployment FAILED at Step 5c: GUI build failed"
+            echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+            echo "=========================================="
+        } >> "$LOG_FILE"
+        exit $BUILD_EXIT_CODE
     fi
+else
+    print_status "GUI binary found at: $GUI_BINARY"
 fi
 
-# Step 6: Wait for logs to be generated, then copy logs from spot instances
-print_step "Step 6: Waiting for logs to be generated..."
-print_status "Waiting 2 minutes to allow application logs to be generated..."
-sleep 120
-print_status "Wait completed, proceeding to log collection..."
-
-print_step "Step 6b: Copying application logs from spot instances..."
-
-log_output "Calling gather_logs_from_nodes.sh to collect logs from all instances..."
-GATHER_LOGS_SCRIPT="${SCRIPT_DIR}/gather_logs_from_nodes.sh"
-
-if [ ! -f "$GATHER_LOGS_SCRIPT" ]; then
-    print_error "gather_logs_from_nodes.sh not found at: $GATHER_LOGS_SCRIPT"
+# Verify GUI binary exists
+if [ ! -f "$GUI_BINARY" ]; then
+    print_error "GUI binary not found after build attempt"
     {
         echo ""
         echo "=========================================="
-        echo "Deployment FAILED at Step 6: gather_logs_from_nodes.sh not found"
+        echo "Deployment FAILED at Step 5c: GUI binary not found"
         echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
         echo "=========================================="
     } >> "$LOG_FILE"
     exit 1
 fi
 
-# Call the log gathering script with appropriate environment variables
-# Run the script and capture all output to log file
-if AWS_REGION="$AWS_REGION" \
-    KEY_PATH="$EXPANDED_KEY_PATH" \
-    LOG_DIR="$LOG_DIR" \
-    COORDINATOR_PORT="$COORDINATOR_PORT" \
-    BACKEND_PORT="$BACKEND_PORT" \
-    LOG_FILE="$LOG_FILE" \
-    "$GATHER_LOGS_SCRIPT" 2>&1 | tee -a "$LOG_FILE"; then
-    # Find the most recent log directory created (should be the one we just created)
-    INSTANCE_LOG_DIR=$(ls -td "${LOG_DIR}"/*/ 2>/dev/null | head -1 | sed 's|/$||')
-    if [ -n "$INSTANCE_LOG_DIR" ] && [ -d "$INSTANCE_LOG_DIR" ]; then
-        print_status "Logs gathered successfully to: $INSTANCE_LOG_DIR"
-        log_output "Instance log directory: $INSTANCE_LOG_DIR"
-    else
-        print_warning "Could not determine instance log directory path"
-        INSTANCE_LOG_DIR="${LOG_DIR}/$(date +"%Y%m%d_%H%M%S")"
-    fi
-else
-    print_warning "Log gathering script encountered errors"
-    # Still try to find the most recent directory
-    INSTANCE_LOG_DIR=$(ls -td "${LOG_DIR}"/*/ 2>/dev/null | head -1 | sed 's|/$||' || echo "${LOG_DIR}/$(date +"%Y%m%d_%H%M%S")")
-fi
+# Run GUI in AWS mode
+print_status "Starting GUI in AWS mode..."
+log_output "Running: $GUI_BINARY aws"
+log_output "GUI will discover coordinator from SSM and connect to it."
+log_output "Close the GUI window to exit."
 
-# Step 6c: Check for panics in the collected logs
-print_step "Step 6c: Checking for panics in application logs..."
-if [ -n "$INSTANCE_LOG_DIR" ] && [ -d "$INSTANCE_LOG_DIR" ]; then
-    log "Searching for [PANIC] in logs directory: $INSTANCE_LOG_DIR"
-    PANIC_FOUND=$(find "$INSTANCE_LOG_DIR" -type f -name "*.log" -exec grep -l "\[PANIC\]" {} \; 2>/dev/null || true)
-    
-    if [ -n "$PANIC_FOUND" ]; then
-        print_error "PANIC detected in application logs!"
-        log_output "=========================================="
-        log_output "PANIC DETECTED - Deployment FAILED"
-        log_output "=========================================="
-        log_output ""
-        log_output "Files containing [PANIC]:"
-        echo "$PANIC_FOUND" | while read -r panic_file; do
-            if [ -n "$panic_file" ]; then
-                log_output "  - $panic_file"
-            fi
-        done
-        log_output ""
-        log_output "Panic messages:"
-        echo "$PANIC_FOUND" | while read -r panic_file; do
-            if [ -n "$panic_file" ]; then
-                log_output "--- Panic in $panic_file ---"
-                grep -A 20 "\[PANIC\]" "$panic_file" 2>/dev/null | tee -a "$LOG_FILE" || true
-                log_output ""
-            fi
-        done
-        log_output "=========================================="
-        {
-            echo ""
-            echo "=========================================="
-            echo "Deployment FAILED at Step 6c: PANIC detected in logs"
-            echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
-            echo "=========================================="
-        } >> "$LOG_FILE"
-        exit 1
-    else
-        print_status "No panics detected in application logs ✓"
-        log "No [PANIC] found in collected logs"
-    fi
+# Run GUI in foreground (script will wait for GUI to exit)
+if "$GUI_BINARY" aws 2>&1 | tee -a "$LOG_FILE"; then
+    print_status "GUI exited successfully!"
 else
-    print_warning "Could not check for panics - log directory not available"
-    log "Skipping panic check - INSTANCE_LOG_DIR not set or not a directory"
+    GUI_EXIT_CODE=$?
+    print_warning "GUI exited with code: $GUI_EXIT_CODE (this may be normal if GUI was closed)"
+    log_output "GUI exit code: $GUI_EXIT_CODE"
 fi
 
 # Summary
 print_step "Deployment Cycle Complete!"
-log_output "LOGS:"
-if [ -n "$INSTANCE_LOG_DIR" ] && [ -d "$INSTANCE_LOG_DIR" ]; then
-    log_output "  Application Logs: $INSTANCE_LOG_DIR"
-else
-    log_output "  Application Logs: (not available)"
-fi
+log_output "GUI was launched in AWS mode and has exited."
 
 # Add footer to log file
 {
