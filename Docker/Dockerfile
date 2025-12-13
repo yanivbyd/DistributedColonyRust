@@ -14,6 +14,10 @@ ENV BUILD_VERSION=${BUILD_VERSION}
 WORKDIR /app
 ENV CARGO_TARGET_DIR=/app/target
 
+# Ensure OpenSSL development libraries and static libraries are available for linking
+# The base image should have openssl-dev and openssl-libs-static, but we ensure it here too
+RUN apk add --no-cache openssl-libs-static
+
 # Add Rust build optimizations for smaller binary size
 # -C link-arg=-s: Strip symbols from the final binary
 ENV RUSTFLAGS="-C link-arg=-s"

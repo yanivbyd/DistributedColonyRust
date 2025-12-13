@@ -5,9 +5,11 @@ FROM lukemathwalker/cargo-chef:latest-rust-1.87-alpine AS chef
 WORKDIR /app
 
 # Install build dependencies
+# openssl-libs-static is required for static linking with musl when using native-tls
 RUN apk add --no-cache \
     musl-dev \
     openssl-dev \
+    openssl-libs-static \
     pkgconfig \
     git \
     binutils

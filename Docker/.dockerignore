@@ -20,6 +20,9 @@ Thumbs.db
 target/
 # Note: Cargo.lock is needed for Docker builds to ensure reproducible dependency versions
 
+# GUI crate (not used in AWS/Docker deployments)
+crates/gui/
+
 # CDK files
 CDK/
 cdk.out/
