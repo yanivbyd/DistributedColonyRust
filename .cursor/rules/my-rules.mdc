@@ -1,9 +1,14 @@
+---
+alwaysApply: true
+---
+
 # my-rules.mdc
 
 ## CursorAI Rules
 
 ### Specification Workflow Rules
 - Each spec begins when the **Human Author** requests CursorAI to generate a specification based on an explanation.
+- Human Author comments written inline as `<<...>>` inside specs must be **integrated into the spec text** and then **removed** from the document once applied.
 - **Spec Status: waiting answers**  
   CursorAI generates the initial version, including a **Clarifications** section at the top.
 - The **Human Author** answers the questions and may add more details inside the Clarifications section.
