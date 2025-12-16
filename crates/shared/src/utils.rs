@@ -3,6 +3,51 @@ use rand::{thread_rng, SeedableRng, Rng};
 
 use crate::be_api::Color;
 
+/// EC2 metadata service base URL
+const EC2_METADATA_BASE: &str = "http://169.254.169.254/latest/meta-data";
+
+/// Get EC2 instance private IP address
+/// Returns None if not running on EC2 or if the request fails
+pub async fn get_ec2_private_ip() -> Option<String> {
+    let url = format!("{}/local-ipv4", EC2_METADATA_BASE);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .ok()?;
+    
+    match client.get(&url).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                response.text().await.ok()
+            } else {
+                None
+            }
+        }
+        Err(_) => None,
+    }
+}
+
+/// Get EC2 instance ID
+/// Returns None if not running on EC2 or if the request fails
+pub async fn get_ec2_instance_id() -> Option<String> {
+    let url = format!("{}/instance-id", EC2_METADATA_BASE);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .ok()?;
+    
+    match client.get(&url).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                response.text().await.ok()
+            } else {
+                None
+            }
+        }
+        Err(_) => None,
+    }
+}
+
 /// Creates a new SmallRng instance seeded from the thread-local random number generator.
 /// This provides a fast, non-cryptographic RNG that's suitable for most simulation purposes.
 pub fn new_random_generator() -> SmallRng {

@@ -22,10 +22,9 @@ export class UserDataBuilder {
       ...this.buildSystemSetup(),
       ...this.buildDirectorySetup(),
       ...this.buildUsefulScripts(instanceType, port),
-      ...this.buildSSMScripts(instanceType, port),
+      // SSM registration is now handled by the Rust coordinator/backend code
       ...this.buildReloadScript(instanceType, port, reloadScriptPath),
       ...this.buildContainerStartup(reloadScriptPath),
-      ...this.buildRuntimeRegistration(instanceType, port),
       ...this.buildS3UploadDaemon(instanceType),
       'echo "[INFO] Startup completed successfully"',
     ];

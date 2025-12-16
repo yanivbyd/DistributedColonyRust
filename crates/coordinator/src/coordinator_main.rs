@@ -45,14 +45,6 @@ const BUILD_VERSION: &str = match option_env!("BUILD_VERSION") {
     None => "unknown",
 };
 
-// Temporary build-time tag to prove the binary in the image
-// was compiled in the current Docker build. This is populated via
-// the COORDINATOR_BUILD_TAG build-arg/env in the Dockerfile.
-const COORDINATOR_BUILD_TAG: &str = match option_env!("COORDINATOR_BUILD_TAG") {
-    Some(value) => value,
-    None => "unknown",
-};
-
 fn call_label(response: &CoordinatorResponse) -> &'static str {
     match response {
         CoordinatorResponse::GetRoutingTableResponse { .. } => "GetRoutingTable",
@@ -127,17 +119,11 @@ fn check_port_available(port: u16) -> Result<(), String> {
 #[tokio::main]
 async fn main() {
     eprintln!("COORDINATOR MAIN ENTERED");
-    eprintln!("COORDINATOR_BUILD_TAG={}", COORDINATOR_BUILD_TAG);
     eprintln!("BUILD_VERSION={}", BUILD_VERSION);
-    if let Ok(cwd) = std::env::current_dir() {
-        eprintln!("M0: current_dir = {}", cwd.display());
-    } else {
-        eprintln!("M0: current_dir lookup failed");
-    }
 
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
-    eprintln!("M1: raw args = {:?}", args);
+    eprintln!("Raw args = {:?}", args);
     
     // In AWS mode, get ports from environment variables if not provided as arguments
     let (rpc_port, http_port, deployment_mode) = if args.len() == 2 {
@@ -151,7 +137,6 @@ async fn main() {
         }
         let rpc_env = std::env::var("RPC_PORT");
         let http_env = std::env::var("HTTP_PORT");
-        eprintln!("M1.1: AWS env RPC_PORT={:?}, HTTP_PORT={:?}", rpc_env, http_env);
         let rpc_port = rpc_env
             .ok()
             .and_then(|v| v.parse::<u16>().ok())
@@ -167,7 +152,6 @@ async fn main() {
         let rpc_port: u16 = args[1].parse().expect("RPC port must be a valid number");
         let http_port: u16 = args[2].parse().expect("HTTP port must be a valid number");
         let deployment_mode = DeploymentMode::from_str(&args[3]).expect("Invalid deployment mode");
-        eprintln!("M1.3: localhost args rpc_port={}, http_port={}, deployment_mode={:?}", rpc_port, http_port, deployment_mode);
         (rpc_port, http_port, deployment_mode)
     } else {
         eprintln!("Usage: {} <rpc_port> <http_port> <deployment_mode>", args[0]);
@@ -180,7 +164,6 @@ async fn main() {
         DeploymentMode::Aws => "aws",
         DeploymentMode::Localhost => "localhost",
     };
-    eprintln!("M1.4: final ports rpc_port={}, http_port={}, deployment_mode_str={}", rpc_port, http_port, deployment_mode_str);
     
     // Validate ports are available
     if let Err(e) = check_port_available(rpc_port) {
@@ -194,9 +177,7 @@ async fn main() {
         std::process::exit(1);
     }
     let log_path = format!("output/logs/coordinator_{}.log", rpc_port);
-    eprintln!("M1.5: initializing logging at relative path '{}'", log_path);
     init_logging(&log_path);
-    eprintln!("M1.6: init_logging completed");
     log_startup("COORDINATOR");
 
     eprintln!("M2: parsed args/env rpc={} http={}", rpc_port, http_port);
@@ -234,14 +215,31 @@ async fn main() {
 
     // Register coordinator in ClusterRegistry
     let coordinator_ip = match deployment_mode {
-        DeploymentMode::Aws => "0.0.0.0", // Will be replaced with actual IP in AWS
-        DeploymentMode::Localhost => "127.0.0.1",
+        DeploymentMode::Aws => {
+            // Get actual EC2 private IP
+            match shared::utils::get_ec2_private_ip().await {
+                Some(ip) => {
+                    log!("Discovered EC2 private IP: {}", ip);
+                    ip
+                }
+                None => {
+                    log_error!("Failed to get EC2 private IP, using 0.0.0.0");
+                    "0.0.0.0".to_string()
+                }
+            }
+        }
+        DeploymentMode::Localhost => "127.0.0.1".to_string(),
     };
     // Use RPC port for internal communication and HTTP port for HTTP endpoints
-    let coordinator_address = NodeAddress::new(coordinator_ip.to_string(), rpc_port, http_port);
+    let coordinator_address = NodeAddress::new(coordinator_ip.clone(), rpc_port, http_port);
+    let internal_addr = coordinator_address.to_internal_address();
+    let http_addr = coordinator_address.to_http_address();
     if let Some(registry) = get_instance() {
         if let Err(e) = registry.register_coordinator(coordinator_address).await {
             log_error!("Failed to register coordinator: {}", e);
+        } else {
+            log!("Registered coordinator in SSM ClusterRegistry: {} (internal), {} (http)", 
+                 internal_addr, http_addr);
         }
     }
 

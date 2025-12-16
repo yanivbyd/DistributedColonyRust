@@ -343,8 +343,12 @@ fn check_port_available(port: u16) -> Result<(), String> {
 
 #[tokio::main]
 async fn main() {
+    eprintln!("BACKEND MAIN ENTERED");
+    eprintln!("BUILD_VERSION={}", BUILD_VERSION);
+
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
+    eprintln!("Raw args = {:?}", args);
     
     // In AWS mode, get ports from environment variables if not provided as arguments
     let (rpc_port, http_port, hostname, deployment_mode) = if args.len() == 2 {
@@ -457,16 +461,43 @@ async fn main() {
     log!("Listening on {} (advertised as {})", bind_addr, hostname);
 
     // Register backend in ClusterRegistry
-    let backend_ip = match deployment_mode {
-        DeploymentMode::Aws => "0.0.0.0".to_string(), // Will be replaced with actual IP in AWS
-        DeploymentMode::Localhost => normalized_hostname_for_validation.clone(),
+    let (backend_ip, instance_id) = match deployment_mode {
+        DeploymentMode::Aws => {
+            // Get actual EC2 private IP and instance ID
+            let ip = match shared::utils::get_ec2_private_ip().await {
+                Some(ip) => {
+                    log!("Discovered EC2 private IP: {}", ip);
+                    ip
+                }
+                None => {
+                    log_error!("Failed to get EC2 private IP, using 0.0.0.0");
+                    "0.0.0.0".to_string()
+                }
+            };
+            let id = match shared::utils::get_ec2_instance_id().await {
+                Some(id) => {
+                    log!("Discovered EC2 instance ID: {}", id);
+                    id
+                }
+                None => {
+                    log_error!("Failed to get EC2 instance ID, using backend_{}", rpc_port);
+                    format!("backend_{}", rpc_port)
+                }
+            };
+            (ip, id)
+        }
+        DeploymentMode::Localhost => (normalized_hostname_for_validation.clone(), format!("backend_{}", rpc_port)),
     };
     // Use RPC port for internal communication and HTTP port for HTTP endpoints
-    let backend_address = NodeAddress::new(backend_ip, rpc_port, http_port);
-    let instance_id = format!("backend_{}", rpc_port);
+    let backend_address = NodeAddress::new(backend_ip.clone(), rpc_port, http_port);
+    let internal_addr = backend_address.to_internal_address();
+    let http_addr = backend_address.to_http_address();
     if let Some(registry) = get_instance() {
         if let Err(e) = registry.register_backend(instance_id.clone(), backend_address).await {
             log_error!("Failed to register backend: {}", e);
+        } else {
+            log!("Registered backend {} in SSM ClusterRegistry: {} (internal), {} (http)", 
+                 instance_id, internal_addr, http_addr);
         }
     }
 

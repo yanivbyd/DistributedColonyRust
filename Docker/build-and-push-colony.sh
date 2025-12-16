@@ -12,8 +12,6 @@ cd "$SCRIPT_DIR/.."
 
 start_time=$(date +%s)
 BUILD_VERSION=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-# Unique build tag for coordinator binary: <git-short-hash>-<UTC timestamp>
-COORDINATOR_BUILD_TAG="$(git rev-parse --short HEAD 2>/dev/null || echo no-git)-$(date -u +%Y%m%d%H%M%S)"
 
 # Configuration
 AWS_REGION=${AWS_REGION:-"eu-west-1"}
@@ -169,7 +167,6 @@ DOCKER_BUILDKIT=1 docker build \
   --no-cache \
   --platform linux/amd64 \
   --build-arg BUILD_VERSION="$BUILD_VERSION" \
-  --build-arg COORDINATOR_BUILD_TAG="$COORDINATOR_BUILD_TAG" \
   --build-arg BASE_IMAGE="distributed-colony-base:latest" \
   -t "$ECR_URI" \
   -f Docker/Dockerfile \

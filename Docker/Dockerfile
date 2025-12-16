@@ -7,9 +7,7 @@ ARG BASE_IMAGE=distributed-colony-base:latest
 FROM ${BASE_IMAGE} AS builder
 
 ARG BUILD_VERSION="unknown"
-ARG COORDINATOR_BUILD_TAG="unknown"
 ENV BUILD_VERSION=${BUILD_VERSION}
-ENV COORDINATOR_BUILD_TAG=${COORDINATOR_BUILD_TAG}
 
 # Ensure we use the same target directory and working directory as the base image
 # This is critical for Cargo to recognize pre-compiled dependencies
