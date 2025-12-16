@@ -1118,6 +1118,7 @@ fn retrieve_topology(mode: &str) -> Result<Arc<ClusterTopology>, String> {
 }
 
 fn main() -> eframe::Result<()> {
+    eprintln!("GUI MAIN ENTERED");
     // Parse command line arguments for mode
     let args: Vec<String> = std::env::args().collect();
     let mode = args.get(1).map(|s| s.as_str()).unwrap_or("localhost");

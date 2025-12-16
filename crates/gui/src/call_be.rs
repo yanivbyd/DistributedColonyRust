@@ -22,10 +22,10 @@ pub fn get_all_shard_retained_images(config: &crate::ShardConfig, topology: &Clu
 
 fn get_shard_retained_image(shard: Shard, topology: &ClusterTopology) -> Option<RetainedImage> {
     let host_info = get_shard_endpoint(topology, shard);
-    let http_port = get_backend_http_port(&host_info)?;
+    let (public_ip, http_port) = get_backend_http_info(&host_info)?;
     let shard_id = shard.to_id();
     
-    let url = format!("http://{}:{}/api/shard/{}/image", host_info.hostname, http_port, shard_id);
+    let url = format!("http://{}:{}/api/shard/{}/image", public_ip, http_port, shard_id);
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_millis(1500))
         .build()
@@ -93,11 +93,11 @@ fn shard_layer_to_kebab_case(layer: ShardLayer) -> &'static str {
 
 fn get_shard_layer_data(shard: Shard, layer: ShardLayer, topology: &ClusterTopology) -> Option<Vec<i32>> {
     let host_info = get_shard_endpoint(topology, shard);
-    let http_port = get_backend_http_port(&host_info)?;
+    let (public_ip, http_port) = get_backend_http_info(&host_info)?;
     let shard_id = shard.to_id();
     let layer_name = shard_layer_to_kebab_case(layer);
     
-    let url = format!("http://{}:{}/api/shard/{}/layer/{}", host_info.hostname, http_port, shard_id, layer_name);
+    let url = format!("http://{}:{}/api/shard/{}/layer/{}", public_ip, http_port, shard_id, layer_name);
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_millis(1500))
         .build()
@@ -151,10 +151,10 @@ pub fn get_all_shard_color_data(config: &crate::ShardConfig, topology: &ClusterT
 
 fn get_shard_color_data(shard: Shard, topology: &ClusterTopology) -> Option<Vec<Color>> {
     let host_info = get_shard_endpoint(topology, shard);
-    let http_port = get_backend_http_port(&host_info)?;
+    let (public_ip, http_port) = get_backend_http_info(&host_info)?;
     let shard_id = shard.to_id();
     
-    let url = format!("http://{}:{}/api/shard/{}/image", host_info.hostname, http_port, shard_id);
+    let url = format!("http://{}:{}/api/shard/{}/image", public_ip, http_port, shard_id);
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_millis(1500))
         .build()
@@ -195,9 +195,9 @@ pub fn get_colony_info(topology: &ClusterTopology) -> Option<(Option<ColonyLifeR
     }
     
     let host_info = &backend_hosts[0];
-    let http_port = get_backend_http_port(host_info)?;
+    let (public_ip, http_port) = get_backend_http_info(host_info)?;
     
-    let url = format!("http://{}:{}/api/colony-info", host_info.hostname, http_port);
+    let url = format!("http://{}:{}/api/colony-info", public_ip, http_port);
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_millis(1500))
         .build()
@@ -238,8 +238,8 @@ fn get_coordinator_http_info() -> Option<(String, u16)> {
     None
 }
 
-fn get_backend_http_port(host_info: &HostInfo) -> Option<u16> {
-    // Try to discover backend HTTP port using SSM
+fn get_backend_http_info(host_info: &HostInfo) -> Option<(String, u16)> {
+    // Try to discover backend HTTP info (public IP and port) using SSM
     for mode in &["localhost", "aws"] {
         let _registry = create_cluster_registry(mode);
         let rt = tokio::runtime::Runtime::new().ok()?;
@@ -249,7 +249,7 @@ fn get_backend_http_port(host_info: &HostInfo) -> Option<u16> {
                 backend_addr.private_ip == "127.0.0.1" && host_info.hostname == "127.0.0.1" ||
                 backend_addr.private_ip == "localhost" && host_info.hostname == "localhost") &&
                backend_addr.internal_port == host_info.port {
-                return Some(backend_addr.http_port);
+                return Some((backend_addr.public_ip, backend_addr.http_port));
             }
         }
     }
