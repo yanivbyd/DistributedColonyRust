@@ -45,6 +45,14 @@ const BUILD_VERSION: &str = match option_env!("BUILD_VERSION") {
     None => "unknown",
 };
 
+// Temporary build-time tag to prove the binary in the image
+// was compiled in the current Docker build. This is populated via
+// the COORDINATOR_BUILD_TAG build-arg/env in the Dockerfile.
+const COORDINATOR_BUILD_TAG: &str = match option_env!("COORDINATOR_BUILD_TAG") {
+    Some(value) => value,
+    None => "unknown",
+};
+
 fn call_label(response: &CoordinatorResponse) -> &'static str {
     match response {
         CoordinatorResponse::GetRoutingTableResponse { .. } => "GetRoutingTable",
@@ -118,8 +126,18 @@ fn check_port_available(port: u16) -> Result<(), String> {
 
 #[tokio::main]
 async fn main() {
+    eprintln!("COORDINATOR MAIN ENTERED");
+    eprintln!("COORDINATOR_BUILD_TAG={}", COORDINATOR_BUILD_TAG);
+    eprintln!("BUILD_VERSION={}", BUILD_VERSION);
+    if let Ok(cwd) = std::env::current_dir() {
+        eprintln!("M0: current_dir = {}", cwd.display());
+    } else {
+        eprintln!("M0: current_dir lookup failed");
+    }
+
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
+    eprintln!("M1: raw args = {:?}", args);
     
     // In AWS mode, get ports from environment variables if not provided as arguments
     let (rpc_port, http_port, deployment_mode) = if args.len() == 2 {
@@ -131,20 +149,25 @@ async fn main() {
             eprintln!("Deployment modes: localhost, aws");
             std::process::exit(1);
         }
-        let rpc_port = std::env::var("RPC_PORT")
+        let rpc_env = std::env::var("RPC_PORT");
+        let http_env = std::env::var("HTTP_PORT");
+        eprintln!("M1.1: AWS env RPC_PORT={:?}, HTTP_PORT={:?}", rpc_env, http_env);
+        let rpc_port = rpc_env
             .ok()
             .and_then(|v| v.parse::<u16>().ok())
             .expect("RPC_PORT environment variable must be set in AWS mode");
-        let http_port = std::env::var("HTTP_PORT")
+        let http_port = http_env
             .ok()
             .and_then(|v| v.parse::<u16>().ok())
             .expect("HTTP_PORT environment variable must be set in AWS mode");
+        eprintln!("M1.2: parsed AWS ports rpc_port={}, http_port={}", rpc_port, http_port);
         (rpc_port, http_port, deployment_mode)
     } else if args.len() == 4 {
         // Localhost mode: get from command line arguments
         let rpc_port: u16 = args[1].parse().expect("RPC port must be a valid number");
         let http_port: u16 = args[2].parse().expect("HTTP port must be a valid number");
         let deployment_mode = DeploymentMode::from_str(&args[3]).expect("Invalid deployment mode");
+        eprintln!("M1.3: localhost args rpc_port={}, http_port={}, deployment_mode={:?}", rpc_port, http_port, deployment_mode);
         (rpc_port, http_port, deployment_mode)
     } else {
         eprintln!("Usage: {} <rpc_port> <http_port> <deployment_mode>", args[0]);
@@ -157,6 +180,7 @@ async fn main() {
         DeploymentMode::Aws => "aws",
         DeploymentMode::Localhost => "localhost",
     };
+    eprintln!("M1.4: final ports rpc_port={}, http_port={}, deployment_mode_str={}", rpc_port, http_port, deployment_mode_str);
     
     // Validate ports are available
     if let Err(e) = check_port_available(rpc_port) {
@@ -169,9 +193,13 @@ async fn main() {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
-    
-    init_logging(&format!("output/logs/coordinator_{}.log", rpc_port));
+    let log_path = format!("output/logs/coordinator_{}.log", rpc_port);
+    eprintln!("M1.5: initializing logging at relative path '{}'", log_path);
+    init_logging(&log_path);
+    eprintln!("M1.6: init_logging completed");
     log_startup("COORDINATOR");
+
+    eprintln!("M2: parsed args/env rpc={} http={}", rpc_port, http_port);
     log!("Starting coordinator in {:?} deployment mode, version {}", deployment_mode, BUILD_VERSION);
     log!("RPC port: {}, HTTP port: {}", rpc_port, http_port);
     set_panic_hook();

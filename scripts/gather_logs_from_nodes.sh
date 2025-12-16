@@ -11,7 +11,7 @@ KEY_PATH=${KEY_PATH:-"CDK/distributed-colony-key.pem"}
 # Get workspace root for default LOG_DIR if not set
 SCRIPT_DIR_TMP="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT_TMP="$(cd "$SCRIPT_DIR_TMP/.." && pwd)"
-LOG_DIR=${LOG_DIR:-"${WORKSPACE_ROOT_TMP}/logs"}
+LOG_DIR=${LOG_DIR:-"${WORKSPACE_ROOT_TMP}/output/aws/logs"}
 COORDINATOR_PORT=${COORDINATOR_PORT:-8083}
 BACKEND_PORT=${BACKEND_PORT:-8082}
 LOG_FILE=${LOG_FILE:-""}  # Optional: if provided, will append to this log file

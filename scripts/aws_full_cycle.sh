@@ -49,8 +49,8 @@ WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$WORKSPACE_ROOT"
 
 # Set up logging directories (must be after WORKSPACE_ROOT is defined)
-LOG_DIR="${WORKSPACE_ROOT}/logs"
-RUN_LOGS_DIR="${WORKSPACE_ROOT}/run_logs"
+LOG_DIR="${WORKSPACE_ROOT}/output/aws/logs"
+RUN_LOGS_DIR="${WORKSPACE_ROOT}/output/run_logs"
 mkdir -p "$RUN_LOGS_DIR"
 LOG_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 LOG_FILE="${RUN_LOGS_DIR}/aws_full_cycle_${LOG_TIMESTAMP}.log"

@@ -7,7 +7,9 @@ ARG BASE_IMAGE=distributed-colony-base:latest
 FROM ${BASE_IMAGE} AS builder
 
 ARG BUILD_VERSION="unknown"
+ARG COORDINATOR_BUILD_TAG="unknown"
 ENV BUILD_VERSION=${BUILD_VERSION}
+ENV COORDINATOR_BUILD_TAG=${COORDINATOR_BUILD_TAG}
 
 # Ensure we use the same target directory and working directory as the base image
 # This is critical for Cargo to recognize pre-compiled dependencies
@@ -36,15 +38,11 @@ RUN sed -i '/crates\/gui/d' Cargo.toml
 COPY crates/ ./crates/
 
 # Build the application binaries with release optimizations
-# CRITICAL: Copy /app/target from base image into cache mount location
-# BuildKit cache mounts do NOT include the base image filesystem
-# We use a bind mount to access base image's target, then copy it into the cache mount
-# This populates the cache mount with pre-compiled dependencies from base image
-# Using --offline to ensure Cargo doesn't try to fetch (dependencies already in base image)
-RUN --mount=type=cache,target=/app/target \
-    --mount=type=bind,from=distributed-colony-base:latest,source=/app/target,target=/tmp/base-target,readonly \
-    sh -c "if [ ! -d /app/target/release/deps ] || [ -z \"\$(ls -A /app/target/release/deps 2>/dev/null)\" ]; then echo 'Populating cache mount from base image...' && cp -a /tmp/base-target/* /app/target/ 2>/dev/null || true; fi" && \
-    cargo build --release --bin backend --bin coordinator --offline
+# NOTE: We always force a fresh link of the final binaries to ensure
+# that no stale coordinator or backend executable can be reused from
+# any previous target directory or base image artifact.
+RUN rm -f /app/target/release/backend /app/target/release/coordinator || true && \
+    cargo build --release --bin backend --bin coordinator
 
 # Strip the binaries to further reduce size (additional to RUSTFLAGS)
 # CRITICAL: Strip ONLY the final binaries, NOT dependency artifacts
@@ -58,6 +56,11 @@ FROM alpine:3.20 AS runtime
 
 ARG BUILD_VERSION="unknown"
 ENV BUILD_VERSION=${BUILD_VERSION}
+
+# Align runtime working directory with builder and volume mounts
+# so that relative paths like "output/logs/..." resolve under /app,
+# which is where /data/distributed-colony/output is mounted.
+WORKDIR /app
 
 # Install runtime dependencies (e.g., CA certificates for TLS)
 RUN apk add --no-cache ca-certificates

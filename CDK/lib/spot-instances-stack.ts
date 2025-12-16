@@ -94,15 +94,13 @@ export class SpotInstancesStack extends cdk.Stack {
     const accountId = cdk.Stack.of(this).account;
     const region = cdk.Stack.of(this).region;
 
-    // Create S3 bucket for distributed colony data
-    const s3Bucket = new s3.Bucket(this, 'DistributedColonyBucket', {
-      bucketName: 'distributed-colony',
-      versioned: false,
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      autoDeleteObjects: false,
-    });
+    // Reference pre-existing S3 bucket for distributed colony data.
+    // The bucket must already exist with this name in the account/region.
+    const s3Bucket = s3.Bucket.fromBucketName(
+      this,
+      'DistributedColonyBucket',
+      'distributed-colony',
+    );
 
     // EC2 instance role (for pulling from ECR, SSM, etc.)
     const instanceRole = new iam.Role(this, 'BackendInstanceRole', {

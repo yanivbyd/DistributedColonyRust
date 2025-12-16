@@ -1,12 +1,19 @@
 #!/bin/bash
 
-# Build and push COLONY Docker image for DistributedColony
+# build-and-push-colony.sh: Build and push COLONY Docker image for DistributedColony
 # This script builds the application Docker image and pushes it to AWS ECR
 # The colony image depends on the base image, which should be built first
 
 set -e
+
+# Always run from the workspace root so Dockerfile/context paths are correct
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.."
+
 start_time=$(date +%s)
 BUILD_VERSION=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+# Unique build tag for coordinator binary: <git-short-hash>-<UTC timestamp>
+COORDINATOR_BUILD_TAG="$(git rev-parse --short HEAD 2>/dev/null || echo no-git)-$(date -u +%Y%m%d%H%M%S)"
 
 # Configuration
 AWS_REGION=${AWS_REGION:-"eu-west-1"}
@@ -155,19 +162,18 @@ print_status "Authenticating Docker with ECR..."
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 print_timing "Docker ECR authentication" $step_start
 
-# Use DOCKER_BUILDKIT=1 with docker build for cache mounts and platform support
-# BuildKit cache mounts will persist compiled dependencies across builds
-# This ensures fast builds even when Cargo's incremental compilation invalidates its cache
 build_start=$(date +%s)
 print_status "Building COLONY image for linux/amd64 (using local base image: distributed-colony-base:latest)..."
-print_status "Using Docker BuildKit cache mounts for fast dependency reuse"
+print_status "Docker build cache disabled for this build to guarantee fresh binaries"
 DOCKER_BUILDKIT=1 docker build \
+  --no-cache \
   --platform linux/amd64 \
   --build-arg BUILD_VERSION="$BUILD_VERSION" \
+  --build-arg COORDINATOR_BUILD_TAG="$COORDINATOR_BUILD_TAG" \
   --build-arg BASE_IMAGE="distributed-colony-base:latest" \
-  -t $ECR_URI \
-  -f Dockerfile \
-  ..
+  -t "$ECR_URI" \
+  -f Docker/Dockerfile \
+  .
 build_end=$(date +%s)
 build_elapsed=$(( build_end - build_start ))
 build_min=$(( build_elapsed / 60 ))
