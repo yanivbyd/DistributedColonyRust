@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { UserDataBuilder, ColonyInstanceType } from './user-data-builder';
 
@@ -93,6 +94,16 @@ export class SpotInstancesStack extends cdk.Stack {
     const accountId = cdk.Stack.of(this).account;
     const region = cdk.Stack.of(this).region;
 
+    // Create S3 bucket for distributed colony data
+    const s3Bucket = new s3.Bucket(this, 'DistributedColonyBucket', {
+      bucketName: 'distributed-colony',
+      versioned: false,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      autoDeleteObjects: false,
+    });
+
     // EC2 instance role (for pulling from ECR, SSM, etc.)
     const instanceRole = new iam.Role(this, 'BackendInstanceRole', {
       assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
@@ -146,26 +157,17 @@ export class SpotInstancesStack extends cdk.Stack {
     }));
 
     // S3 permissions for upload daemon
+    // grantReadWrite provides GetObject, PutObject, DeleteObject, ListBucket
+    // but we also need HeadObject (for s3api head-object) and PutObjectAcl
+    s3Bucket.grantReadWrite(instanceRole);
     instanceRole.addToPolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [
-        's3:PutObject',
-        's3:PutObjectAcl',
-        's3:GetObject',
         's3:HeadObject',
+        's3:PutObjectAcl',
       ],
       resources: [
-        `arn:aws:s3:::distributed-colony/*`,
-      ],
-    }));
-
-    instanceRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: [
-        's3:ListBucket',
-      ],
-      resources: [
-        `arn:aws:s3:::distributed-colony`,
+        s3Bucket.arnForObjects('*'),
       ],
     }));
 
@@ -294,6 +296,11 @@ export class SpotInstancesStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CoordinatorSpotFleetId', {
       value: coordinatorSpotFleet.ref,
       description: 'The ID of the coordinator spot fleet',
+    });
+
+    new cdk.CfnOutput(this, 'S3BucketName', {
+      value: s3Bucket.bucketName,
+      description: 'The name of the S3 bucket for distributed colony data',
     });
   }
 }

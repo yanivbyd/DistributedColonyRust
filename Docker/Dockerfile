@@ -1,5 +1,5 @@
 # Multi-stage Docker build for DistributedColony
-# Optimized for minimal final image size using distroless runtime
+# Optimized for minimal final image size using a lightweight Alpine runtime
 
 ARG BASE_IMAGE=distributed-colony-base:latest
 
@@ -51,16 +51,18 @@ RUN --mount=type=cache,target=/app/target \
 # This removes debug symbols and other metadata from the final executables only
 RUN strip /app/target/release/backend /app/target/release/coordinator || true
 
-# Runtime stage: Minimal distroless image
-# Using distroless/cc which provides only the C runtime library and CA certificates
-# This results in a dramatically smaller image (~10-40 MB vs ~270 MB)
-FROM gcr.io/distroless/cc AS runtime
+# Runtime stage: Minimal Alpine image (non-distroless)
+# Using alpine which provides a small but fully functional Linux userspace (shell, package manager, etc.)
+# This keeps the image small while allowing on-container debugging and tooling.
+FROM alpine:3.20 AS runtime
 
 ARG BUILD_VERSION="unknown"
 ENV BUILD_VERSION=${BUILD_VERSION}
 
+# Install runtime dependencies (e.g., CA certificates for TLS)
+RUN apk add --no-cache ca-certificates
+
 # Set default environment variables for compatibility
-# Note: In distroless, shell scripts cannot be used, so these are for reference
 # The actual binary selection must be done via CMD override
 ENV SERVICE_TYPE=backend
 ENV BACKEND_HOST=0.0.0.0

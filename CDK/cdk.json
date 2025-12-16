@@ -17,6 +17,7 @@
     ]
   },
   "context": {
+    "cli-telemetry": false,
     "instanceType": "t3.micro",
     "maxPrice": "0.015",
     "keyPairName": "distributed-colony-key",

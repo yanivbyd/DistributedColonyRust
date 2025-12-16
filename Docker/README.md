@@ -6,7 +6,7 @@ This directory contains Docker configuration for deploying DistributedColony nod
 
 The Docker setup uses a two-stage build system:
 1. **Base Image** (`distributed-colony-base`): Pre-compiles all Rust dependencies using cargo-chef
-2. **Colony Image** (`distributed-colony`): Contains only the compiled Rust binaries in a minimal distroless runtime
+2. **Colony Image** (`distributed-colony`): Contains only the compiled Rust binaries in a minimal Alpine-based runtime
 
 This separation allows for fast iterative builds while maintaining minimal production images.
 
@@ -75,11 +75,11 @@ npm run deploy
 ### Colony Image (`distributed-colony`)
 
 - **Purpose**: Production runtime image
-- **Size**: Very small (~20-50MB)
+- **Size**: Small (~40-80MB, depending on Alpine version and tooling)
 - **Contents**: 
   - Compiled `backend` binary (stripped)
   - Compiled `coordinator` binary (stripped)
-  - Minimal distroless runtime (C runtime + CA certificates only)
+  - Minimal Alpine runtime (with shell, package manager, and CA certificates)
 - **Rebuild**: Every code change
 - **Build Speed**: Fast (< 2 minutes) using Docker BuildKit cache mounts
 
@@ -95,7 +95,7 @@ npm run deploy
 
 ### Container Runtime
 
-The container supports the following environment variables (for reference, distroless doesn't use them):
+The container supports the following environment variables:
 
 - `SERVICE_TYPE` - Either "backend" or "coordinator" (not used, override CMD instead)
 - `COORDINATOR_HOST` - Hostname/IP of the coordinator (default: localhost)
@@ -147,7 +147,7 @@ docker run -p 8083:8083 \
 
 - **Never Pulls from ECR**: The colony build script will fail if the base image doesn't exist locally. This ensures fast builds by using local images only.
 - **AMD64 Only**: All builds target `linux/amd64` platform only (for EC2 compatibility).
-- **Minimal Runtime**: The final colony image uses distroless/cc, which has no shell or package manager for security.
+- **Minimal Runtime**: The final colony image uses Alpine Linux, which keeps the image small while still providing a shell and package manager for debugging.
 - **Fast Builds**: Uses Docker BuildKit cache mounts to persist compiled dependencies across builds, ensuring fast iteration even when Cargo's incremental compilation invalidates its cache.
 - **GUI Crate Excluded**: The workspace manifest explicitly excludes the GUI crate to avoid platform-specific issues.
 
