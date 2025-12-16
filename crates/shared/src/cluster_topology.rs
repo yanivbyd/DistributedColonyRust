@@ -60,26 +60,27 @@ pub enum NodeStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeAddress {
-    pub ip: String,
+    pub private_ip: String,
+    pub public_ip: String,
     pub internal_port: u16,
     pub http_port: u16,
 }
 
 impl NodeAddress {
-    pub fn new(ip: String, internal_port: u16, http_port: u16) -> Self {
-        Self { ip, internal_port, http_port }
+    pub fn new(private_ip: String, public_ip: String, internal_port: u16, http_port: u16) -> Self {
+        Self { private_ip, public_ip, internal_port, http_port }
     }
 
     pub fn to_address(&self) -> String {
-        format!("{}:{}", self.ip, self.internal_port)
+        format!("{}:{}", self.private_ip, self.internal_port)
     }
 
     pub fn to_internal_address(&self) -> String {
-        format!("{}:{}", self.ip, self.internal_port)
+        format!("{}:{}", self.private_ip, self.internal_port)
     }
 
     pub fn to_http_address(&self) -> String {
-        format!("{}:{}", self.ip, self.http_port)
+        format!("{}:{}", self.public_ip, self.http_port)
     }
 }
 

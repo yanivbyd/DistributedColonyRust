@@ -1001,9 +1001,9 @@ fn retrieve_http_ports(
     for backend_addr in backend_addresses {
         // Try to match with coordinator host first (in case coordinator is in backend list)
         let coordinator_host = topology.get_coordinator_host();
-        if (backend_addr.ip == coordinator_host.hostname || 
-            backend_addr.ip == "127.0.0.1" && coordinator_host.hostname == "127.0.0.1" ||
-            backend_addr.ip == "localhost" && coordinator_host.hostname == "localhost") &&
+        if (backend_addr.private_ip == coordinator_host.hostname || 
+            backend_addr.private_ip == "127.0.0.1" && coordinator_host.hostname == "127.0.0.1" ||
+            backend_addr.private_ip == "localhost" && coordinator_host.hostname == "localhost") &&
            backend_addr.internal_port == coordinator_host.port {
             // This is the coordinator, skip it
             continue;
@@ -1011,9 +1011,9 @@ fn retrieve_http_ports(
         
         // Match with backend hosts
         for backend_host in topology.get_all_backend_hosts() {
-            if (backend_addr.ip == backend_host.hostname ||
-                backend_addr.ip == "127.0.0.1" && backend_host.hostname == "127.0.0.1" ||
-                backend_addr.ip == "localhost" && backend_host.hostname == "localhost") &&
+            if (backend_addr.private_ip == backend_host.hostname ||
+                backend_addr.private_ip == "127.0.0.1" && backend_host.hostname == "127.0.0.1" ||
+                backend_addr.private_ip == "localhost" && backend_host.hostname == "localhost") &&
                backend_addr.internal_port == backend_host.port {
                 backend_http_ports.insert(backend_host.clone(), backend_addr.http_port);
                 break;
@@ -1035,7 +1035,7 @@ fn retrieve_topology(mode: &str) -> Result<Arc<ClusterTopology>, String> {
     
     // Extract HTTP port from NodeAddress
     let http_port = coordinator_addr.http_port;
-    let coordinator_ip = coordinator_addr.ip;
+    let coordinator_ip = coordinator_addr.public_ip;
     
     // Make HTTP GET request to /topology
     let url = format!("http://{}:{}/topology", coordinator_ip, http_port);

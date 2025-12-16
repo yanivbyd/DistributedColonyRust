@@ -48,6 +48,27 @@ pub async fn get_ec2_instance_id() -> Option<String> {
     }
 }
 
+/// Get EC2 instance public IP address
+/// Returns None if not running on EC2 or if the request fails
+pub async fn get_ec2_public_ip() -> Option<String> {
+    let url = format!("{}/public-ipv4", EC2_METADATA_BASE);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .ok()?;
+    
+    match client.get(&url).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                response.text().await.ok()
+            } else {
+                None
+            }
+        }
+        Err(_) => None,
+    }
+}
+
 /// Creates a new SmallRng instance seeded from the thread-local random number generator.
 /// This provides a fast, non-cryptographic RNG that's suitable for most simulation purposes.
 pub fn new_random_generator() -> SmallRng {

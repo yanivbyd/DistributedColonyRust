@@ -232,7 +232,7 @@ fn get_coordinator_http_info() -> Option<(String, u16)> {
         let _registry = create_cluster_registry(mode);
         let rt = tokio::runtime::Runtime::new().ok()?;
         if let Some(addr) = rt.block_on(ssm::discover_coordinator()) {
-            return Some((addr.ip, addr.http_port));
+            return Some((addr.public_ip, addr.http_port));
         }
     }
     None
@@ -245,9 +245,9 @@ fn get_backend_http_port(host_info: &HostInfo) -> Option<u16> {
         let rt = tokio::runtime::Runtime::new().ok()?;
         let backend_addresses = rt.block_on(ssm::discover_backends());
         for backend_addr in backend_addresses {
-            if (backend_addr.ip == host_info.hostname ||
-                backend_addr.ip == "127.0.0.1" && host_info.hostname == "127.0.0.1" ||
-                backend_addr.ip == "localhost" && host_info.hostname == "localhost") &&
+            if (backend_addr.private_ip == host_info.hostname ||
+                backend_addr.private_ip == "127.0.0.1" && host_info.hostname == "127.0.0.1" ||
+                backend_addr.private_ip == "localhost" && host_info.hostname == "localhost") &&
                backend_addr.internal_port == host_info.port {
                 return Some(backend_addr.http_port);
             }

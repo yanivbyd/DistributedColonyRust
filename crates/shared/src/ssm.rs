@@ -135,8 +135,9 @@ pub fn parse_address(address_str: &str) -> Option<NodeAddress> {
     let parts: Vec<&str> = address_str.split(':').collect();
     if parts.len() == 2 {
         if let Ok(port) = parts[1].parse::<u16>() {
-            // For backward compatibility, use the same port for both internal and http
-            return Some(NodeAddress::new(parts[0].to_string(), port, port));
+            // For backward compatibility, use the same IP for both private and public, and same port for both internal and http
+            let ip = parts[0].to_string();
+            return Some(NodeAddress::new(ip.clone(), ip, port, port));
         }
     }
     None

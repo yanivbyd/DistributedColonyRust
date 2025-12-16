@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::fs;
 use serde_json;
 use aws_sdk_ssm::error::ProvideErrorMetadata;
+use aws_sdk_ssm::types::ParameterType;
 
 #[allow(async_fn_in_trait)]
 pub trait ClusterRegistry: Send + Sync + 'static {
@@ -196,6 +197,7 @@ impl ClusterRegistry for SsmClusterRegistry {
             .put_parameter()
             .name("/colony/coordinator")
             .value(&json_value)
+            .r#type(ParameterType::String)
             .overwrite(true)
             .send()
             .await
@@ -206,7 +208,15 @@ impl ClusterRegistry for SsmClusterRegistry {
                 Ok(())
             }
             Err(err) => {
-                let error_msg = format!("Failed to register coordinator in SSM: {}", err);
+                let error_code = err.code();
+                let error_message = err.message();
+                let error_msg = if let Some(code) = error_code {
+                    format!("Failed to register coordinator in SSM: code={:?}, message={:?}, error={}", 
+                        code, error_message, err)
+                } else {
+                    format!("Failed to register coordinator in SSM: message={:?}, error={}", 
+                        error_message, err)
+                };
                 log_error!("{}", error_msg);
                 Err(error_msg)
             }
@@ -225,6 +235,7 @@ impl ClusterRegistry for SsmClusterRegistry {
             .put_parameter()
             .name(&param_name)
             .value(&json_value)
+            .r#type(ParameterType::String)
             .overwrite(true)
             .send()
             .await
@@ -235,7 +246,15 @@ impl ClusterRegistry for SsmClusterRegistry {
                 Ok(())
             }
             Err(err) => {
-                let error_msg = format!("Failed to register backend {} in SSM: {}", instance_id, err);
+                let error_code = err.code();
+                let error_message = err.message();
+                let error_msg = if let Some(code) = error_code {
+                    format!("Failed to register backend {} in SSM: code={:?}, message={:?}, error={}", 
+                        instance_id, code, error_message, err)
+                } else {
+                    format!("Failed to register backend {} in SSM: message={:?}, error={}", 
+                        instance_id, error_message, err)
+                };
                 log_error!("{}", error_msg);
                 Err(error_msg)
             }
@@ -268,11 +287,13 @@ impl ClusterRegistry for SsmClusterRegistry {
                                 let parts: Vec<&str> = value.split(':').collect();
                                 if parts.len() == 2 {
                                     if let Ok(port) = parts[1].parse::<u16>() {
-                                        // For backward compatibility with legacy format, use the same port for both internal and http
+                                        // For backward compatibility with legacy format, use the same IP for both private and public,
+                                        // and same port for both internal and http
                                         // The coordinator's Rust code will overwrite this with correct JSON format once it starts
                                         // Coordinator in AWS mode: RPC port 8082, HTTP port 8083
                                         let http_port = if port == 8082 { 8083 } else { port };
-                                        let address = NodeAddress::new(parts[0].to_string(), port, http_port);
+                                        let ip = parts[0].to_string();
+                                        let address = NodeAddress::new(ip.clone(), ip, port, http_port);
                                         log!("SSM ClusterRegistry: coordinator entry (legacy format IP:port) = {} (internal), {} (http)", 
                                              address.to_internal_address(), address.to_http_address());
                                         return Some(address);
@@ -365,12 +386,16 @@ impl ClusterRegistry for SsmClusterRegistry {
                         // Parameter doesn't exist, consider it already unregistered
                         Ok(())
                     } else {
-                        let error_msg = format!("Failed to unregister coordinator from SSM: {}", err);
+                        let error_message = err.message();
+                        let error_msg = format!("Failed to unregister coordinator from SSM: code={:?}, message={:?}, error={}", 
+                            code, error_message, err);
                         log_error!("{}", error_msg);
                         Err(error_msg)
                     }
                 } else {
-                    let error_msg = format!("Failed to unregister coordinator from SSM: {}", err);
+                    let error_message = err.message();
+                    let error_msg = format!("Failed to unregister coordinator from SSM: message={:?}, error={}", 
+                        error_message, err);
                     log_error!("{}", error_msg);
                     Err(error_msg)
                 }
@@ -400,12 +425,16 @@ impl ClusterRegistry for SsmClusterRegistry {
                         // Parameter doesn't exist, consider it already unregistered
                         Ok(())
                     } else {
-                        let error_msg = format!("Failed to unregister backend {} from SSM: {}", instance_id, err);
+                        let error_message = err.message();
+                        let error_msg = format!("Failed to unregister backend {} from SSM: code={:?}, message={:?}, error={}", 
+                            instance_id, code, error_message, err);
                         log_error!("{}", error_msg);
                         Err(error_msg)
                     }
                 } else {
-                    let error_msg = format!("Failed to unregister backend {} from SSM: {}", instance_id, err);
+                    let error_message = err.message();
+                    let error_msg = format!("Failed to unregister backend {} from SSM: message={:?}, error={}", 
+                        instance_id, error_message, err);
                     log_error!("{}", error_msg);
                     Err(error_msg)
                 }

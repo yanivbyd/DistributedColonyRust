@@ -214,24 +214,36 @@ async fn main() {
     log!("Listening on {} for coordinator protocol", addr);
 
     // Register coordinator in ClusterRegistry
-    let coordinator_ip = match deployment_mode {
+    let (coordinator_private_ip, coordinator_public_ip) = match deployment_mode {
         DeploymentMode::Aws => {
             // Get actual EC2 private IP
-            match shared::utils::get_ec2_private_ip().await {
+            let private_ip = match shared::utils::get_ec2_private_ip().await {
                 Some(ip) => {
                     log!("Discovered EC2 private IP: {}", ip);
                     ip
                 }
                 None => {
-                    log_error!("Failed to get EC2 private IP, using 0.0.0.0");
+                    log_error!("Failed to get EC2 private IP, registration will fail");
                     "0.0.0.0".to_string()
                 }
-            }
+            };
+            // Get actual EC2 public IP
+            let public_ip = match shared::utils::get_ec2_public_ip().await {
+                Some(ip) => {
+                    log!("Discovered EC2 public IP: {}", ip);
+                    ip
+                }
+                None => {
+                    log_error!("Failed to get EC2 public IP, registration will fail");
+                    "0.0.0.0".to_string()
+                }
+            };
+            (private_ip, public_ip)
         }
-        DeploymentMode::Localhost => "127.0.0.1".to_string(),
+        DeploymentMode::Localhost => ("127.0.0.1".to_string(), "127.0.0.1".to_string()),
     };
     // Use RPC port for internal communication and HTTP port for HTTP endpoints
-    let coordinator_address = NodeAddress::new(coordinator_ip.clone(), rpc_port, http_port);
+    let coordinator_address = NodeAddress::new(coordinator_private_ip.clone(), coordinator_public_ip.clone(), rpc_port, http_port);
     let internal_addr = coordinator_address.to_internal_address();
     let http_addr = coordinator_address.to_http_address();
     if let Some(registry) = get_instance() {

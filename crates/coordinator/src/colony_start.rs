@@ -30,7 +30,7 @@ pub async fn colony_start_colony(idempotency_key: Option<String>) {
     
     // Step 3: Get coordinator host info from discovered topology (use self_address since coordinator is discovering itself)
     let coordinator_host = HostInfo::new(
-        coordinator_address.ip.clone(),
+        coordinator_address.private_ip.clone(),
         coordinator_address.internal_port
     );
     
@@ -79,7 +79,7 @@ async fn discover_and_ping_backends() -> (Vec<HostInfo>, NodeAddress) {
         Some(r) => r,
         None => {
             log_error!("ClusterRegistry not initialized");
-            return (Vec::new(), NodeAddress::new("127.0.0.1".to_string(), 8082, 8083));
+            return (Vec::new(), NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), 8082, 8083));
         }
     };
     
@@ -96,7 +96,7 @@ async fn discover_and_ping_backends() -> (Vec<HostInfo>, NodeAddress) {
                 .ok()
                 .and_then(|v| v.parse::<u16>().ok())
                 .unwrap_or(8083);
-            NodeAddress::new("127.0.0.1".to_string(), rpc_port, http_port)
+            NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), rpc_port, http_port)
         }
     };
     
@@ -126,9 +126,9 @@ pub(crate) async fn filter_backends_excluding_coordinator(
     for backend_address in backend_addresses {
         // Skip if this backend matches the coordinator's address (same IP and port)
         // In localhost mode, IPs will match, so we check the port
-        if backend_address.ip == coordinator_address.ip && 
+        if backend_address.private_ip == coordinator_address.private_ip && 
            backend_address.internal_port == coordinator_internal_port {
-            log!("Skipping backend {}:{} (matches coordinator address)", backend_address.ip, backend_address.internal_port);
+            log!("Skipping backend {}:{} (matches coordinator address)", backend_address.private_ip, backend_address.internal_port);
             continue;
         }
         
@@ -136,12 +136,12 @@ pub(crate) async fn filter_backends_excluding_coordinator(
         let status = check_backend_status(&backend_address).await;
         if status == NodeStatus::Active {
             available_backends.push(HostInfo::new(
-                backend_address.ip,
+                backend_address.private_ip,
                 backend_address.internal_port,
             ));
         } else {
             log!("Skipping backend {}:{} (status: {:?})", 
-                 backend_address.ip, backend_address.internal_port, status);
+                 backend_address.private_ip, backend_address.internal_port, status);
         }
     }
     

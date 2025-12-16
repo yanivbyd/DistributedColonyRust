@@ -14,14 +14,14 @@ fn filter_backends_by_address_only(
     for backend_address in backend_addresses {
         // Skip if this backend matches the coordinator's address (same IP and port)
         // In localhost mode, IPs will match, so we check the port
-        if backend_address.ip == coordinator_address.ip && 
+        if backend_address.private_ip == coordinator_address.private_ip && 
            backend_address.internal_port == coordinator_internal_port {
             continue;
         }
         
         // For this test, we skip the status check and just add all non-coordinator backends
         available_backends.push(HostInfo::new(
-            backend_address.ip,
+            backend_address.private_ip,
             backend_address.internal_port,
         ));
     }
@@ -33,15 +33,15 @@ fn filter_backends_by_address_only(
 fn test_filter_backends_excluding_coordinator_localhost_mode() {
     // Simulate localhost mode: coordinator and all backends share the same IP (127.0.0.1)
     // This is the critical case that was failing before the fix
-    let coordinator = NodeAddress::new("127.0.0.1".to_string(), 8082, 8083);
+    let coordinator = NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), 8082, 8083);
     
     // Create backend addresses with same IP but different ports
     let backend_addresses = vec![
-        NodeAddress::new("127.0.0.1".to_string(), 8084, 8085), // Backend 1
-        NodeAddress::new("127.0.0.1".to_string(), 8086, 8087), // Backend 2
-        NodeAddress::new("127.0.0.1".to_string(), 8088, 8089), // Backend 3
-        NodeAddress::new("127.0.0.1".to_string(), 8090, 8091), // Backend 4
-        NodeAddress::new("127.0.0.1".to_string(), 8082, 8083), // Coordinator (should be filtered out)
+        NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), 8084, 8085), // Backend 1
+        NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), 8086, 8087), // Backend 2
+        NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), 8088, 8089), // Backend 3
+        NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), 8090, 8091), // Backend 4
+        NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), 8082, 8083), // Coordinator (should be filtered out)
     ];
     
     let filtered = filter_backends_by_address_only(backend_addresses, &coordinator);
@@ -71,13 +71,13 @@ fn test_filter_backends_excluding_coordinator_localhost_mode() {
 #[test]
 fn test_filter_backends_excluding_coordinator_different_ips() {
     // Simulate AWS mode: coordinator and backends have different IPs
-    let coordinator = NodeAddress::new("10.0.1.1".to_string(), 8082, 8083);
+    let coordinator = NodeAddress::new("10.0.1.1".to_string(), "10.0.1.1".to_string(), 8082, 8083);
     
     let backend_addresses = vec![
-        NodeAddress::new("10.0.1.2".to_string(), 8084, 8085), // Backend 1
-        NodeAddress::new("10.0.1.3".to_string(), 8086, 8087), // Backend 2
-        NodeAddress::new("10.0.1.1".to_string(), 8082, 8083), // Coordinator (same IP+port, should be filtered)
-        NodeAddress::new("10.0.1.4".to_string(), 8088, 8089), // Backend 3
+        NodeAddress::new("10.0.1.2".to_string(), "10.0.1.2".to_string(), 8084, 8085), // Backend 1
+        NodeAddress::new("10.0.1.3".to_string(), "10.0.1.3".to_string(), 8086, 8087), // Backend 2
+        NodeAddress::new("10.0.1.1".to_string(), "10.0.1.1".to_string(), 8082, 8083), // Coordinator (same IP+port, should be filtered)
+        NodeAddress::new("10.0.1.4".to_string(), "10.0.1.4".to_string(), 8088, 8089), // Backend 3
     ];
     
     let filtered = filter_backends_by_address_only(backend_addresses, &coordinator);
@@ -97,12 +97,12 @@ fn test_filter_backends_excluding_coordinator_different_ips() {
 fn test_filter_backends_excluding_coordinator_same_ip_different_port() {
     // Test the critical localhost case: same IP, different ports
     // This verifies that comparing only IP would be wrong
-    let coordinator = NodeAddress::new("127.0.0.1".to_string(), 8082, 8083);
+    let coordinator = NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), 8082, 8083);
     
     let backend_addresses = vec![
-        NodeAddress::new("127.0.0.1".to_string(), 8084, 8085), // Should NOT be filtered (different port)
-        NodeAddress::new("127.0.0.1".to_string(), 8086, 8087), // Should NOT be filtered (different port)
-        NodeAddress::new("127.0.0.1".to_string(), 8082, 8083), // SHOULD be filtered (same IP AND port)
+        NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), 8084, 8085), // Should NOT be filtered (different port)
+        NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), 8086, 8087), // Should NOT be filtered (different port)
+        NodeAddress::new("127.0.0.1".to_string(), "127.0.0.1".to_string(), 8082, 8083), // SHOULD be filtered (same IP AND port)
     ];
     
     let filtered = filter_backends_by_address_only(backend_addresses, &coordinator);

@@ -319,7 +319,7 @@ async fn create_discovered_topology(hostname: &str, rpc_port: u16) -> Discovered
         .unwrap_or(8085); // Default fallback
     let mut discovered_topology = DiscoveredTopology::new(
         NodeType::Backend, 
-        NodeAddress::new(hostname.to_string(), rpc_port, http_port), 
+        NodeAddress::new(hostname.to_string(), hostname.to_string(), rpc_port, http_port), 
         None, 
         Vec::new()
     );
@@ -461,16 +461,27 @@ async fn main() {
     log!("Listening on {} (advertised as {})", bind_addr, hostname);
 
     // Register backend in ClusterRegistry
-    let (backend_ip, instance_id) = match deployment_mode {
+    let (backend_private_ip, backend_public_ip, instance_id) = match deployment_mode {
         DeploymentMode::Aws => {
-            // Get actual EC2 private IP and instance ID
-            let ip = match shared::utils::get_ec2_private_ip().await {
+            // Get actual EC2 private IP
+            let private_ip = match shared::utils::get_ec2_private_ip().await {
                 Some(ip) => {
                     log!("Discovered EC2 private IP: {}", ip);
                     ip
                 }
                 None => {
-                    log_error!("Failed to get EC2 private IP, using 0.0.0.0");
+                    log_error!("Failed to get EC2 private IP, registration will fail");
+                    "0.0.0.0".to_string()
+                }
+            };
+            // Get actual EC2 public IP
+            let public_ip = match shared::utils::get_ec2_public_ip().await {
+                Some(ip) => {
+                    log!("Discovered EC2 public IP: {}", ip);
+                    ip
+                }
+                None => {
+                    log_error!("Failed to get EC2 public IP, registration will fail");
                     "0.0.0.0".to_string()
                 }
             };
@@ -484,12 +495,12 @@ async fn main() {
                     format!("backend_{}", rpc_port)
                 }
             };
-            (ip, id)
+            (private_ip, public_ip, id)
         }
-        DeploymentMode::Localhost => (normalized_hostname_for_validation.clone(), format!("backend_{}", rpc_port)),
+        DeploymentMode::Localhost => (normalized_hostname_for_validation.clone(), normalized_hostname_for_validation.clone(), format!("backend_{}", rpc_port)),
     };
     // Use RPC port for internal communication and HTTP port for HTTP endpoints
-    let backend_address = NodeAddress::new(backend_ip.clone(), rpc_port, http_port);
+    let backend_address = NodeAddress::new(backend_private_ip.clone(), backend_public_ip.clone(), rpc_port, http_port);
     let internal_addr = backend_address.to_internal_address();
     let http_addr = backend_address.to_http_address();
     if let Some(registry) = get_instance() {

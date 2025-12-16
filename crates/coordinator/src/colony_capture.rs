@@ -164,9 +164,9 @@ async fn get_backend_http_port(host_info: &HostInfo) -> Option<u16> {
         let backend_addresses = ssm::discover_backends().await;
         
         for backend_addr in backend_addresses {
-            if (backend_addr.ip == host_info.hostname ||
-                backend_addr.ip == "127.0.0.1" && host_info.hostname == "127.0.0.1" ||
-                backend_addr.ip == "localhost" && host_info.hostname == "localhost") &&
+            if (backend_addr.private_ip == host_info.hostname ||
+                backend_addr.private_ip == "127.0.0.1" && host_info.hostname == "127.0.0.1" ||
+                backend_addr.private_ip == "localhost" && host_info.hostname == "localhost") &&
                backend_addr.internal_port == host_info.port {
                 return Some(backend_addr.http_port);
             }

@@ -10,7 +10,7 @@ AWS_REGION=${AWS_REGION:-"eu-west-1"}
 STACK_NAME="DistributedColonySpotInstances"
 KEY_NAME="distributed-colony-key"
 KEY_PATH=${KEY_PATH:-"CDK/distributed-colony-key.pem"}
-COORDINATOR_HTTP_PORT=8084
+COORDINATOR_HTTP_PORT=8083
 BACKEND_PORT=8082
 COORDINATOR_PORT=8083
 
@@ -574,13 +574,108 @@ log_output "Running: $GUI_BINARY aws"
 log_output "GUI will discover coordinator from SSM and connect to it."
 log_output "Close the GUI window to exit."
 
+# Capture GUI output to detect errors
+TEMP_GUI_LOG=$(mktemp)
+trap "rm -f $TEMP_GUI_LOG" EXIT
+
 # Run GUI in foreground (script will wait for GUI to exit)
-if "$GUI_BINARY" aws 2>&1 | tee -a "$LOG_FILE"; then
-    print_status "GUI exited successfully!"
+GUI_EXIT_CODE=0
+if "$GUI_BINARY" aws > "$TEMP_GUI_LOG" 2>&1; then
+    GUI_EXIT_CODE=$?
 else
     GUI_EXIT_CODE=$?
+fi
+
+# Display GUI output and append to log
+cat "$TEMP_GUI_LOG" | tee -a "$LOG_FILE"
+
+# Check for coordinator discovery error
+if grep -q "Failed to retrieve topology: Failed to discover coordinator" "$TEMP_GUI_LOG"; then
+    print_error "ERROR: GUI failed to discover coordinator!"
+    log_output ""
+    log_output "=========================================="
+    log_output "DIAGNOSTIC INFORMATION"
+    log_output "=========================================="
+    
+    # Gather logs from all nodes
+    print_step "Gathering logs from all nodes for diagnosis..."
+    GATHER_LOGS_SCRIPT="${SCRIPT_DIR}/gather_logs_from_nodes.sh"
+    
+    if [ -f "$GATHER_LOGS_SCRIPT" ]; then
+        log_output "Running gather_logs_from_nodes.sh..."
+        TEMP_GATHER_LOG=$(mktemp)
+        trap "rm -f $TEMP_GATHER_LOG" EXIT
+        
+        if AWS_REGION="$AWS_REGION" \
+            KEY_PATH="$EXPANDED_KEY_PATH" \
+            LOG_FILE="$LOG_FILE" \
+            "$GATHER_LOGS_SCRIPT" > "$TEMP_GATHER_LOG" 2>&1; then
+            # Append gather logs output to main log
+            cat "$TEMP_GATHER_LOG" | tee -a "$LOG_FILE"
+            # Extract the log directory path (last line)
+            GATHERED_LOG_DIR=$(tail -1 "$TEMP_GATHER_LOG" | tr -d '\n')
+            
+            if [ -n "$GATHERED_LOG_DIR" ] && [ -d "$GATHERED_LOG_DIR" ]; then
+                print_status "Logs gathered successfully!"
+                log_output ""
+                log_output "=========================================="
+                log_output "DIAGNOSTIC SUMMARY"
+                log_output "=========================================="
+                log_output "Error: Failed to discover coordinator"
+                log_output "Coordinator Instance ID: $COORDINATOR_INSTANCE_ID"
+                log_output "Coordinator Public IP: $COORDINATOR_IP"
+                log_output "Coordinator HTTP Port: $COORDINATOR_HTTP_PORT"
+                log_output ""
+                log_output "Gathered logs location: $GATHERED_LOG_DIR"
+                log_output ""
+                log_output "To diagnose the issue:"
+                log_output "1. Check coordinator logs: $GATHERED_LOG_DIR/coordinator_${COORDINATOR_INSTANCE_ID}/"
+                log_output "2. Check backend logs: $GATHERED_LOG_DIR/backend_*/"
+                log_output "3. Review this full cycle log: $LOG_FILE"
+                log_output "4. Verify SSM parameters are set correctly"
+                log_output "5. Check if coordinator service is running on the instance"
+                log_output ""
+                print_error "Deployment FAILED: Coordinator discovery error"
+                print_error "Logs gathered at: $GATHERED_LOG_DIR"
+                print_error "Full cycle log: $LOG_FILE"
+            else
+                print_warning "Log gathering completed but directory path unclear"
+                log_output "Gather logs output (last 10 lines):"
+                tail -10 "$TEMP_GATHER_LOG" | tee -a "$LOG_FILE"
+            fi
+        else
+            print_warning "Log gathering script encountered errors (non-fatal)"
+            log_output "Gather logs output (errors):"
+            cat "$TEMP_GATHER_LOG" | tee -a "$LOG_FILE"
+        fi
+        rm -f "$TEMP_GATHER_LOG"
+    else
+        print_warning "gather_logs_from_nodes.sh not found at: $GATHER_LOGS_SCRIPT"
+        log_output "Cannot gather logs automatically. Please run gather_logs_from_nodes.sh manually."
+    fi
+    
+    log_output ""
+    log_output "=========================================="
+    
+    # Add error footer to log file
+    {
+        echo ""
+        echo "=========================================="
+        echo "Deployment FAILED: Coordinator discovery error"
+        echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+        echo "=========================================="
+    } >> "$LOG_FILE"
+    
+    rm -f "$TEMP_GUI_LOG"
+    exit 1
+fi
+
+# Check if GUI exited with error code (but no discovery error)
+if [ $GUI_EXIT_CODE -ne 0 ]; then
     print_warning "GUI exited with code: $GUI_EXIT_CODE (this may be normal if GUI was closed)"
     log_output "GUI exit code: $GUI_EXIT_CODE"
+else
+    print_status "GUI exited successfully!"
 fi
 
 # Summary
@@ -589,6 +684,7 @@ log_output "GUI was launched in AWS mode and has exited."
 
 # Add footer to log file
 {
+    echo ""
     echo "=========================================="
     echo "Ended: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
     echo "=========================================="
@@ -597,4 +693,6 @@ log_output "GUI was launched in AWS mode and has exited."
 print_status "Full cycle completed successfully!"
 log_output ""
 log_output "Review the detailed log at: $LOG_FILE"
+
+rm -f "$TEMP_GUI_LOG"
 
