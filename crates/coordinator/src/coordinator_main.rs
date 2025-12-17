@@ -188,6 +188,10 @@ async fn main() {
     // Initialize ClusterRegistry early
     let _registry = create_cluster_registry(deployment_mode_str);
     
+    // Store deployment mode in coordinator context
+    let context = crate::coordinator_context::CoordinatorContext::get_instance();
+    context.set_deployment_mode(deployment_mode_str.to_string());
+    
     // Coordinator ticker will be started by start_colony_ticking() after colony initialization
     // Do NOT start ticker automatically here
     

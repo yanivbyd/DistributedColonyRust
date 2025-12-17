@@ -448,6 +448,26 @@ impl ClusterTopology {
         DEFAULT_HEIGHT_IN_SHARDS
     }
     
+    /// Get width in shards based on deployment mode
+    /// AWS mode: 2 shards, Localhost mode: 8 shards
+    pub fn width_in_shards_for_mode(deployment_mode: &str) -> i32 {
+        match deployment_mode.to_lowercase().as_str() {
+            "aws" => 2,
+            "localhost" => DEFAULT_WIDTH_IN_SHARDS,
+            _ => DEFAULT_WIDTH_IN_SHARDS,
+        }
+    }
+    
+    /// Get height in shards based on deployment mode
+    /// AWS mode: 2 shards, Localhost mode: 5 shards
+    pub fn height_in_shards_for_mode(deployment_mode: &str) -> i32 {
+        match deployment_mode.to_lowercase().as_str() {
+            "aws" => 2,
+            "localhost" => DEFAULT_HEIGHT_IN_SHARDS,
+            _ => DEFAULT_HEIGHT_IN_SHARDS,
+        }
+    }
+    
     /// Get default shard width for first initialization
     pub fn default_shard_width() -> i32 {
         DEFAULT_SHARD_WIDTH

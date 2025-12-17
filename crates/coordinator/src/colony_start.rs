@@ -36,8 +36,10 @@ pub async fn colony_start_colony(idempotency_key: Option<String>) {
     
     // Step 4: Store shard dimensions in coordinator context (in memory only)
     let context = CoordinatorContext::get_instance();
-    let width_in_shards = ClusterTopology::default_width_in_shards();
-    let height_in_shards = ClusterTopology::default_height_in_shards();
+    let deployment_mode = context.get_deployment_mode()
+        .unwrap_or_else(|| "localhost".to_string());
+    let width_in_shards = ClusterTopology::width_in_shards_for_mode(&deployment_mode);
+    let height_in_shards = ClusterTopology::height_in_shards_for_mode(&deployment_mode);
     let shard_width = ClusterTopology::default_shard_width();
     let shard_height = ClusterTopology::default_shard_height();
     
@@ -186,9 +188,12 @@ async fn check_backend_status(address: &NodeAddress) -> NodeStatus {
 }
 
 fn create_shard_map_with_even_distribution(backends: &[HostInfo]) -> HashMap<Shard, HostInfo> {
-    // Get shard configuration from default values
-    let width_in_shards = ClusterTopology::default_width_in_shards();
-    let height_in_shards = ClusterTopology::default_height_in_shards();
+    // Get shard configuration based on deployment mode
+    let context = CoordinatorContext::get_instance();
+    let deployment_mode = context.get_deployment_mode()
+        .unwrap_or_else(|| "localhost".to_string());
+    let width_in_shards = ClusterTopology::width_in_shards_for_mode(&deployment_mode);
+    let height_in_shards = ClusterTopology::height_in_shards_for_mode(&deployment_mode);
     let shard_width = ClusterTopology::default_shard_width();
     let shard_height = ClusterTopology::default_shard_height();
     

@@ -44,4 +44,14 @@ impl CoordinatorContext {
         let mut stored_info = self.coord_stored_info.lock().expect("Failed to acquire lock on coord_stored_info");
         stored_info.update_colony_rules(new_rules);
     }
+    
+    pub fn set_deployment_mode(&self, mode: String) {
+        let mut stored_info = self.coord_stored_info.lock().expect("Failed to acquire lock on coord_stored_info");
+        stored_info.deployment_mode = Some(mode);
+    }
+    
+    pub fn get_deployment_mode(&self) -> Option<String> {
+        let stored_info = self.coord_stored_info.lock().expect("Failed to acquire lock on coord_stored_info");
+        stored_info.deployment_mode.clone()
+    }
 }

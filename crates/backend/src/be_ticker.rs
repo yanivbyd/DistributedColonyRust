@@ -82,7 +82,7 @@ pub fn start_be_ticker() {
             }
 
             let sleep_duration = if is_aws_deployment() {
-                25
+                100
             } else {
                 25
             };
