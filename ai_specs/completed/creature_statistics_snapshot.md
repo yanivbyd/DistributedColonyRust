@@ -1,7 +1,7 @@
 ## Spec Header
 
 - **Spec name**: Periodic Creature Statistics Snapshot (Coordinator)
-- **Spec status**: **draft**
+- **Spec status**: **approved**
 
 ---
 

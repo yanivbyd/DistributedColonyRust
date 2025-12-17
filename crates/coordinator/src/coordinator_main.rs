@@ -9,6 +9,7 @@ mod colony_event_generator;
 mod colony_start;
 mod http_server;
 mod colony_capture;
+mod colony_stats;
 
 use shared::coordinator_api::{CoordinatorRequest, CoordinatorResponse, RoutingEntry};
 use shared::cluster_topology::{ClusterTopology, NodeAddress};
