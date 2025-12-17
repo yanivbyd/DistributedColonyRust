@@ -194,9 +194,16 @@ upload_file_to_s3() {
     fi
     
     # Upload with --only-show-errors to suppress normal output
-    if $aws_cmd s3 cp "$file_path" "s3://$bucket/$key" --region "$AWS_REGION" --only-show-errors; then
+    # Capture stderr to get error messages
+    local error_output
+    error_output=$($aws_cmd s3 cp "$file_path" "s3://$bucket/$key" --region "$AWS_REGION" --only-show-errors 2>&1)
+    local exit_code=$?
+    
+    if [[ $exit_code -eq 0 ]]; then
         return 0
     else
+        # Output error to stderr so caller can capture it
+        echo "$error_output" >&2
         return 1
     fi
 }
@@ -209,9 +216,20 @@ extract_bucket_and_key() {
     # Remove root directory prefix
     local relative_path="${file_path#$root_dir/}"
     
+    # If file is directly in root (no subdirectory), return empty to indicate skip
+    if [[ "$relative_path" != */* ]]; then
+        echo "|"
+        return
+    fi
+    
     # First directory component is the bucket name
     local bucket
     bucket=$(echo "$relative_path" | cut -d'/' -f1)
+
+    # Map local directory name to actual S3 bucket name
+    if [[ "$bucket" == "distributed_colony" ]]; then
+        bucket="distributed-colony"
+    fi
     
     # Rest of the path is the S3 key
     local key
@@ -258,8 +276,23 @@ scan_and_upload() {
         key=$(echo "$bucket_key" | cut -d'|' -f2)
         
         if [[ -z "$bucket" || -z "$key" ]]; then
-            log "ERROR" "Failed to extract bucket/key from: $file_path"
-            files_errors=$((files_errors + 1))
+            # File is directly in root directory, skip it (e.g., .DS_Store)
+            files_skipped=$((files_skipped + 1))
+            continue
+        fi
+        
+        # Skip files where bucket name starts with a dot (e.g., .DS_Store)
+        if [[ "$bucket" == .* ]]; then
+            files_skipped=$((files_skipped + 1))
+            continue
+        fi
+        
+        # Skip files where key (filename) starts with a dot (e.g., .DS_Store in subdirectories)
+        # Extract just the filename (last component of the key)
+        local filename
+        filename=$(basename "$key")
+        if [[ "$filename" == .* ]]; then
+            files_skipped=$((files_skipped + 1))
             continue
         fi
         
@@ -269,7 +302,7 @@ scan_and_upload() {
         
         # Check if file already exists in S3
         if file_exists_in_s3 "$bucket" "$key" "$local_size"; then
-            log "INFO" "File already exists in S3 (size matches), deleting local: $file_path"
+            log "INFO" "File already exists in S3 (bucket=$bucket, key=$key, size matches), deleting local: $file_path"
             if rm -f "$file_path"; then
                 files_skipped=$((files_skipped + 1))
             else
@@ -281,17 +314,21 @@ scan_and_upload() {
         
         # Upload file to S3
         log "INFO" "Uploading: $file_path -> s3://$bucket/$key"
-        if upload_file_to_s3 "$file_path" "$bucket" "$key"; then
+        local upload_error
+        upload_error=$(upload_file_to_s3 "$file_path" "$bucket" "$key" 2>&1)
+        local upload_exit_code=$?
+        
+        if [[ $upload_exit_code -eq 0 ]]; then
             # Delete local file after successful upload
             if rm -f "$file_path"; then
-                log "INFO" "Successfully uploaded and deleted: $file_path"
+                log "INFO" "Successfully uploaded to bucket=$bucket, key=$key and deleted: $file_path"
                 files_uploaded=$((files_uploaded + 1))
             else
-                log "WARN" "Upload succeeded but failed to delete local file: $file_path"
+                log "WARN" "Upload succeeded (bucket=$bucket, key=$key) but failed to delete local file: $file_path"
                 files_errors=$((files_errors + 1))
             fi
         else
-            log "ERROR" "Failed to upload: $file_path"
+            log "ERROR" "Failed to upload: $file_path to bucket=$bucket, key=$key: $upload_error"
             files_errors=$((files_errors + 1))
         fi
     done < <(find "$S3_ROOT_DIR" -type f -print0 2>/dev/null || true)
@@ -325,7 +362,7 @@ main() {
     
     # Main loop
     while true; do
-        scan_and_upload
+        scan_and_upload || log "WARN" "Scan encountered errors, continuing..."
         sleep "$S3_UPLOAD_INTERVAL"
     done
 }

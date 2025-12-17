@@ -73,9 +73,6 @@ else
     mkdir -p "$PROJECT_ROOT/output/logs"
     # Start daemon in background with logging
     nohup "$PROJECT_ROOT/scripts/s3_upload_daemon.sh" > "$PROJECT_ROOT/output/logs/s3_upload_daemon.log" 2>&1 &
-    S3_DAEMON_PID=$!
-    echo "$S3_DAEMON_PID" > "$PROJECT_ROOT/output/s3_upload_daemon.pid"
-    echo "✅ S3 upload daemon started (PID: $S3_DAEMON_PID)"
 fi
 
 echo "🖥️  Starting GUI (release profile)..."

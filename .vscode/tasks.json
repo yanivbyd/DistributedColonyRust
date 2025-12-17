@@ -2,23 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "AWS All",
-            "type": "shell",
-            "command": "./aws_full_cycle.sh",
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": true,
-                "panel": "new"
-            },
-            "problemMatcher": [],
-            "options": {
-                "cwd": "${workspaceFolder}/scripts"
-            }
-        },
-        {
-            "label": "Local - Run",
+            "label": "local - run",
             "type": "shell",
             "command": "./local_run.sh",
             "group": "build",
@@ -34,7 +18,7 @@
             }
         },
         {
-            "label": "Local - Kill",
+            "label": "local - kill",
             "type": "shell",
             "command": "./local_kill.sh",
             "group": "build",
@@ -47,6 +31,38 @@
             "problemMatcher": [],
             "options": {
                 "cwd": "${workspaceFolder}/scripts"
+            }
+        },
+        {
+            "label": "aws - run",
+            "type": "shell",
+            "command": "./aws_full_cycle.sh",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/scripts"
+            }
+        },
+        {
+            "label": "aws - kill",
+            "type": "shell",
+            "command": "cdk destroy --force",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/CDK"
             }
         },
         {
@@ -69,22 +85,6 @@
             "label": "CDK - Deploy",
             "type": "shell",
             "command": "cdk deploy --require-approval never",
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": true,
-                "panel": "new"
-            },
-            "problemMatcher": [],
-            "options": {
-                "cwd": "${workspaceFolder}/CDK"
-            }
-        },
-        {
-            "label": "CDK - Destroy",
-            "type": "shell",
-            "command": "cdk destroy --force",
             "group": "build",
             "presentation": {
                 "echo": true,

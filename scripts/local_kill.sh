@@ -26,11 +26,6 @@ pkill -9 -x coordinator || true
 pkill -9 -x gui || true
 pkill -9 -f "s3_upload_daemon.sh" || true
 
-# Clean up PID file if it exists
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-rm -f "$PROJECT_ROOT/output/s3_upload_daemon.pid" 2>/dev/null || true
-
 # Also kill by port usage as a backup
 echo "🔫 Force killing processes by port usage..."
 

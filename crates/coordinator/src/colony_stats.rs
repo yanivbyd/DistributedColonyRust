@@ -9,7 +9,7 @@ use crate::backend_client;
 use shared::cluster_topology::ClusterTopology;
 use chrono::Utc;
 
-const STATS_DIR: &str = "output/s3/distributed_colony/stats_shots";
+const STATS_DIR: &str = "output/s3/distributed-colony/stats_shots";
 const MIN_HISTOGRAM_COUNT: u64 = 20;
 
 #[derive(Serialize)]

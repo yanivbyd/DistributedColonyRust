@@ -7,7 +7,7 @@ use std::time::Duration;
 use std::path::Path;
 use image::{ImageBuffer, Rgb, RgbImage};
 
-const BUCKET_DIR: &str = "output/s3/distributed_colony/images_shots";
+const BUCKET_DIR: &str = "output/s3/distributed-colony/images_shots";
 
 /// Main function to capture colony creature images and save to disk
 pub async fn capture_colony() {
