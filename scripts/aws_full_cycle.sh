@@ -533,11 +533,11 @@ print_step "Step 5c: Building and running GUI in AWS mode..."
 cd "${WORKSPACE_ROOT}"
 
 # Check if GUI binary exists, build if needed
-GUI_BINARY="${WORKSPACE_ROOT}/target/balanced/gui"
+GUI_BINARY="${WORKSPACE_ROOT}/target/release/gui"
 if [ ! -f "$GUI_BINARY" ]; then
     print_status "GUI binary not found, building GUI..."
-    log_output "Building GUI with balanced profile..."
-    if cargo build --profile=balanced -p gui 2>&1 | tee -a "$LOG_FILE"; then
+    log_output "Building GUI with release profile..."
+    if cargo build --release -p gui 2>&1 | tee -a "$LOG_FILE"; then
         print_status "GUI built successfully!"
     else
         BUILD_EXIT_CODE=$?

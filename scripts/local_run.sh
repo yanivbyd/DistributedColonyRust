@@ -47,19 +47,19 @@ for i in "${!BACKEND_RPC_PORTS[@]}"; do
     check_port ${BACKEND_HTTP_PORTS[$i]}
 done
 
-echo "🚀 Starting ${#BACKEND_RPC_PORTS[@]} backend instances in localhost mode..."
+echo "🚀 Starting ${#BACKEND_RPC_PORTS[@]} backend instances in localhost mode (release profile)..."
 
 # Start all backends
 for i in "${!BACKEND_RPC_PORTS[@]}"; do
     rpc_port=${BACKEND_RPC_PORTS[$i]}
     http_port=${BACKEND_HTTP_PORTS[$i]}
-    echo "🔥 Starting backend on RPC port $rpc_port, HTTP port $http_port..."
-    (cd "$PROJECT_ROOT" && cargo run --profile=balanced -p backend -- $HOSTNAME $rpc_port $http_port localhost) &
+    echo "🔥 Starting backend on RPC port $rpc_port, HTTP port $http_port (release)..."
+    (cd "$PROJECT_ROOT" && cargo run --release -p backend -- $HOSTNAME $rpc_port $http_port localhost) &
 done
 sleep 3
 
-echo "📡 Starting coordinator in localhost mode (RPC port $COORDINATOR_RPC_PORT, HTTP port $COORDINATOR_HTTP_PORT)..."
-(cd "$PROJECT_ROOT" && cargo run --profile=balanced -p coordinator -- $COORDINATOR_RPC_PORT $COORDINATOR_HTTP_PORT localhost) &
+echo "📡 Starting coordinator in localhost mode (RPC port $COORDINATOR_RPC_PORT, HTTP port $COORDINATOR_HTTP_PORT, release profile)..."
+(cd "$PROJECT_ROOT" && cargo run --release -p coordinator -- $COORDINATOR_RPC_PORT $COORDINATOR_HTTP_PORT localhost) &
 sleep 1
 
 # Start S3 upload daemon
@@ -78,5 +78,5 @@ else
     echo "✅ S3 upload daemon started (PID: $S3_DAEMON_PID)"
 fi
 
-echo "🖥️  Starting GUI..."
-(cd "$PROJECT_ROOT" && cargo run --profile=balanced -p gui)
+echo "🖥️  Starting GUI (release profile)..."
+(cd "$PROJECT_ROOT" && cargo run --release -p gui)

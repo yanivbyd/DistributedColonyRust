@@ -8,8 +8,14 @@ members = [
 resolver = "2"
 
 [profile.release]
-debug = true
+debug = false
 opt-level = 3
+incremental = true
+codegen-units = 16
+lto = "thin"
+panic = "abort"
+strip = false
+overflow-checks = false
 
 [profile.dev]
 debug = true
@@ -22,17 +28,6 @@ debug = true
 incremental = true
 codegen-units = 256
 lto = false
-panic = "abort"
-strip = false
-overflow-checks = false
-
-[profile.balanced]
-inherits = "dev"
-opt-level = 3
-debug = true
-incremental = true
-codegen-units = 16
-lto = "thin"
 panic = "abort"
 strip = false
 overflow-checks = false
