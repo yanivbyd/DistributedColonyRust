@@ -13,7 +13,8 @@ use shared::coordinator_api::ColonyEventDescription;
 use crate::call_be::get_colony_stats;
 mod call_be;
 
-const REFRESH_INTERVAL_MS: u64 = 100;
+const REFRESH_INTERVAL_MS_LOCALHOST: u64 = 100;
+const REFRESH_INTERVAL_MS_AWS: u64 = 5000;
 const MIN_CREATURE_SIZE_LEGEND_MAX: i32 = 30;
 const FOOD_VALUE_LEGEND_MAX: i32 = 255;
 
@@ -196,7 +197,13 @@ impl App for BEImageApp {
             let shard_config = self.shard_config.clone();
             let cluster_topology = Arc::clone(&self.cluster_topology);
             let last_update_time = self.last_update_time.clone();
+            let deployment_mode = self.deployment_mode.clone();
             thread::spawn(move || {
+                let refresh_interval_ms = if deployment_mode == "aws" {
+                    REFRESH_INTERVAL_MS_AWS
+                } else {
+                    REFRESH_INTERVAL_MS_LOCALHOST
+                };
                 loop {
                     // Look at the selected tab and get only the info required for the current Tab
                     let tab = *shared_current_tab.lock().unwrap();
@@ -299,7 +306,7 @@ impl App for BEImageApp {
                         }
                     }
                     ctx_clone.request_repaint();
-                    thread::sleep(Duration::from_millis(REFRESH_INTERVAL_MS));
+                    thread::sleep(Duration::from_millis(refresh_interval_ms));
                 }
             });
             self.thread_started = true;
