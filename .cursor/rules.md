@@ -2,11 +2,9 @@
 alwaysApply: true
 ---
 
-# my-rules.mdc
+# CursorAI Rules
 
-## CursorAI Rules
-
-### Specification Workflow Rules
+## Specification Workflow Rules
 - Each spec begins when the **Human Author** requests CursorAI to generate a specification based on an explanation.
 - Human Author comments written inline as `<<...>>` inside specs must be **integrated into the spec text** and then **removed** from the document once applied.
 - **Spec Status: waiting answers**  
@@ -22,7 +20,7 @@ alwaysApply: true
      - If applicable: **Required Human Author decisions** (e.g., choice among design options)
   2. **Main specification**, limited to **150 lines or fewer**, unless explicitly permitted otherwise.
 - When a spec presents multiple design options:
-  - The recommended option’s title must end with **"(Recommended)"**.
+  - The recommended option's title must end with **"(Recommended)"**.
   - Alternative options must include pros, cons, and a short motivation.
   - A **Human Author decision** is required to select the recommended option before proceeding.
   - After the **Human Author** approves the recommended option, alternatives are moved to an **Appendix**.
@@ -30,7 +28,7 @@ alwaysApply: true
 - CursorAI must not invent or assume APIs, functions, modules, configurations, or behaviors that are not explicitly described or confirmed by the **Human Author**.  
   If any element is unclear or unspecified, CursorAI must request clarification rather than guessing.
 
-### General Coding Rules
+## General Coding Rules
 - Write simple, easy-to-read code.
 - Avoid code repetition.
 - Keep changes minimal and aligned with the prompt.
@@ -42,13 +40,13 @@ alwaysApply: true
 - Use **tokio** for parallelism; never use **Rayon**.
 - Never clone large objects (e.g., `ColonyShard`).
 
-### Code Architecture Rules
+## Code Architecture Rules
 - High-level functions focus on business logic and orchestration.
 - Low-level operations (TCP, serialization, file I/O, error handling) belong in helper utilities.
 - Functions should read like clean, well-defined API calls rather than exposing implementation details.
 - Extract repetitive or low-level logic into shared helper functions.
 
-### Rust-Specific Rules
+## Rust-Specific Rules
 - Use `log!` for logging; avoid `crate::log!`.
 - Prefer `.expect(...)` over custom logging macros like `log_expect`.
 - Import commonly used types (e.g., `TcpStream`, `Request`) instead of using fully qualified paths.
