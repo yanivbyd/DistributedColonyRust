@@ -12,6 +12,7 @@ use shared::coordinator_api::ColonyEventDescription;
 
 use crate::call_be::get_colony_stats;
 mod call_be;
+mod latency_tracker;
 
 const REFRESH_INTERVAL_MS_LOCALHOST: u64 = 100;
 const REFRESH_INTERVAL_MS_AWS: u64 = 5000;
@@ -125,6 +126,7 @@ struct BEImageApp {
     deployment_mode: String,
     coordinator_http_port: Option<u16>,
     backend_http_ports: std::collections::HashMap<shared::cluster_topology::HostInfo, u16>,
+    latency_tracker: Arc<latency_tracker::LatencyTracker>,
 }
 
 impl BEImageApp {
@@ -134,9 +136,10 @@ impl BEImageApp {
             let config_guard = shard_config.lock().unwrap();
             config_guard.total_shards()
         };
-        
-        let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images(&shard_config.lock().unwrap(), cluster_topology.as_ref())));
-        let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap(), cluster_topology.as_ref())));
+
+        let latency_tracker = Arc::new(latency_tracker::LatencyTracker::new(100));
+        let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images(&shard_config.lock().unwrap(), cluster_topology.as_ref(), &latency_tracker)));
+        let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap(), cluster_topology.as_ref(), &latency_tracker)));
         let extra_food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let can_kill = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
@@ -173,6 +176,7 @@ impl BEImageApp {
             deployment_mode,
             coordinator_http_port,
             backend_http_ports,
+            latency_tracker,
         }
     }
 }
@@ -198,6 +202,7 @@ impl App for BEImageApp {
             let cluster_topology = Arc::clone(&self.cluster_topology);
             let last_update_time = self.last_update_time.clone();
             let deployment_mode = self.deployment_mode.clone();
+            let latency_tracker = Arc::clone(&self.latency_tracker);
             thread::spawn(move || {
                 let refresh_interval_ms = if deployment_mode == "aws" {
                     REFRESH_INTERVAL_MS_AWS
@@ -211,8 +216,8 @@ impl App for BEImageApp {
                     
                     match tab {
                         Tab::Creatures => {
-                            let images = call_be::get_all_shard_retained_images(&config, cluster_topology.as_ref());
-                            let color_data = call_be::get_all_shard_color_data(&config, cluster_topology.as_ref());
+                            let images = call_be::get_all_shard_retained_images(&config, cluster_topology.as_ref(), &latency_tracker);
+                            let color_data = call_be::get_all_shard_color_data(&config, cluster_topology.as_ref(), &latency_tracker);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !images.iter().all(|img| img.is_none()) {
                                 let mut locked = creatures.lock().unwrap();
@@ -225,7 +230,7 @@ impl App for BEImageApp {
                             }
                     }
                     Tab::ExtraFood => {
-                            let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config, cluster_topology.as_ref());
+                            let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config, cluster_topology.as_ref(), &latency_tracker);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !extra_food_data.iter().all(|data| data.is_none()) {
                                 let mut locked = extra_food.lock().unwrap();
@@ -234,7 +239,7 @@ impl App for BEImageApp {
                             }
                     }
                     Tab::Sizes => {
-                            let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config, cluster_topology.as_ref());
+                            let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config, cluster_topology.as_ref(), &latency_tracker);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !sizes_data.iter().all(|data| data.is_none()) {
                                 let mut locked = sizes.lock().unwrap();
@@ -243,7 +248,7 @@ impl App for BEImageApp {
                             }
                     }
                     Tab::Age => {
-                        let age_data = call_be::get_all_shard_layer_data(ShardLayer::Age, &config, cluster_topology.as_ref());
+                        let age_data = call_be::get_all_shard_layer_data(ShardLayer::Age, &config, cluster_topology.as_ref(), &latency_tracker);
                         if !age_data.iter().all(|data| data.is_none()) {
                             let mut locked = age.lock().unwrap();
                             *locked = age_data;
@@ -251,7 +256,7 @@ impl App for BEImageApp {
                         }
                     }
                         Tab::CanKill => {
-                            let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config, cluster_topology.as_ref());
+                            let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config, cluster_topology.as_ref(), &latency_tracker);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !can_kill_data.iter().all(|data| data.is_none()) {
                                 let mut locked = can_kill.lock().unwrap();
@@ -260,7 +265,7 @@ impl App for BEImageApp {
                             }
                         }
                         Tab::CanMove => {
-                            let can_move_data = call_be::get_all_shard_layer_data(ShardLayer::CanMove, &config, cluster_topology.as_ref());
+                            let can_move_data = call_be::get_all_shard_layer_data(ShardLayer::CanMove, &config, cluster_topology.as_ref(), &latency_tracker);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !can_move_data.iter().all(|data| data.is_none()) {
                                 let mut locked = can_move.lock().unwrap();
@@ -269,7 +274,7 @@ impl App for BEImageApp {
                             }
                         }
                         Tab::CostPerTurn => {
-                            let cost_per_turn_data = call_be::get_all_shard_layer_data(ShardLayer::CostPerTurn, &config, cluster_topology.as_ref());
+                            let cost_per_turn_data = call_be::get_all_shard_layer_data(ShardLayer::CostPerTurn, &config, cluster_topology.as_ref(), &latency_tracker);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !cost_per_turn_data.iter().all(|data| data.is_none()) {
                                 let mut locked = cost_per_turn.lock().unwrap();
@@ -278,7 +283,7 @@ impl App for BEImageApp {
                             }
                         }
                         Tab::Food => {
-                            let food_data = call_be::get_all_shard_layer_data(ShardLayer::Food, &config, cluster_topology.as_ref());
+                            let food_data = call_be::get_all_shard_layer_data(ShardLayer::Food, &config, cluster_topology.as_ref(), &latency_tracker);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !food_data.iter().all(|data| data.is_none()) {
                                 let mut locked = food.lock().unwrap();
@@ -287,7 +292,7 @@ impl App for BEImageApp {
                             }
                         }
                         Tab::Health => {
-                            let health_data = call_be::get_all_shard_layer_data(ShardLayer::Health, &config, cluster_topology.as_ref());
+                            let health_data = call_be::get_all_shard_layer_data(ShardLayer::Health, &config, cluster_topology.as_ref(), &latency_tracker);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !health_data.iter().all(|data| data.is_none()) {
                                 let mut locked = health.lock().unwrap();
@@ -915,7 +920,7 @@ impl BEImageApp {
             // Node list
             ui.group(|ui| {
                 egui::Grid::new("cluster_nodes_grid")
-                    .num_columns(5)
+                    .num_columns(8)
                     .spacing([20.0, 4.0])
                     .show(ui, |ui| {
                         // Header row
@@ -924,8 +929,14 @@ impl BEImageApp {
                         ui.label(egui::RichText::new("RPC Port").strong());
                         ui.label(egui::RichText::new("HTTP Port").strong());
                         ui.label(egui::RichText::new("Shards").strong());
+                        ui.label(egui::RichText::new("Img Lat").strong());
+                        ui.label(egui::RichText::new("Layer Lat").strong());
+                        ui.label(egui::RichText::new("Err %").strong());
                         ui.end_row();
-                        
+
+                        ui.separator();
+                        ui.separator();
+                        ui.separator();
                         ui.separator();
                         ui.separator();
                         ui.separator();
@@ -944,6 +955,9 @@ impl BEImageApp {
                         ui.label(coordinator_host.port.to_string());
                         ui.label(coordinator_http);
                         ui.label("—"); // Coordinator doesn't have shards
+                        ui.label("N/A");
+                        ui.label("N/A");
+                        ui.label("N/A");
                         ui.end_row();
                         
                         // Backend nodes
@@ -970,12 +984,32 @@ impl BEImageApp {
                                 .get(&backend)
                                 .map(|p| p.to_string())
                                 .unwrap_or_else(|| "N/A".to_string());
-                            
+
+                            // Get latency stats for this backend
+                            let node_stats = self.latency_tracker.get_node_stats(&backend);
+
+                            let img_lat_str = node_stats.image_latency
+                                .map(|s| format!("{}ms", s.avg_ms.round() as i32))
+                                .unwrap_or_else(|| "N/A".to_string());
+
+                            let layer_lat_str = node_stats.layer_latency
+                                .map(|s| format!("{}ms", s.avg_ms.round() as i32))
+                                .unwrap_or_else(|| "N/A".to_string());
+
+                            let err_rate_str = if node_stats.total_error_rate > 0.0 {
+                                format!("{:.1}%", node_stats.total_error_rate)
+                            } else {
+                                "0%".to_string()
+                            };
+
                             ui.label("Backend");
                             ui.label(&backend.hostname);
                             ui.label(backend.port.to_string());
                             ui.label(backend_http);
                             ui.label(shard_count.to_string());
+                            ui.label(img_lat_str);
+                            ui.label(layer_lat_str);
+                            ui.label(err_rate_str);
                             ui.end_row();
                         }
                     });

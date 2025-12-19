@@ -5,33 +5,50 @@ use shared::be_api::{ShardLayer, Shard, Color, ColonyLifeRules};
 use shared::coordinator_api::{ColonyEventDescription, ColonyMetricStats};
 use shared::be_api::{StatMetric};
 use shared::cluster_topology::{ClusterTopology, HostInfo};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use std::sync::Arc;
 use shared::ssm;
 use shared::cluster_registry::create_cluster_registry;
+use crate::latency_tracker::{LatencyTracker, OperationKey, OperationType};
 
 fn get_shard_endpoint(topology: &ClusterTopology, shard: Shard) -> HostInfo {
     topology.get_host_for_shard(&shard).cloned().expect("Shard not found in cluster topology")
 }
 
-pub fn get_all_shard_retained_images(config: &crate::ShardConfig, topology: &ClusterTopology) -> Vec<Option<RetainedImage>> {
+pub fn get_all_shard_retained_images(config: &crate::ShardConfig, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Vec<Option<RetainedImage>> {
     let shards: Vec<Shard> = (0..config.total_shards())
         .map(|i| config.get_shard(i))
         .collect();
-    shards.iter().map(|&shard| get_shard_retained_image(shard, topology)).collect()
+    shards.iter().map(|&shard| get_shard_retained_image(shard, topology, latency_tracker)).collect()
 }
 
-fn get_shard_retained_image(shard: Shard, topology: &ClusterTopology) -> Option<RetainedImage> {
+fn get_shard_retained_image(shard: Shard, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Option<RetainedImage> {
     let host_info = get_shard_endpoint(topology, shard);
     let (public_ip, http_port) = get_backend_http_info(&host_info)?;
     let shard_id = shard.to_id();
-    
+
     let url = format!("http://{}:{}/api/shard/{}/image", public_ip, http_port, shard_id);
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_millis(1500))
         .build()
         .ok()?;
-    
-    let response = client.get(&url).send().ok()?;
+
+    let start = Instant::now();
+    let response = client.get(&url).send();
+    let latency = start.elapsed();
+
+    let key = OperationKey::new(OperationType::GetShardImage, host_info.clone());
+
+    let response = match response {
+        Ok(r) => {
+            latency_tracker.record_success(key, latency);
+            r
+        },
+        Err(_) => {
+            latency_tracker.record_error(key);
+            return None;
+        }
+    };
     
     if response.status().is_success() {
         let rgb_bytes = response.bytes().ok()?;
@@ -71,11 +88,11 @@ fn color_vec_to_image(colors: &[Color], width: usize, height: usize) -> egui::Co
     img
 }
 
-pub fn get_all_shard_layer_data(layer: ShardLayer, config: &crate::ShardConfig, topology: &ClusterTopology) -> Vec<Option<Vec<i32>>> {
+pub fn get_all_shard_layer_data(layer: ShardLayer, config: &crate::ShardConfig, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Vec<Option<Vec<i32>>> {
     let shards: Vec<Shard> = (0..config.total_shards())
         .map(|i| config.get_shard(i))
         .collect();
-    shards.iter().map(|&shard| get_shard_layer_data(shard, layer, topology)).collect()
+    shards.iter().map(|&shard| get_shard_layer_data(shard, layer, topology, latency_tracker)).collect()
 }
 
 fn shard_layer_to_kebab_case(layer: ShardLayer) -> &'static str {
@@ -91,19 +108,34 @@ fn shard_layer_to_kebab_case(layer: ShardLayer) -> &'static str {
     }
 }
 
-fn get_shard_layer_data(shard: Shard, layer: ShardLayer, topology: &ClusterTopology) -> Option<Vec<i32>> {
+fn get_shard_layer_data(shard: Shard, layer: ShardLayer, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Option<Vec<i32>> {
     let host_info = get_shard_endpoint(topology, shard);
     let (public_ip, http_port) = get_backend_http_info(&host_info)?;
     let shard_id = shard.to_id();
     let layer_name = shard_layer_to_kebab_case(layer);
-    
+
     let url = format!("http://{}:{}/api/shard/{}/layer/{}", public_ip, http_port, shard_id, layer_name);
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_millis(1500))
         .build()
         .ok()?;
-    
-    let response = client.get(&url).send().ok()?;
+
+    let start = Instant::now();
+    let response = client.get(&url).send();
+    let latency = start.elapsed();
+
+    let key = OperationKey::new(OperationType::GetShardLayer, host_info.clone());
+
+    let response = match response {
+        Ok(r) => {
+            latency_tracker.record_success(key, latency);
+            r
+        },
+        Err(_) => {
+            latency_tracker.record_error(key);
+            return None;
+        }
+    };
     
     if response.status().is_success() {
         let binary_data = response.bytes().ok()?;
@@ -142,25 +174,40 @@ fn get_shard_layer_data(shard: Shard, layer: ShardLayer, topology: &ClusterTopol
     }
 }
 
-pub fn get_all_shard_color_data(config: &crate::ShardConfig, topology: &ClusterTopology) -> Vec<Option<Vec<Color>>> {
+pub fn get_all_shard_color_data(config: &crate::ShardConfig, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Vec<Option<Vec<Color>>> {
     let shards: Vec<Shard> = (0..config.total_shards())
         .map(|i| config.get_shard(i))
         .collect();
-    shards.iter().map(|&shard| get_shard_color_data(shard, topology)).collect()
+    shards.iter().map(|&shard| get_shard_color_data(shard, topology, latency_tracker)).collect()
 }
 
-fn get_shard_color_data(shard: Shard, topology: &ClusterTopology) -> Option<Vec<Color>> {
+fn get_shard_color_data(shard: Shard, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Option<Vec<Color>> {
     let host_info = get_shard_endpoint(topology, shard);
     let (public_ip, http_port) = get_backend_http_info(&host_info)?;
     let shard_id = shard.to_id();
-    
+
     let url = format!("http://{}:{}/api/shard/{}/image", public_ip, http_port, shard_id);
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_millis(1500))
         .build()
         .ok()?;
-    
-    let response = client.get(&url).send().ok()?;
+
+    let start = Instant::now();
+    let response = client.get(&url).send();
+    let latency = start.elapsed();
+
+    let key = OperationKey::new(OperationType::GetShardImage, host_info.clone());
+
+    let response = match response {
+        Ok(r) => {
+            latency_tracker.record_success(key, latency);
+            r
+        },
+        Err(_) => {
+            latency_tracker.record_error(key);
+            return None;
+        }
+    };
     
     if response.status().is_success() {
         let rgb_bytes = response.bytes().ok()?;
