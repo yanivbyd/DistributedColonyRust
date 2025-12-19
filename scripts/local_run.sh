@@ -20,6 +20,7 @@ HOSTNAME="127.0.0.1"
 ./scripts/local_kill.sh
 rm -rf output/logs
 rm -rf output/ssm
+rm -rf output/s3/distributed-colony/*
 
 echo "🧪 Running test suite (with cloud feature) ..."
 cargo test --all --features cloud
