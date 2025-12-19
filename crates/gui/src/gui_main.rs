@@ -920,7 +920,7 @@ impl BEImageApp {
             // Node list
             ui.group(|ui| {
                 egui::Grid::new("cluster_nodes_grid")
-                    .num_columns(8)
+                    .num_columns(7)
                     .spacing([20.0, 4.0])
                     .show(ui, |ui| {
                         // Header row
@@ -929,12 +929,10 @@ impl BEImageApp {
                         ui.label(egui::RichText::new("RPC Port").strong());
                         ui.label(egui::RichText::new("HTTP Port").strong());
                         ui.label(egui::RichText::new("Shards").strong());
-                        ui.label(egui::RichText::new("Img Lat").strong());
-                        ui.label(egui::RichText::new("Layer Lat").strong());
+                        ui.label(egui::RichText::new("Lat").strong());
                         ui.label(egui::RichText::new("Err %").strong());
                         ui.end_row();
 
-                        ui.separator();
                         ui.separator();
                         ui.separator();
                         ui.separator();
@@ -950,14 +948,26 @@ impl BEImageApp {
                             .map(|p| p.to_string())
                             .unwrap_or_else(|| "N/A".to_string());
                         
+                        // Get coordinator latency stats
+                        let coord_stats = self.latency_tracker.get_node_stats(coordinator_host);
+                        let coord_lat_str = coord_stats.avg_latency_ms
+                            .map(|lat| format!("{}ms", lat.round() as i32))
+                            .unwrap_or_else(|| "N/A".to_string());
+                        let coord_err_str = if coord_stats.total_error_rate > 0.0 {
+                            format!("{:.1}%", coord_stats.total_error_rate)
+                        } else if coord_stats.avg_latency_ms.is_some() {
+                            "0%".to_string()
+                        } else {
+                            "N/A".to_string()
+                        };
+
                         ui.label("Coordinator");
                         ui.label(&coordinator_host.hostname);
                         ui.label(coordinator_host.port.to_string());
                         ui.label(coordinator_http);
                         ui.label("—"); // Coordinator doesn't have shards
-                        ui.label("N/A");
-                        ui.label("N/A");
-                        ui.label("N/A");
+                        ui.label(coord_lat_str);
+                        ui.label(coord_err_str);
                         ui.end_row();
                         
                         // Backend nodes
@@ -988,18 +998,16 @@ impl BEImageApp {
                             // Get latency stats for this backend
                             let node_stats = self.latency_tracker.get_node_stats(&backend);
 
-                            let img_lat_str = node_stats.image_latency
-                                .map(|s| format!("{}ms", s.avg_ms.round() as i32))
-                                .unwrap_or_else(|| "N/A".to_string());
-
-                            let layer_lat_str = node_stats.layer_latency
-                                .map(|s| format!("{}ms", s.avg_ms.round() as i32))
+                            let lat_str = node_stats.avg_latency_ms
+                                .map(|lat| format!("{}ms", lat.round() as i32))
                                 .unwrap_or_else(|| "N/A".to_string());
 
                             let err_rate_str = if node_stats.total_error_rate > 0.0 {
                                 format!("{:.1}%", node_stats.total_error_rate)
-                            } else {
+                            } else if node_stats.avg_latency_ms.is_some() {
                                 "0%".to_string()
+                            } else {
+                                "N/A".to_string()
                             };
 
                             ui.label("Backend");
@@ -1007,8 +1015,7 @@ impl BEImageApp {
                             ui.label(backend.port.to_string());
                             ui.label(backend_http);
                             ui.label(shard_count.to_string());
-                            ui.label(img_lat_str);
-                            ui.label(layer_lat_str);
+                            ui.label(lat_str);
                             ui.label(err_rate_str);
                             ui.end_row();
                         }

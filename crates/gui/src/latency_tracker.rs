@@ -5,8 +5,11 @@ use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OperationType {
-    GetShardImage,
-    GetShardLayer,
+    GetShardImage,      // /api/shard/{id}/image (backend)
+    GetShardLayer,      // /api/shard/{id}/layer/{layer} (backend)
+    GetColonyStats,     // /api/colony-stats (coordinator)
+    GetColonyEvents,    // /api/colony-events (coordinator)
+    GetTopology,        // /topology (coordinator)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -33,8 +36,7 @@ pub struct LatencyStats {
 
 #[derive(Debug, Clone)]
 pub struct NodeStats {
-    pub image_latency: Option<LatencyStats>,
-    pub layer_latency: Option<LatencyStats>,
+    pub avg_latency_ms: Option<f64>,  // Average across all operations for this node
     pub total_error_rate: f64,
 }
 
@@ -91,20 +93,36 @@ impl LatencyTracker {
     }
 
     pub fn get_node_stats(&self, node: &HostInfo) -> NodeStats {
-        let image_key = OperationKey::new(OperationType::GetShardImage, node.clone());
-        let layer_key = OperationKey::new(OperationType::GetShardLayer, node.clone());
+        // Check all operation types for this node
+        let operation_types = [
+            OperationType::GetShardImage,
+            OperationType::GetShardLayer,
+            OperationType::GetColonyStats,
+            OperationType::GetColonyEvents,
+            OperationType::GetTopology,
+        ];
 
-        let image_latency = self.get_stats(&image_key);
-        let layer_latency = self.get_stats(&layer_key);
+        let mut total_weighted_latency = 0.0;
+        let mut total_samples = 0;
+        let mut total_errors = 0;
 
-        let total_samples = image_latency.as_ref().map(|s| s.sample_count).unwrap_or(0)
-            + layer_latency.as_ref().map(|s| s.sample_count).unwrap_or(0);
+        for op_type in &operation_types {
+            let key = OperationKey::new(*op_type, node.clone());
+            if let Some(stats) = self.get_stats(&key) {
+                // Weighted average: sum of (avg * count) for each operation
+                total_weighted_latency += stats.avg_ms * stats.sample_count as f64;
+                total_samples += stats.sample_count;
+                total_errors += stats.error_count;
+            }
+        }
 
-        let total_errors = image_latency.as_ref().map(|s| s.error_count).unwrap_or(0)
-            + layer_latency.as_ref().map(|s| s.error_count).unwrap_or(0);
+        let avg_latency_ms = if total_samples > 0 {
+            Some(total_weighted_latency / total_samples as f64)
+        } else {
+            None
+        };
 
         let total_requests = total_samples + total_errors;
-
         let total_error_rate = if total_requests > 0 {
             (total_errors as f64 / total_requests as f64) * 100.0
         } else {
@@ -112,8 +130,7 @@ impl LatencyTracker {
         };
 
         NodeStats {
-            image_latency,
-            layer_latency,
+            avg_latency_ms,
             total_error_rate,
         }
     }
@@ -193,8 +210,12 @@ mod tests {
 
         let node_stats = tracker.get_node_stats(&host);
 
-        assert!(node_stats.image_latency.is_some());
-        assert!(node_stats.layer_latency.is_some());
+        // Check that we have an average latency
+        assert!(node_stats.avg_latency_ms.is_some());
+
+        // Weighted average: (15*2 + 5*1) / 3 = 35/3 ≈ 11.67ms
+        let expected_avg = (15.0 * 2.0 + 5.0 * 1.0) / 3.0;
+        assert!((node_stats.avg_latency_ms.unwrap() - expected_avg).abs() < 0.01);
 
         let total_samples = 2 + 1;
         let total_errors = 1 + 2;
