@@ -200,6 +200,71 @@ main() {
                     log_output "  WARNING: Could not copy logs - instance may still be starting or logs not yet created"
                 fi
             fi
+            
+            # Copy S3 upload daemon logs (only for coordinator instances)
+            if [ "$instance_type" == "coordinator" ]; then
+                S3_DAEMON_LOG="/var/log/s3_upload_daemon.log"
+                log_output "  Attempting to copy S3 upload daemon log..."
+                if [ -n "$LOG_FILE" ]; then
+                    ssh -o StrictHostKeyChecking=no \
+                        -o ConnectTimeout=10 \
+                        -i "$EXPANDED_KEY_PATH" \
+                        "ec2-user@${public_ip}" \
+                        "sudo cat ${S3_DAEMON_LOG}" > "${LOCAL_LOG_DIR}/s3_upload_daemon.log" 2>&1
+                    SCP_EXIT=$?
+                    if [ $SCP_EXIT -eq 0 ] && [ -s "${LOCAL_LOG_DIR}/s3_upload_daemon.log" ]; then
+                        echo "S3 daemon log copied" | tee -a "$LOG_FILE" > /dev/null
+                    fi
+                else
+                    ssh -o StrictHostKeyChecking=no \
+                        -o ConnectTimeout=10 \
+                        -i "$EXPANDED_KEY_PATH" \
+                        "ec2-user@${public_ip}" \
+                        "sudo cat ${S3_DAEMON_LOG}" > "${LOCAL_LOG_DIR}/s3_upload_daemon.log" 2>&1
+                    SCP_EXIT=$?
+                fi
+                
+                if [ $SCP_EXIT -eq 0 ] && [ -s "${LOCAL_LOG_DIR}/s3_upload_daemon.log" ]; then
+                    print_status "Successfully copied S3 upload daemon log from ${instance_id}"
+                    log_output "  S3 daemon log saved to: ${LOCAL_LOG_DIR}/s3_upload_daemon.log"
+                else
+                    print_warning "S3 upload daemon log not found or empty (daemon may not be running)"
+                    log_output "  WARNING: Could not copy S3 daemon log - file may not exist or daemon not started"
+                    # Remove empty file if created
+                    [ -f "${LOCAL_LOG_DIR}/s3_upload_daemon.log" ] && rm -f "${LOCAL_LOG_DIR}/s3_upload_daemon.log"
+                    
+                    # If log file doesn't exist, try to get systemd journal logs for the service
+                    log_output "  Attempting to get systemd journal logs for s3-upload-daemon service..."
+                    if [ -n "$LOG_FILE" ]; then
+                        ssh -o StrictHostKeyChecking=no \
+                            -o ConnectTimeout=10 \
+                            -i "$EXPANDED_KEY_PATH" \
+                            "ec2-user@${public_ip}" \
+                            "sudo journalctl -u s3-upload-daemon -n 100 --no-pager" > "${LOCAL_LOG_DIR}/s3_upload_daemon_journal.log" 2>&1
+                        JOURNAL_EXIT=$?
+                        if [ $JOURNAL_EXIT -eq 0 ] && [ -s "${LOCAL_LOG_DIR}/s3_upload_daemon_journal.log" ]; then
+                            echo "S3 daemon journal log copied" | tee -a "$LOG_FILE" > /dev/null
+                        fi
+                    else
+                        ssh -o StrictHostKeyChecking=no \
+                            -o ConnectTimeout=10 \
+                            -i "$EXPANDED_KEY_PATH" \
+                            "ec2-user@${public_ip}" \
+                            "sudo journalctl -u s3-upload-daemon -n 100 --no-pager" > "${LOCAL_LOG_DIR}/s3_upload_daemon_journal.log" 2>&1
+                        JOURNAL_EXIT=$?
+                    fi
+                    
+                    if [ $JOURNAL_EXIT -eq 0 ] && [ -s "${LOCAL_LOG_DIR}/s3_upload_daemon_journal.log" ]; then
+                        print_status "Successfully copied S3 upload daemon systemd journal logs from ${instance_id}"
+                        log_output "  S3 daemon journal logs saved to: ${LOCAL_LOG_DIR}/s3_upload_daemon_journal.log"
+                    else
+                        print_warning "Could not retrieve systemd journal logs for s3-upload-daemon service"
+                        log_output "  WARNING: Could not get journal logs - service may not exist or journal not accessible"
+                        # Remove empty file if created
+                        [ -f "${LOCAL_LOG_DIR}/s3_upload_daemon_journal.log" ] && rm -f "${LOCAL_LOG_DIR}/s3_upload_daemon_journal.log"
+                    fi
+                fi
+            fi
         else
             print_warning "SSH key not found, skipping log copy from ${instance_id}"
             log_output "  WARNING: SSH key not found at $EXPANDED_KEY_PATH"

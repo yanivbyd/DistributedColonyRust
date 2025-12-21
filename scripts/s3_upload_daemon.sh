@@ -89,7 +89,7 @@ validate_aws_access() {
         aws_cmd="aws --profile $AWS_PROFILE"
     fi
     
-    if ! $aws_cmd sts get-caller-identity --region "$AWS_REGION" &>/dev/null; then
+    if ! $aws_cmd sts get-caller-identity &>/dev/null; then
         if is_ec2_instance; then
             log "ERROR" "Failed to validate AWS access via IAM role. Check instance role permissions."
         else
@@ -103,7 +103,7 @@ validate_aws_access() {
     fi
     
     local identity
-    identity=$($aws_cmd sts get-caller-identity --region "$AWS_REGION" --output json 2>/dev/null)
+    identity=$($aws_cmd sts get-caller-identity --output json 2>/dev/null)
     log "INFO" "AWS access validated: $(echo "$identity" | grep -o '"Arn": "[^"]*' | cut -d'"' -f4 || echo "unknown")"
 }
 
