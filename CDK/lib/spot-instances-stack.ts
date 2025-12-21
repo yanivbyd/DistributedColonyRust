@@ -169,6 +169,20 @@ export class SpotInstancesStack extends cdk.Stack {
       ],
     }));
 
+    // CloudWatch permissions for instance metrics
+    instanceRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'cloudwatch:PutMetricData',
+        'cloudwatch:GetMetricStatistics',
+        'cloudwatch:ListMetrics',
+        'ec2:DescribeTags',
+        'ec2:DescribeInstances',
+        'ec2:DescribeVolumes',
+      ],
+      resources: ['*'],
+    }));
+
     const instanceProfile = new iam.CfnInstanceProfile(this, 'BackendInstanceProfile', {
       roles: [instanceRole.roleName],
     });
@@ -188,6 +202,7 @@ export class SpotInstancesStack extends cdk.Stack {
         keyName: config.keyPairName!,
         iamInstanceProfile: { arn: instanceProfile.attrArn },
         securityGroupIds: [securityGroup.securityGroupId],
+        monitoring: { enabled: true },
         blockDeviceMappings: [
           {
             deviceName: '/dev/xvda',
@@ -248,6 +263,7 @@ export class SpotInstancesStack extends cdk.Stack {
         keyName: config.keyPairName!,
         iamInstanceProfile: { arn: instanceProfile.attrArn },
         securityGroupIds: [securityGroup.securityGroupId],
+        monitoring: { enabled: true },
         blockDeviceMappings: [
           {
             deviceName: '/dev/xvda',
