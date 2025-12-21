@@ -26,7 +26,7 @@
     "backendPort": 8084,
     "coordinatorPort": 8082,
     "sshPort": 22,
-    "targetCapacity": 1,
+    "targetCapacity": 2,
     "cpuType": "X86_64",
     "allocationStrategy": "diversified",
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
