@@ -567,7 +567,7 @@ export class UserDataBuilder {
       '    ',
       '    if is_ec2_instance; then',
       '        log "INFO" "Detected EC2 environment, using IAM role"',
-      '        export AWS_PROFILE=""',
+      '        unset AWS_PROFILE',
       '    fi',
       '    ',
       '    validate_aws_access',

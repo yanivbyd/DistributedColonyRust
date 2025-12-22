@@ -85,8 +85,8 @@ is_ec2_instance() {
 # Validate AWS access
 validate_aws_access() {
     local aws_cmd="aws"
-    if [[ -n "$AWS_PROFILE" ]]; then
-        aws_cmd="aws --profile $AWS_PROFILE"
+    if [[ -n "${AWS_PROFILE:-}" ]]; then
+        aws_cmd="aws --profile ${AWS_PROFILE:-}"
     fi
     
     local max_retries=5
@@ -114,8 +114,8 @@ validate_aws_access() {
                 else
                     log "ERROR" "Please configure credentials:"
                     echo "  Run: aws configure"
-                    if [[ -n "$AWS_PROFILE" ]]; then
-                        echo "  Or: aws configure --profile $AWS_PROFILE"
+                    if [[ -n "${AWS_PROFILE:-}" ]]; then
+                        echo "  Or: aws configure --profile ${AWS_PROFILE:-}"
                     fi
                 fi
                 exit 1
@@ -176,8 +176,8 @@ file_exists_in_s3() {
     local local_size=$3
     local aws_cmd="aws"
     
-    if [[ -n "$AWS_PROFILE" ]]; then
-        aws_cmd="aws --profile $AWS_PROFILE"
+    if [[ -n "${AWS_PROFILE:-}" ]]; then
+        aws_cmd="aws --profile ${AWS_PROFILE:-}"
     fi
     
     # Use head-object to check existence and get size
@@ -207,8 +207,8 @@ upload_file_to_s3() {
     local key=$3
     local aws_cmd="aws"
     
-    if [[ -n "$AWS_PROFILE" ]]; then
-        aws_cmd="aws --profile $AWS_PROFILE"
+    if [[ -n "${AWS_PROFILE:-}" ]]; then
+        aws_cmd="aws --profile ${AWS_PROFILE:-}"
     fi
     
     # Upload with --only-show-errors to suppress normal output
@@ -259,8 +259,8 @@ extract_bucket_and_key() {
 # Main scan and upload function
 scan_and_upload() {
     local aws_cmd="aws"
-    if [[ -n "$AWS_PROFILE" ]]; then
-        aws_cmd="aws --profile $AWS_PROFILE"
+    if [[ -n "${AWS_PROFILE:-}" ]]; then
+        aws_cmd="aws --profile ${AWS_PROFILE:-}"
     fi
     
     # Check if root directory exists
@@ -367,11 +367,14 @@ main() {
     # Detect environment
     if is_ec2_instance; then
         log "INFO" "Detected EC2 environment, using IAM role"
-        export AWS_PROFILE=""  # Clear profile on EC2
+        unset AWS_PROFILE  # Unset profile on EC2 to use IAM role
     else
         log "INFO" "Detected localhost environment"
-        if [[ -n "$AWS_PROFILE" ]]; then
-            log "INFO" "Using AWS profile: $AWS_PROFILE"
+        if [[ -n "${AWS_PROFILE:-}" ]]; then
+            log "INFO" "Using AWS profile: ${AWS_PROFILE:-}"
+        else
+            # Unset empty AWS_PROFILE to use default credentials
+            unset AWS_PROFILE
         fi
     fi
     
