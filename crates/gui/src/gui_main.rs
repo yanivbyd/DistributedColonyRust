@@ -9,6 +9,7 @@ use shared::cluster_topology::ClusterTopology;
 use shared::cluster_registry::create_cluster_registry;
 use shared::ssm;
 use shared::coordinator_api::ColonyEventDescription;
+use shared::log;
 
 use crate::call_be::get_colony_stats;
 mod call_be;
@@ -129,6 +130,14 @@ struct BEImageApp {
     latency_tracker: Arc<latency_tracker::LatencyTracker>,
     colony_instance_id: Option<String>,
     tab_change_signal: Arc<(Mutex<bool>, Condvar)>,
+    responsiveness_state: Arc<Mutex<GuiResponsivenessState>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GuiResponsivenessState {
+    Healthy,
+    Slow,
+    Unresponsive,
 }
 
 impl BEImageApp {
@@ -140,8 +149,8 @@ impl BEImageApp {
         };
 
         let latency_tracker = Arc::new(latency_tracker::LatencyTracker::new(100));
-        let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images(&shard_config.lock().unwrap(), cluster_topology.as_ref(), &latency_tracker)));
-        let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap(), cluster_topology.as_ref(), &latency_tracker)));
+        let creatures = Arc::new(Mutex::new(call_be::get_all_shard_retained_images(&shard_config.lock().unwrap(), cluster_topology.as_ref(), &latency_tracker, &backend_http_ports)));
+        let creatures_color_data = Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap(), cluster_topology.as_ref(), &latency_tracker, &backend_http_ports)));
         let extra_food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let can_kill = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
@@ -154,6 +163,7 @@ impl BEImageApp {
         let colony_events = Arc::new(Mutex::new(None));
         let current_tab = Tab::Creatures;
         let tab_change_signal = Arc::new((Mutex::new(false), Condvar::new()));
+        let responsiveness_state = Arc::new(Mutex::new(GuiResponsivenessState::Healthy));
         Self {
             creatures,
             creatures_color_data,
@@ -182,6 +192,7 @@ impl BEImageApp {
             latency_tracker,
             colony_instance_id,
             tab_change_signal,
+            responsiveness_state,
         }
     }
 }
@@ -209,6 +220,8 @@ impl App for BEImageApp {
             let deployment_mode = self.deployment_mode.clone();
             let latency_tracker = Arc::clone(&self.latency_tracker);
             let tab_change_signal = Arc::clone(&self.tab_change_signal);
+            let deployment_mode_clone = deployment_mode.clone();
+            let backend_http_ports = self.backend_http_ports.clone();
             thread::spawn(move || {
                 let refresh_interval_ms = if deployment_mode == "aws" {
                     REFRESH_INTERVAL_MS_AWS
@@ -216,19 +229,25 @@ impl App for BEImageApp {
                     REFRESH_INTERVAL_MS_LOCALHOST
                 };
                 loop {
+                    // Start polling cycle timing
+                    let cycle_start = Instant::now();
+                    let time_before_update = *last_update_time.lock().unwrap();
+                    let mut had_success = false;
+                    
                     // Look at the selected tab and get only the info required for the current Tab
                     let tab = *shared_current_tab.lock().unwrap();
                     let config = shard_config.lock().unwrap().clone();
                     
                     match tab {
                         Tab::Creatures => {
-                            let images = call_be::get_all_shard_retained_images(&config, cluster_topology.as_ref(), &latency_tracker);
-                            let color_data = call_be::get_all_shard_color_data(&config, cluster_topology.as_ref(), &latency_tracker);
+                            let images = call_be::get_all_shard_retained_images(&config, cluster_topology.as_ref(), &latency_tracker, &backend_http_ports);
+                            let color_data = call_be::get_all_shard_color_data(&config, cluster_topology.as_ref(), &latency_tracker, &backend_http_ports);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !images.iter().all(|img| img.is_none()) {
                                 let mut locked = creatures.lock().unwrap();
                                 *locked = images;
                                 *last_update_time.lock().unwrap() = Instant::now();
+                                had_success = true;
                             }
                             if !color_data.iter().all(|data| data.is_none()) {
                                 let mut locked = creatures_color_data.lock().unwrap();
@@ -236,74 +255,82 @@ impl App for BEImageApp {
                             }
                     }
                     Tab::ExtraFood => {
-                            let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config, cluster_topology.as_ref(), &latency_tracker);
+                            let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_ports);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !extra_food_data.iter().all(|data| data.is_none()) {
                                 let mut locked = extra_food.lock().unwrap();
                                 *locked = extra_food_data;
                                 *last_update_time.lock().unwrap() = Instant::now();
+                                had_success = true;
                             }
                     }
                     Tab::Sizes => {
-                            let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config, cluster_topology.as_ref(), &latency_tracker);
+                            let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_ports);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !sizes_data.iter().all(|data| data.is_none()) {
                                 let mut locked = sizes.lock().unwrap();
                                 *locked = sizes_data;
                                 *last_update_time.lock().unwrap() = Instant::now();
+                                had_success = true;
                             }
                     }
                     Tab::Age => {
-                        let age_data = call_be::get_all_shard_layer_data(ShardLayer::Age, &config, cluster_topology.as_ref(), &latency_tracker);
+                        let age_data = call_be::get_all_shard_layer_data(ShardLayer::Age, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_ports);
                         if !age_data.iter().all(|data| data.is_none()) {
                             let mut locked = age.lock().unwrap();
                             *locked = age_data;
                             *last_update_time.lock().unwrap() = Instant::now();
+                            had_success = true;
                         }
                     }
                         Tab::CanKill => {
-                            let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config, cluster_topology.as_ref(), &latency_tracker);
+                            let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_ports);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !can_kill_data.iter().all(|data| data.is_none()) {
                                 let mut locked = can_kill.lock().unwrap();
                                 *locked = can_kill_data;
                                 *last_update_time.lock().unwrap() = Instant::now();
+                                had_success = true;
                             }
                         }
                         Tab::CanMove => {
-                            let can_move_data = call_be::get_all_shard_layer_data(ShardLayer::CanMove, &config, cluster_topology.as_ref(), &latency_tracker);
+                            let can_move_data = call_be::get_all_shard_layer_data(ShardLayer::CanMove, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_ports);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !can_move_data.iter().all(|data| data.is_none()) {
                                 let mut locked = can_move.lock().unwrap();
                                 *locked = can_move_data;
                                 *last_update_time.lock().unwrap() = Instant::now();
+                                had_success = true;
                             }
                         }
                         Tab::CostPerTurn => {
-                            let cost_per_turn_data = call_be::get_all_shard_layer_data(ShardLayer::CostPerTurn, &config, cluster_topology.as_ref(), &latency_tracker);
+                            let cost_per_turn_data = call_be::get_all_shard_layer_data(ShardLayer::CostPerTurn, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_ports);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !cost_per_turn_data.iter().all(|data| data.is_none()) {
                                 let mut locked = cost_per_turn.lock().unwrap();
                                 *locked = cost_per_turn_data;
                                 *last_update_time.lock().unwrap() = Instant::now();
+                                had_success = true;
                             }
                         }
                         Tab::Food => {
-                            let food_data = call_be::get_all_shard_layer_data(ShardLayer::Food, &config, cluster_topology.as_ref(), &latency_tracker);
+                            let food_data = call_be::get_all_shard_layer_data(ShardLayer::Food, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_ports);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !food_data.iter().all(|data| data.is_none()) {
                                 let mut locked = food.lock().unwrap();
                                 *locked = food_data;
                                 *last_update_time.lock().unwrap() = Instant::now();
+                                had_success = true;
                             }
                         }
                         Tab::Health => {
-                            let health_data = call_be::get_all_shard_layer_data(ShardLayer::Health, &config, cluster_topology.as_ref(), &latency_tracker);
+                            let health_data = call_be::get_all_shard_layer_data(ShardLayer::Health, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_ports);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !health_data.iter().all(|data| data.is_none()) {
                                 let mut locked = health.lock().unwrap();
                                 *locked = health_data;
                                 *last_update_time.lock().unwrap() = Instant::now();
+                                had_success = true;
                             }
                         }
                         Tab::Info => {
@@ -316,6 +343,23 @@ impl App for BEImageApp {
                             // No background polling for stats
                         }
                     }
+                    
+                    // End polling cycle timing and log
+                    let cycle_end = Instant::now();
+                    let cycle_duration_ms = cycle_end.duration_since(cycle_start).as_millis() as f64;
+                    let current_update_time = *last_update_time.lock().unwrap();
+                    let time_since_last_update = if had_success {
+                        0.0  // Just updated
+                    } else {
+                        current_update_time.duration_since(time_before_update).as_millis() as f64
+                    };
+                    
+                    let successes = if had_success { 1 } else { 0 };
+                    let errors = if had_success { 0 } else { 1 };
+                    
+                    log!("GUI poll cycle: duration_ms={:.2}, successes={}, errors={}, time_since_last_update_ms={:.2}, mode={}", 
+                         cycle_duration_ms, successes, errors, time_since_last_update, deployment_mode_clone);
+                    
                     ctx_clone.request_repaint();
                     
                     // Wait for either timeout or tab change signal
@@ -368,6 +412,28 @@ impl App for BEImageApp {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let last_update = *self.last_update_time.lock().unwrap();
                         let time_since_update = last_update.elapsed();
+                        let time_since_update_ms = time_since_update.as_millis() as f64;
+                        
+                        // Determine current responsiveness state
+                        let current_state = if time_since_update.as_secs() > 5 {
+                            GuiResponsivenessState::Unresponsive
+                        } else if time_since_update.as_millis() > 1000 {
+                            GuiResponsivenessState::Slow
+                        } else {
+                            GuiResponsivenessState::Healthy
+                        };
+                        
+                        // Check for state transition and log
+                        let mut state_guard = self.responsiveness_state.lock().unwrap();
+                        let prev_state = *state_guard;
+                        if prev_state != current_state {
+                            log!("GUI responsiveness state changed: prev={:?}, current={:?}, time_since_update_ms={:.2}", 
+                                 prev_state, current_state, time_since_update_ms);
+                            *state_guard = current_state;
+                        }
+                        drop(state_guard);
+                        
+                        // Display UI indicator
                         if time_since_update.as_secs() > 5 {
                             ui.colored_label(egui::Color32::RED, "⚠️ Backend Unresponsive");
                         } else if time_since_update.as_millis() > 1000 {
@@ -688,12 +754,12 @@ impl BEImageApp {
         
         
         // Always refresh data when Info tab is accessed
-        if let Some(info) = call_be::get_colony_info(self.cluster_topology.as_ref()) {
+        if let Some(info) = call_be::get_colony_info(self.cluster_topology.as_ref(), &self.backend_http_ports) {
             let mut locked = self.colony_info.lock().unwrap();
             *locked = Some(info);
         }
         
-        if let Some(events) = call_be::get_colony_events(30) {
+        if let Some(events) = call_be::get_colony_events(30, self.coordinator_http_port, &self.deployment_mode) {
             let mut locked = self.colony_events.lock().unwrap();
             *locked = Some(events);
         }
@@ -853,7 +919,7 @@ impl BEImageApp {
                     shared::be_api::StatMetric::Health,
                             shared::be_api::StatMetric::Age,
                 ];
-                if let Some(results) = get_colony_stats(metrics) {
+                if let Some(results) = get_colony_stats(metrics, self.coordinator_http_port, &self.deployment_mode) {
                     // Cache results in a local field for drawing
                     self.cached_stats = Some(results);
                 }
@@ -1355,6 +1421,16 @@ fn main() -> eframe::Result<()> {
         eprintln!("Usage: {} [localhost|aws]", args[0]);
         std::process::exit(1);
     }
+    
+    // Initialize logging
+    let log_file = if mode == "aws" {
+        "/data/distributed-colony/output/logs/gui.log"
+    } else {
+        "output/logs/gui.log"
+    };
+    shared::logging::init_logging(log_file);
+    shared::logging::log_startup("GUI");
+    shared::logging::set_panic_hook();
     
     // Retrieve topology from coordinator
     let (topology, colony_instance_id) = match retrieve_topology(mode) {

@@ -10,21 +10,22 @@ use std::sync::Arc;
 use shared::ssm;
 use shared::cluster_registry::create_cluster_registry;
 use crate::latency_tracker::{LatencyTracker, OperationKey, OperationType};
+use shared::{log, log_error};
 
 fn get_shard_endpoint(topology: &ClusterTopology, shard: Shard) -> HostInfo {
     topology.get_host_for_shard(&shard).cloned().expect("Shard not found in cluster topology")
 }
 
-pub fn get_all_shard_retained_images(config: &crate::ShardConfig, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Vec<Option<RetainedImage>> {
+pub fn get_all_shard_retained_images(config: &crate::ShardConfig, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>, backend_http_ports: &std::collections::HashMap<HostInfo, u16>) -> Vec<Option<RetainedImage>> {
     let shards: Vec<Shard> = (0..config.total_shards())
         .map(|i| config.get_shard(i))
         .collect();
-    shards.iter().map(|&shard| get_shard_retained_image(shard, topology, latency_tracker)).collect()
+    shards.iter().map(|&shard| get_shard_retained_image(shard, topology, latency_tracker, backend_http_ports)).collect()
 }
 
-fn get_shard_retained_image(shard: Shard, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Option<RetainedImage> {
+fn get_shard_retained_image(shard: Shard, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>, backend_http_ports: &std::collections::HashMap<HostInfo, u16>) -> Option<RetainedImage> {
     let host_info = get_shard_endpoint(topology, shard);
-    let (public_ip, http_port) = get_backend_http_info(&host_info)?;
+    let (public_ip, http_port) = get_backend_http_info(&host_info, backend_http_ports)?;
     let shard_id = shard.to_id();
 
     let url = format!("http://{}:{}/api/shard/{}/image", public_ip, http_port, shard_id);
@@ -88,11 +89,11 @@ fn color_vec_to_image(colors: &[Color], width: usize, height: usize) -> egui::Co
     img
 }
 
-pub fn get_all_shard_layer_data(layer: ShardLayer, config: &crate::ShardConfig, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Vec<Option<Vec<i32>>> {
+pub fn get_all_shard_layer_data(layer: ShardLayer, config: &crate::ShardConfig, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>, backend_http_ports: &std::collections::HashMap<HostInfo, u16>) -> Vec<Option<Vec<i32>>> {
     let shards: Vec<Shard> = (0..config.total_shards())
         .map(|i| config.get_shard(i))
         .collect();
-    shards.iter().map(|&shard| get_shard_layer_data(shard, layer, topology, latency_tracker)).collect()
+    shards.iter().map(|&shard| get_shard_layer_data(shard, layer, topology, latency_tracker, backend_http_ports)).collect()
 }
 
 fn shard_layer_to_kebab_case(layer: ShardLayer) -> &'static str {
@@ -108,9 +109,9 @@ fn shard_layer_to_kebab_case(layer: ShardLayer) -> &'static str {
     }
 }
 
-fn get_shard_layer_data(shard: Shard, layer: ShardLayer, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Option<Vec<i32>> {
+fn get_shard_layer_data(shard: Shard, layer: ShardLayer, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>, backend_http_ports: &std::collections::HashMap<HostInfo, u16>) -> Option<Vec<i32>> {
     let host_info = get_shard_endpoint(topology, shard);
-    let (public_ip, http_port) = get_backend_http_info(&host_info)?;
+    let (public_ip, http_port) = get_backend_http_info(&host_info, backend_http_ports)?;
     let shard_id = shard.to_id();
     let layer_name = shard_layer_to_kebab_case(layer);
 
@@ -123,16 +124,33 @@ fn get_shard_layer_data(shard: Shard, layer: ShardLayer, topology: &ClusterTopol
     let start = Instant::now();
     let response = client.get(&url).send();
     let latency = start.elapsed();
+    let latency_ms = latency.as_millis() as f64;
 
     let key = OperationKey::new(OperationType::GetShardLayer, host_info.clone());
 
     let response = match response {
         Ok(r) => {
-            latency_tracker.record_success(key, latency);
+            latency_tracker.record_success(key.clone(), latency);
+            // Log slow successful operations (> 500ms)
+            if latency_ms > 500.0 {
+                let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
+                log!("GUI HTTP slow success: operation=GetShardLayer, host={}:{}, duration_ms={:.2}, avg_latency_ms={:.2}", 
+                     host_info.hostname, host_info.port, latency_ms, avg_latency);
+            }
             r
         },
-        Err(_) => {
-            latency_tracker.record_error(key);
+        Err(e) => {
+            latency_tracker.record_error(key.clone());
+            // Check if it's a timeout (1500ms timeout)
+            let is_timeout = latency_ms >= 1500.0 || e.is_timeout();
+            let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
+            if is_timeout {
+                log_error!("GUI HTTP timeout: operation=GetShardLayer, host={}:{}, duration_ms={:.2}, avg_latency_ms={:.2}", 
+                          host_info.hostname, host_info.port, latency_ms, avg_latency);
+            } else {
+                log_error!("GUI HTTP error: operation=GetShardLayer, host={}:{}, duration_ms={:.2}, error={}", 
+                          host_info.hostname, host_info.port, latency_ms, e);
+            }
             return None;
         }
     };
@@ -174,16 +192,16 @@ fn get_shard_layer_data(shard: Shard, layer: ShardLayer, topology: &ClusterTopol
     }
 }
 
-pub fn get_all_shard_color_data(config: &crate::ShardConfig, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Vec<Option<Vec<Color>>> {
+pub fn get_all_shard_color_data(config: &crate::ShardConfig, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>, backend_http_ports: &std::collections::HashMap<HostInfo, u16>) -> Vec<Option<Vec<Color>>> {
     let shards: Vec<Shard> = (0..config.total_shards())
         .map(|i| config.get_shard(i))
         .collect();
-    shards.iter().map(|&shard| get_shard_color_data(shard, topology, latency_tracker)).collect()
+    shards.iter().map(|&shard| get_shard_color_data(shard, topology, latency_tracker, backend_http_ports)).collect()
 }
 
-fn get_shard_color_data(shard: Shard, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>) -> Option<Vec<Color>> {
+fn get_shard_color_data(shard: Shard, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>, backend_http_ports: &std::collections::HashMap<HostInfo, u16>) -> Option<Vec<Color>> {
     let host_info = get_shard_endpoint(topology, shard);
-    let (public_ip, http_port) = get_backend_http_info(&host_info)?;
+    let (public_ip, http_port) = get_backend_http_info(&host_info, backend_http_ports)?;
     let shard_id = shard.to_id();
 
     let url = format!("http://{}:{}/api/shard/{}/image", public_ip, http_port, shard_id);
@@ -195,16 +213,33 @@ fn get_shard_color_data(shard: Shard, topology: &ClusterTopology, latency_tracke
     let start = Instant::now();
     let response = client.get(&url).send();
     let latency = start.elapsed();
+    let latency_ms = latency.as_millis() as f64;
 
     let key = OperationKey::new(OperationType::GetShardImage, host_info.clone());
 
     let response = match response {
         Ok(r) => {
-            latency_tracker.record_success(key, latency);
+            latency_tracker.record_success(key.clone(), latency);
+            // Log slow successful operations (> 500ms)
+            if latency_ms > 500.0 {
+                let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
+                log!("GUI HTTP slow success: operation=GetShardImage, host={}:{}, duration_ms={:.2}, avg_latency_ms={:.2}", 
+                     host_info.hostname, host_info.port, latency_ms, avg_latency);
+            }
             r
         },
-        Err(_) => {
-            latency_tracker.record_error(key);
+        Err(e) => {
+            latency_tracker.record_error(key.clone());
+            // Check if it's a timeout (1500ms timeout)
+            let is_timeout = latency_ms >= 1500.0 || e.is_timeout();
+            let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
+            if is_timeout {
+                log_error!("GUI HTTP timeout: operation=GetShardImage, host={}:{}, duration_ms={:.2}, avg_latency_ms={:.2}", 
+                          host_info.hostname, host_info.port, latency_ms, avg_latency);
+            } else {
+                log_error!("GUI HTTP error: operation=GetShardImage, host={}:{}, duration_ms={:.2}, error={}", 
+                          host_info.hostname, host_info.port, latency_ms, e);
+            }
             return None;
         }
     };
@@ -234,7 +269,7 @@ fn get_shard_color_data(shard: Shard, topology: &ClusterTopology, latency_tracke
     }
 }
 
-pub fn get_colony_info(topology: &ClusterTopology) -> Option<(Option<ColonyLifeRules>, Option<u64>)> {
+pub fn get_colony_info(topology: &ClusterTopology, backend_http_ports: &std::collections::HashMap<HostInfo, u16>) -> Option<(Option<ColonyLifeRules>, Option<u64>)> {
     // Get the first available backend host
     let backend_hosts = topology.get_all_backend_hosts();
     if backend_hosts.is_empty() {
@@ -242,7 +277,7 @@ pub fn get_colony_info(topology: &ClusterTopology) -> Option<(Option<ColonyLifeR
     }
     
     let host_info = &backend_hosts[0];
-    let (public_ip, http_port) = get_backend_http_info(host_info)?;
+    let (public_ip, http_port) = get_backend_http_info(host_info, backend_http_ports)?;
     
     let url = format!("http://{}:{}/api/colony-info", public_ip, http_port);
     let client = reqwest::blocking::Client::builder()
@@ -272,9 +307,18 @@ pub fn get_colony_info(topology: &ClusterTopology) -> Option<(Option<ColonyLifeR
     }
 }
 
-fn get_coordinator_http_info() -> Option<(String, u16)> {
-    // Try to discover coordinator HTTP info using SSM
-    // We need to determine the deployment mode - try both localhost and aws
+fn get_coordinator_http_info(cached_coordinator_http_port: Option<u16>, deployment_mode: &str) -> Option<(String, u16)> {
+    // Use cached HTTP port if available (colony already started)
+    if let Some(http_port) = cached_coordinator_http_port {
+        // For localhost, use 127.0.0.1; for AWS, we still need to discover the public IP
+        // But since we have the port, try localhost first
+        if deployment_mode == "localhost" {
+            return Some(("127.0.0.1".to_string(), http_port));
+        }
+        // For AWS, fall through to SSM discovery for public IP (but this should be rare)
+    }
+    
+    // Fallback: Try to discover coordinator HTTP info using SSM (only if not cached)
     for mode in &["localhost", "aws"] {
         let _registry = create_cluster_registry(mode);
         let rt = tokio::runtime::Runtime::new().ok()?;
@@ -285,8 +329,19 @@ fn get_coordinator_http_info() -> Option<(String, u16)> {
     None
 }
 
-fn get_backend_http_info(host_info: &HostInfo) -> Option<(String, u16)> {
-    // Try to discover backend HTTP info (public IP and port) using SSM
+fn get_backend_http_info(host_info: &HostInfo, backend_http_ports: &std::collections::HashMap<HostInfo, u16>) -> Option<(String, u16)> {
+    // Use cached HTTP port if available (colony already started)
+    if let Some(http_port) = backend_http_ports.get(host_info) {
+        // For localhost, use 127.0.0.1; for AWS, we still need the public IP
+        // Check if hostname is localhost/127.0.0.1
+        if host_info.hostname == "127.0.0.1" || host_info.hostname == "localhost" {
+            return Some((host_info.hostname.clone(), *http_port));
+        }
+        // For AWS with private IP, we need public IP - fall through to SSM discovery
+        // But this should be rare once colony is started
+    }
+    
+    // Fallback: Try to discover backend HTTP info (public IP and port) using SSM (only if not cached)
     for mode in &["localhost", "aws"] {
         let _registry = create_cluster_registry(mode);
         let rt = tokio::runtime::Runtime::new().ok()?;
@@ -303,8 +358,8 @@ fn get_backend_http_info(host_info: &HostInfo) -> Option<(String, u16)> {
     None
 }
 
-pub fn get_colony_events(limit: usize) -> Option<Vec<ColonyEventDescription>> {
-    let (coordinator_host, http_port) = get_coordinator_http_info()?;
+pub fn get_colony_events(limit: usize, coordinator_http_port: Option<u16>, deployment_mode: &str) -> Option<Vec<ColonyEventDescription>> {
+    let (coordinator_host, http_port) = get_coordinator_http_info(coordinator_http_port, deployment_mode)?;
     
     let url = format!("http://{}:{}/api/colony-events?limit={}", coordinator_host, http_port, limit);
     let client = reqwest::blocking::Client::builder()
@@ -325,8 +380,8 @@ pub fn get_colony_events(limit: usize) -> Option<Vec<ColonyEventDescription>> {
     }
 }
 
-pub fn get_colony_stats(metrics: Vec<StatMetric>) -> Option<(u64, Vec<ColonyMetricStats>)> {
-    let (coordinator_host, http_port) = get_coordinator_http_info()?;
+pub fn get_colony_stats(metrics: Vec<StatMetric>, coordinator_http_port: Option<u16>, deployment_mode: &str) -> Option<(u64, Vec<ColonyMetricStats>)> {
+    let (coordinator_host, http_port) = get_coordinator_http_info(coordinator_http_port, deployment_mode)?;
     
     // Convert StatMetric enum to string
     let metric_strings: Vec<String> = metrics.iter().map(|m| {
