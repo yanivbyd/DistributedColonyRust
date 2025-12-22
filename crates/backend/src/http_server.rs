@@ -5,12 +5,107 @@ use shared::ssm;
 use shared::be_api::{Shard, ColonyLifeRules, ShardLayer};
 use crate::colony::Colony;
 use crate::shard_utils::ShardUtils;
+use crate::backend_config::{get_backend_hostname, get_backend_port};
 use std::fmt::Write;
+use std::sync::Mutex;
+use std::time::Instant;
 
 const HTTP_BIND_HOST: &str = "0.0.0.0";
+const HTTP_LATENCY_WINDOW_SIZE: usize = 100;
+
+#[derive(Debug, Clone)]
+struct HttpLatencyStats {
+    request_count: u32,
+    total_latency_ms: f64,
+    max_latency_ms: f64,
+}
+
+impl HttpLatencyStats {
+    fn record(&mut self, latency_ms: f64) {
+        self.request_count += 1;
+        self.total_latency_ms += latency_ms;
+        if latency_ms > self.max_latency_ms {
+            self.max_latency_ms = latency_ms;
+        }
+    }
+
+    fn reset(&mut self) {
+        self.request_count = 0;
+        self.total_latency_ms = 0.0;
+        self.max_latency_ms = 0.0;
+    }
+
+    fn avg_latency_ms(&self) -> f64 {
+        if self.request_count > 0 {
+            self.total_latency_ms / self.request_count as f64
+        } else {
+            0.0
+        }
+    }
+}
+
+// Per-endpoint latency stats
+static SHARD_IMAGE_STATS: Mutex<HttpLatencyStats> = Mutex::new(HttpLatencyStats {
+    request_count: 0,
+    total_latency_ms: 0.0,
+    max_latency_ms: 0.0,
+});
+
+static SHARD_LAYER_STATS: Mutex<HttpLatencyStats> = Mutex::new(HttpLatencyStats {
+    request_count: 0,
+    total_latency_ms: 0.0,
+    max_latency_ms: 0.0,
+});
 
 fn build_http_bind_addr(port: u16) -> String {
     format!("{}:{}", HTTP_BIND_HOST, port)
+}
+
+fn record_http_latency(endpoint: &str, latency_ms: f64, shard_id: &str) {
+    // Determine which stats to update based on endpoint
+    let is_image = endpoint.contains("/image");
+    let stats = if is_image {
+        &SHARD_IMAGE_STATS
+    } else {
+        &SHARD_LAYER_STATS
+    };
+    
+    // Log slow requests
+    if latency_ms > 500.0 {
+        let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
+        log!("Backend HTTP slow request: endpoint={}, latency_ms={:.2}, shard_id={}, host={}", 
+             endpoint, latency_ms, shard_id, backend_host);
+    } else if latency_ms > 200.0 {
+        let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
+        log!("Backend HTTP slow request: endpoint={}, latency_ms={:.2}, shard_id={}, host={}", 
+             endpoint, latency_ms, shard_id, backend_host);
+    }
+    
+    // Update stats
+    let mut stats_guard = stats.lock().unwrap();
+    stats_guard.record(latency_ms);
+    
+    // Log periodic aggregates (every 100 requests)
+    if stats_guard.request_count >= HTTP_LATENCY_WINDOW_SIZE as u32 {
+        let avg_latency = stats_guard.avg_latency_ms();
+        let max_latency = stats_guard.max_latency_ms;
+        let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
+        
+        // Get shard count
+        let shard_count = if Colony::is_initialized() {
+            let colony = Colony::instance();
+            let (shards, _) = colony.get_hosted_shards();
+            shards.len()
+        } else {
+            0
+        };
+        
+        log!("Backend HTTP latency: endpoint={}, window_requests={}, avg_ms={:.2}, max_ms={:.2}, shards={}, host={}", 
+             endpoint, stats_guard.request_count, avg_latency, max_latency, shard_count, backend_host);
+        
+        // Reset window
+        stats_guard.reset();
+    }
 }
 
 pub async fn start_http_server(http_port: u16) {
@@ -196,6 +291,9 @@ fn layer_name_to_enum(layer_name: &str) -> Result<ShardLayer, String> {
 }
 
 async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &str) {
+    let start = Instant::now();
+    let endpoint = "/api/shard/{id}/image";
+    
     // Parse shard_id
     let shard = match Shard::from_id(shard_id) {
         Ok(s) => s,
@@ -207,6 +305,9 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
                 error_json
             );
             let _ = stream.write_all(response.as_bytes()).await;
+            let latency = start.elapsed();
+            let latency_ms = latency.as_secs_f64() * 1000.0;
+            record_http_latency(endpoint, latency_ms, shard_id);
             return;
         }
     };
@@ -220,6 +321,9 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
             error_json
         );
         let _ = stream.write_all(response.as_bytes()).await;
+        let latency = start.elapsed();
+        let latency_ms = latency.as_secs_f64() * 1000.0;
+        record_http_latency(endpoint, latency_ms, shard_id);
         return;
     }
     
@@ -269,9 +373,17 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
         );
         let _ = stream.write_all(response.as_bytes()).await;
     }
+    
+    // Record latency
+    let latency = start.elapsed();
+    let latency_ms = latency.as_secs_f64() * 1000.0;
+    record_http_latency(endpoint, latency_ms, shard_id);
 }
 
 async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &str, layer_name: &str) {
+    let start = Instant::now();
+    let endpoint = format!("/api/shard/{{id}}/layer/{}", layer_name);
+    
     // Parse shard_id
     let shard = match Shard::from_id(shard_id) {
         Ok(s) => s,
@@ -283,6 +395,9 @@ async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &s
                 error_json
             );
             let _ = stream.write_all(response.as_bytes()).await;
+            let latency = start.elapsed();
+            let latency_ms = latency.as_secs_f64() * 1000.0;
+            record_http_latency(&endpoint, latency_ms, shard_id);
             return;
         }
     };
@@ -298,6 +413,9 @@ async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &s
                 error_json
             );
             let _ = stream.write_all(response.as_bytes()).await;
+            let latency = start.elapsed();
+            let latency_ms = latency.as_secs_f64() * 1000.0;
+            record_http_latency(&endpoint, latency_ms, shard_id);
             return;
         }
     };
@@ -311,6 +429,9 @@ async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &s
             error_json
         );
         let _ = stream.write_all(response.as_bytes()).await;
+        let latency = start.elapsed();
+        let latency_ms = latency.as_secs_f64() * 1000.0;
+        record_http_latency(&endpoint, latency_ms, shard_id);
         return;
     }
     
@@ -358,5 +479,10 @@ async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &s
         );
         let _ = stream.write_all(response.as_bytes()).await;
     }
+    
+    // Record latency
+    let latency = start.elapsed();
+    let latency_ms = latency.as_secs_f64() * 1000.0;
+    record_http_latency(&endpoint, latency_ms, shard_id);
 }
 
