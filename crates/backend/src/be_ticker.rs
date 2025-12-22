@@ -7,15 +7,58 @@ use shared::cluster_topology::{ClusterTopology, HostInfo};
 use shared::log;
 use crate::backend_config::{get_backend_hostname, get_backend_port, is_aws_deployment};
 use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 
 static TICKER_STARTED: OnceLock<()> = OnceLock::new();
+
+struct ShardTickLatencyStats {
+    window_tick_count: u32,
+    window_total_core_latency_ms: f64,
+    window_total_full_latency_ms: f64,
+}
+
+impl ShardTickLatencyStats {
+    fn new() -> Self {
+        ShardTickLatencyStats {
+            window_tick_count: 0,
+            window_total_core_latency_ms: 0.0,
+            window_total_full_latency_ms: 0.0,
+        }
+    }
+
+    fn record_tick(&mut self, core_latency_ms: f64, full_latency_ms: f64, shard_count: usize) {
+        self.window_tick_count += 1;
+        self.window_total_core_latency_ms += core_latency_ms;
+        self.window_total_full_latency_ms += full_latency_ms;
+
+        // Emit once per 50 ticks, then reset window
+        if self.window_tick_count == 50 {
+            let avg_core_latency_ms = self.window_total_core_latency_ms / 50.0;
+            let avg_full_latency_ms = self.window_total_full_latency_ms / 50.0;
+
+            log!(
+                "Shard tick latency window complete: ticks=50, avg_core_ms={:.3}, avg_full_ms={:.3}, shards={}",
+                avg_core_latency_ms,
+                avg_full_latency_ms,
+                shard_count
+            );
+
+            self.window_tick_count = 0;
+            self.window_total_core_latency_ms = 0.0;
+            self.window_total_full_latency_ms = 0.0;
+        }
+    }
+}
 
 pub fn start_be_ticker() {
     // Ensure ticker is only started once (idempotent)
     TICKER_STARTED.get_or_init(|| {
     tokio::spawn(async move {
+        let mut latency_stats = ShardTickLatencyStats::new();
+
         loop {
             if Colony::is_initialized() {
+                let start_full = Instant::now();
                 let colony = Colony::instance();
 
                 // Get a snapshot of shard keys and Arc handles (cheap clones)
@@ -28,6 +71,8 @@ pub fn start_be_ticker() {
                     } else { 0 }
                 };
 
+                let start_core = Instant::now();
+
                 let tasks = hosted_colony_shards.iter().map(|shard_arc| {
                     let shard_arc = Arc::clone(shard_arc);
                     tokio::task::spawn_blocking(move || {
@@ -39,6 +84,8 @@ pub fn start_be_ticker() {
                 });
                 let exported = join_all(tasks).await
                     .into_iter().map(|r| r.expect("tick task panicked")).collect::<Vec<_>>();
+
+                let end_core = Instant::now();
 
                 let topology = match ClusterTopology::get_instance() {
                     Some(t) => t,
@@ -79,6 +126,13 @@ pub fn start_be_ticker() {
                         ShardUtils::store_shard(&*shard);
                     }
                 }
+
+                let end_full = Instant::now();
+
+                let core_latency_ms = (end_core - start_core).as_secs_f64() * 1000.0;
+                let full_latency_ms = (end_full - start_full).as_secs_f64() * 1000.0;
+
+                latency_stats.record_tick(core_latency_ms, full_latency_ms, hosted_shards.len());
             }
 
             let sleep_duration = if is_aws_deployment() {
