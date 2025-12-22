@@ -89,22 +89,40 @@ validate_aws_access() {
         aws_cmd="aws --profile $AWS_PROFILE"
     fi
     
-    if ! $aws_cmd sts get-caller-identity &>/dev/null; then
-        if is_ec2_instance; then
-            log "ERROR" "Failed to validate AWS access via IAM role. Check instance role permissions."
+    local max_retries=5
+    local retry_delay=2
+    local attempt=1
+    
+    while [ $attempt -le $max_retries ]; do
+        # Capture both stdout and stderr to see actual errors
+        local error_output
+        if error_output=$($aws_cmd sts get-caller-identity --region "$AWS_REGION" 2>&1); then
+            # Success - extract and log identity
+            local identity
+            identity=$($aws_cmd sts get-caller-identity --region "$AWS_REGION" --output json 2>/dev/null)
+            log "INFO" "AWS access validated: $(echo "$identity" | grep -o '"Arn": "[^"]*' | cut -d'"' -f4 || echo "unknown")"
+            return 0
         else
-            log "ERROR" "Failed to validate AWS access. Please configure credentials:"
-            echo "  Run: aws configure"
-            if [[ -n "$AWS_PROFILE" ]]; then
-                echo "  Or: aws configure --profile $AWS_PROFILE"
+            if [ $attempt -lt $max_retries ]; then
+                log "WARN" "AWS access validation attempt $attempt/$max_retries failed: $error_output. Retrying in ${retry_delay}s..."
+                sleep $retry_delay
+                retry_delay=$((retry_delay * 2))
+            else
+                log "ERROR" "Failed to validate AWS access after $max_retries attempts. Last error: $error_output"
+                if is_ec2_instance; then
+                    log "ERROR" "Check instance role permissions and IAM role attachment."
+                else
+                    log "ERROR" "Please configure credentials:"
+                    echo "  Run: aws configure"
+                    if [[ -n "$AWS_PROFILE" ]]; then
+                        echo "  Or: aws configure --profile $AWS_PROFILE"
+                    fi
+                fi
+                exit 1
             fi
         fi
-        exit 1
-    fi
-    
-    local identity
-    identity=$($aws_cmd sts get-caller-identity --output json 2>/dev/null)
-    log "INFO" "AWS access validated: $(echo "$identity" | grep -o '"Arn": "[^"]*' | cut -d'"' -f4 || echo "unknown")"
+        attempt=$((attempt + 1))
+    done
 }
 
 # Get file modification time (works on both macOS and Linux)
