@@ -570,11 +570,11 @@ export class UserDataBuilder {
       '',
       '[Service]',
       'Type=simple',
-      `ExecStart=${daemonScriptPath}`,
+      // Use /bin/bash -c so we can safely redirect stdout/stderr into the log file
+      // This avoids relying on newer systemd StandardOutput/StandardError=append: semantics
+      `ExecStart=/bin/bash -c '${daemonScriptPath} >> ${daemonLogPath} 2>&1'`,
       'Restart=always',
       'RestartSec=10',
-      `StandardOutput=append:${daemonLogPath}`,
-      `StandardError=append:${daemonLogPath}`,
       'User=root',
       '',
       '[Install]',
