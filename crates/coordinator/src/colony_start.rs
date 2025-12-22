@@ -5,6 +5,7 @@ use shared::cluster_registry::{get_instance, ClusterRegistry};
 use std::collections::HashMap;
 use crate::init_colony::initialize_colony;
 use crate::coordinator_context::CoordinatorContext;
+use crate::coordinator_storage::ColonyStatus;
 
 pub async fn colony_start_colony(idempotency_key: Option<String>) {
     log!("Starting colony-start process: discovering backends and creating shard map");
@@ -28,6 +29,10 @@ pub async fn colony_start_colony(idempotency_key: Option<String>) {
     
     if available_backends.is_empty() {
         log_error!("No available backend nodes found. Cannot start colony.");
+        // Revert status to NotInitialized on failure
+        let context = CoordinatorContext::get_instance();
+        let mut stored_info = context.get_coord_stored_info();
+        stored_info.status = ColonyStatus::NotInitialized;
         return;
     }
     
@@ -72,12 +77,17 @@ pub async fn colony_start_colony(idempotency_key: Option<String>) {
         }
         Err(err) => {
             log_error!("Failed to install dynamic topology: {}", err);
+            // Revert status to NotInitialized on failure
+            let context = CoordinatorContext::get_instance();
+            let mut stored_info = context.get_coord_stored_info();
+            stored_info.status = ColonyStatus::NotInitialized;
             return;
         }
     }
     
     // Step 6: Initialize and start the colony
     // Note: coordinator_ticker should already be started in main()
+    // initialize_colony() will set status to TopographyInitialized on success
     initialize_colony().await;
     
     // Step 7: Colony instance ID and idempotency_key are already stored (done at the start)

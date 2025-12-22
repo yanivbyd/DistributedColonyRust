@@ -83,7 +83,6 @@ async fn send_response(framed: &mut FramedStream, response: BackendResponse) {
 }
 
 async fn handle_client(socket: TcpStream) {
-    log!("handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
     loop {
         match framed.next().await {
@@ -111,7 +110,6 @@ async fn handle_client(socket: TcpStream) {
                 break;
             }
             None => {
-                log!("handle_client: connection closed by peer");
                 break;
             }
         }
@@ -528,10 +526,8 @@ async fn main() {
     });
 
     loop {
-        log!("Waiting for connection...");
         match listener.accept().await {
             Ok((socket, _)) => {
-                log!("Accepted connection");
                 tokio::spawn(handle_client(socket));
             }
             Err(e) => log_error!("Connection failed: {}", e),

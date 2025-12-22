@@ -91,6 +91,14 @@ pub async fn start_http_server(http_port: u16) {
                                     }
                                 } else {
                                     log!("Received colony-start request via HTTP with idempotency_key: {}", idempotency_key);
+                                    
+                                    // Set status to Initializing before spawning async task
+                                    let context = CoordinatorContext::get_instance();
+                                    {
+                                        let mut stored_info = context.get_coord_stored_info();
+                                        stored_info.status = ColonyStatus::Initializing;
+                                    }
+                                    
                                     let key_clone = idempotency_key.clone();
                                     tokio::spawn(async move {
                                         colony_start_colony(Some(key_clone)).await;
@@ -444,6 +452,25 @@ async fn handle_get_colony_stats_http(metrics: Vec<StatMetric>) -> (u64, Vec<Col
 }
 
 async fn handle_get_topology(stream: &mut tokio::net::TcpStream) {
+    // Check colony status first
+    let context = CoordinatorContext::get_instance();
+    let status = {
+        let stored_info = context.get_coord_stored_info();
+        stored_info.status.clone()
+    };
+    
+    // If status is Initializing, return in-progress response
+    if matches!(status, ColonyStatus::Initializing) {
+        let in_progress_json = r#"{"status":"in-progress"}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            in_progress_json.len(),
+            in_progress_json
+        );
+        let _ = stream.write_all(response.as_bytes()).await;
+        return;
+    }
+    
     // Get topology instance (returns None if not initialized)
     let topology = match ClusterTopology::get_instance() {
         Some(t) => t,

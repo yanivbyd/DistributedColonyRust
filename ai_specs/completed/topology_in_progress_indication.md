@@ -1,6 +1,6 @@
 # Spec: Topology In-Progress Indication
 
-**Status**: draft  
+**Status**: approved  
 **Created**: 2025-12-22
 
 ## Overview

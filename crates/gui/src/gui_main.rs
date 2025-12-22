@@ -1118,6 +1118,120 @@ fn retrieve_topology(mode: &str) -> Result<(Arc<ClusterTopology>, Option<String>
     
     // Check status code
     let status = response.status();
+    
+    // Check for in-progress status (200 OK with {"status": "in-progress"})
+    if status.is_success() {
+        let json_text = response.text()
+            .map_err(|e| format!("Failed to read response text: {}", e))?;
+        let json_value: serde_json::Value = serde_json::from_str(&json_text)
+            .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        
+        // Check if response indicates in-progress
+        if json_value.get("status")
+            .and_then(|v| v.as_str())
+            .map(|s| s == "in-progress")
+            .unwrap_or(false) {
+            eprintln!("Topology initialization in progress. Waiting for topology to be available...");
+            
+            // Enter retry loop to wait for topology
+            let mut retry_count = 0;
+            let max_retries = 10;
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(500 * (retry_count + 1)));
+                
+                let retry_response = client
+                    .get(&url)
+                    .send()
+                    .map_err(|e| format!("Failed to retry topology request: {}", e))?;
+                
+                let retry_status = retry_response.status();
+                if retry_status.is_success() {
+                    // Check if still in-progress
+                    let retry_json_text = retry_response.text()
+                        .map_err(|e| format!("Failed to read response text: {}", e))?;
+                    let retry_json_value: serde_json::Value = serde_json::from_str(&retry_json_text)
+                        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+                    
+                    // If still in-progress, continue polling
+                    if retry_json_value.get("status")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s == "in-progress")
+                        .unwrap_or(false) {
+                        retry_count += 1;
+                        if retry_count >= max_retries {
+                            return Err("Topology still initializing after maximum retries. Please wait and try again.".to_string());
+                        }
+                        continue;
+                    }
+                    
+                    // Success! Deserialize and return
+                    let colony_instance_id = retry_json_value.get("colony_instance_id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    
+                    let topology: ClusterTopology = serde_json::from_value(retry_json_value.clone())
+                        .map_err(|e| format!("Failed to deserialize topology: {}", e))?;
+                    
+                    if let Some(ref id) = colony_instance_id {
+                        eprintln!("GUI: Extracted colony instance ID from topology (retry): {}", id);
+                    } else {
+                        eprintln!("GUI: Warning - colony instance ID is None in topology response (retry)");
+                    }
+                    
+                    return Ok((Arc::new(topology), colony_instance_id));
+                } else if retry_status.as_u16() == 404 {
+                    // Topology not initialized - automatically initiate colony-start
+                    eprintln!("Topology not initialized. Automatically initiating colony-start...");
+                    
+                    // Generate idempotency key
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    let idempotency_key = format!("gui-auto-{}", 
+                        SystemTime::now().duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs());
+                    
+                    // Make POST request to /colony-start
+                    let colony_start_url = format!("http://{}:{}/colony-start?idempotency_key={}", 
+                        coordinator_ip, http_port, idempotency_key);
+                    let colony_start_response = client
+                        .post(&colony_start_url)
+                        .send()
+                        .map_err(|e| format!("Failed to initiate colony-start: {}", e))?;
+                    
+                    let colony_start_status = colony_start_response.status();
+                    if !colony_start_status.is_success() && colony_start_status.as_u16() != 202 {
+                        let error_text = colony_start_response.text().unwrap_or_else(|_| "Unknown error".to_string());
+                        return Err(format!("Failed to initiate colony-start: HTTP {}: {}", colony_start_status, error_text));
+                    }
+                    
+                    eprintln!("Colony-start initiated. Waiting for topology to be available...");
+                    retry_count = 0; // Reset retry count
+                    continue;
+                } else {
+                    // Some other error
+                    let error_text = retry_response.text().unwrap_or_else(|_| "Unknown error".to_string());
+                    return Err(format!("HTTP error {}: {}", retry_status, error_text));
+                }
+            }
+        } else {
+            // Not in-progress, handle as normal success response
+            let colony_instance_id = json_value.get("colony_instance_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            
+            let topology: ClusterTopology = serde_json::from_value(json_value)
+                .map_err(|e| format!("Failed to deserialize topology: {}", e))?;
+            
+            if let Some(ref id) = colony_instance_id {
+                eprintln!("GUI: Extracted colony instance ID from topology: {}", id);
+            } else {
+                eprintln!("GUI: Warning - colony instance ID is None in topology response");
+            }
+            
+            return Ok((Arc::new(topology), colony_instance_id));
+        }
+    }
+    
     if status.as_u16() == 404 {
         // Topology not initialized - automatically initiate colony-start
         eprintln!("Topology not initialized. Automatically initiating colony-start...");
@@ -1158,19 +1272,29 @@ fn retrieve_topology(mode: &str) -> Result<(Arc<ClusterTopology>, Option<String>
             
             let retry_status = retry_response.status();
             if retry_status.is_success() {
-                // Success! Deserialize and return
-                // First deserialize the full JSON to extract both topology and instance_id
+                // Check if response indicates in-progress
                 let json_text = retry_response.text()
                     .map_err(|e| format!("Failed to read response text: {}", e))?;
                 let json_value: serde_json::Value = serde_json::from_str(&json_text)
                     .map_err(|e| format!("Failed to parse JSON: {}", e))?;
                 
-                // Extract colony_instance_id first
+                // If still in-progress, continue polling
+                if json_value.get("status")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s == "in-progress")
+                    .unwrap_or(false) {
+                    retry_count += 1;
+                    if retry_count >= max_retries {
+                        return Err("Topology still initializing after maximum retries. Please wait and try again.".to_string());
+                    }
+                    continue;
+                }
+                
+                // Success! Deserialize and return
                 let colony_instance_id = json_value.get("colony_instance_id")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
                 
-                // Deserialize topology from the same JSON
                 let topology: ClusterTopology = serde_json::from_value(json_value.clone())
                     .map_err(|e| format!("Failed to deserialize topology: {}", e))?;
                 
@@ -1195,33 +1319,9 @@ fn retrieve_topology(mode: &str) -> Result<(Arc<ClusterTopology>, Option<String>
         }
     }
     
-    if !status.is_success() {
-        let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(format!("HTTP error {}: {}", status, error_text));
-    }
-    
-    // Deserialize JSON - extract instance_id and topology separately
-    let json_text = response.text()
-        .map_err(|e| format!("Failed to read response text: {}", e))?;
-    let json_value: serde_json::Value = serde_json::from_str(&json_text)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
-    
-    // Extract colony_instance_id first
-    let colony_instance_id = json_value.get("colony_instance_id")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    
-    // Deserialize topology from the same JSON
-    let topology: ClusterTopology = serde_json::from_value(json_value)
-        .map_err(|e| format!("Failed to deserialize topology: {}", e))?;
-    
-    if let Some(ref id) = colony_instance_id {
-        eprintln!("GUI: Extracted colony instance ID from topology: {}", id);
-    } else {
-        eprintln!("GUI: Warning - colony instance ID is None in topology response");
-    }
-    
-    Ok((Arc::new(topology), colony_instance_id))
+    // If we reach here, it's an unexpected error
+    let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+    Err(format!("HTTP error {}: {}", status, error_text))
 }
 
 fn main() -> eframe::Result<()> {

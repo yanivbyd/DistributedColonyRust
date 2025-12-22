@@ -87,7 +87,6 @@ async fn handle_get_routing_table() -> CoordinatorResponse {
 
 
 async fn handle_client(socket: TcpStream) {
-    log!("handle_client: new connection");
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
     while let Some(Ok(bytes)) = framed.next().await {
         let response = match bincode::deserialize::<CoordinatorRequest>(&bytes) {
@@ -99,7 +98,6 @@ async fn handle_client(socket: TcpStream) {
         };
         send_response(&mut framed, response).await;
     }
-    log!("handle_client: connection closed");
 }
 
 
@@ -287,7 +285,6 @@ async fn main() {
     });
 
     loop {
-        log!("Waiting for connection...");
         match listener.accept().await {
             Ok((socket, _)) => {
                 log!("Accepted connection");

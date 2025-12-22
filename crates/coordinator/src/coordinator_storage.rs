@@ -8,6 +8,7 @@ pub const COORDINATOR_STATE_FILE: &str = "output/storage/colony.dat";
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ColonyStatus {
     NotInitialized,
+    Initializing,
     TopographyInitialized,
 }
 
