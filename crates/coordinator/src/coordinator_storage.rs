@@ -20,6 +20,7 @@ pub struct CoordinatorStoredInfo {
     pub colony_events: Vec<ColonyEventDescription>,
     pub pause_events_till: u64,
     pub colony_start_idempotency_key: Option<String>,
+    pub colony_instance_id: Option<String>,
     pub deployment_mode: Option<String>,
 }
 
@@ -33,6 +34,7 @@ impl CoordinatorStoredInfo {
             colony_events: Vec::new(),
             pause_events_till: 0,
             colony_start_idempotency_key: None,
+            colony_instance_id: None,
             deployment_mode: None,
         }
     }

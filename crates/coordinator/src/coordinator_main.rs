@@ -181,7 +181,6 @@ async fn main() {
     init_logging(&log_path);
     log_startup("COORDINATOR");
 
-    eprintln!("M2: parsed args/env rpc={} http={}", rpc_port, http_port);
     log!("Starting coordinator in {:?} deployment mode, version {}", deployment_mode, BUILD_VERSION);
     log!("RPC port: {}, HTTP port: {}", rpc_port, http_port);
     set_panic_hook();

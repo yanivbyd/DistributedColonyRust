@@ -122,10 +122,8 @@ async fn send_init_colony_shard(stream: &mut TcpStream, shard: Shard, topology: 
     if let Some(response) = receive_message::<BackendResponse>(stream).await {
         match response {
             BackendResponse::InitColonyShard(InitColonyShardResponse::Ok) => {
-                log!("Shard initialized");
             },
             BackendResponse::InitColonyShard(InitColonyShardResponse::ShardAlreadyInitialized) => {
-                log!("Shard already initialized");
             },
             BackendResponse::InitColonyShard(InitColonyShardResponse::ColonyNotInitialized) => {
                 log_error!("Colony not initialized");
@@ -144,10 +142,17 @@ pub async fn initialize_colony() {
     // and reset the stored info if needed
     let context = CoordinatorContext::get_instance();
     
-    // Reset stored info to fresh state (context is already initialized, so we just update the data)
+    // Reset stored info to fresh state, but preserve instance ID and idempotency key
+    // (these are set before initialize_colony is called)
     {
         let mut stored_info = context.get_coord_stored_info();
+        let preserved_instance_id = stored_info.colony_instance_id.clone();
+        let preserved_idempotency_key = stored_info.colony_start_idempotency_key.clone();
+        let preserved_deployment_mode = stored_info.deployment_mode.clone();
         *stored_info = CoordinatorStoredInfo::new();
+        stored_info.colony_instance_id = preserved_instance_id;
+        stored_info.colony_start_idempotency_key = preserved_idempotency_key;
+        stored_info.deployment_mode = preserved_deployment_mode;
     }
     
     log!("Starting colony initialization with status: {:?}", context.get_coord_stored_info().status);

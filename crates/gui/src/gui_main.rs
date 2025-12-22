@@ -127,10 +127,11 @@ struct BEImageApp {
     coordinator_http_port: Option<u16>,
     backend_http_ports: std::collections::HashMap<shared::cluster_topology::HostInfo, u16>,
     latency_tracker: Arc<latency_tracker::LatencyTracker>,
+    colony_instance_id: Option<String>,
 }
 
 impl BEImageApp {
-    fn new(cluster_topology: Arc<ClusterTopology>, deployment_mode: String, coordinator_http_port: Option<u16>, backend_http_ports: std::collections::HashMap<shared::cluster_topology::HostInfo, u16>) -> Self {
+    fn new(cluster_topology: Arc<ClusterTopology>, deployment_mode: String, coordinator_http_port: Option<u16>, backend_http_ports: std::collections::HashMap<shared::cluster_topology::HostInfo, u16>, colony_instance_id: Option<String>) -> Self {
         let shard_config = Arc::new(Mutex::new(ShardConfig::from_topology(&cluster_topology)));
         let total_shards = {
             let config_guard = shard_config.lock().unwrap();
@@ -177,6 +178,7 @@ impl BEImageApp {
             coordinator_http_port,
             backend_http_ports,
             latency_tracker,
+            colony_instance_id,
         }
     }
 }
@@ -913,6 +915,27 @@ impl BEImageApp {
     
     fn show_cluster_tab(&mut self, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
+            ui.heading("Cluster Topology");
+            ui.separator();
+            
+            // Display instance ID in separate info section
+            match &self.colony_instance_id {
+                Some(id) => {
+                    ui.horizontal(|ui| {
+                        ui.label("Colony Instance:");
+                        ui.label(egui::RichText::new(id).strong().color(egui::Color32::from_rgb(100, 200, 100)));
+                    });
+                    ui.separator();
+                }
+                None => {
+                    ui.horizontal(|ui| {
+                        ui.label("Colony Instance:");
+                        ui.colored_label(egui::Color32::YELLOW, "Not set");
+                    });
+                    ui.separator();
+                }
+            }
+            
             // Deployment mode header
             ui.heading(format!("Deployment Mode: {}", self.deployment_mode));
             ui.add_space(20.0);
@@ -1072,7 +1095,7 @@ fn retrieve_http_ports(
     Ok((coordinator_http_port, backend_http_ports))
 }
 
-fn retrieve_topology(mode: &str) -> Result<Arc<ClusterTopology>, String> {
+fn retrieve_topology(mode: &str) -> Result<(Arc<ClusterTopology>, Option<String>), String> {
     // Initialize cluster registry
     let _registry = create_cluster_registry(mode);
     
@@ -1136,9 +1159,28 @@ fn retrieve_topology(mode: &str) -> Result<Arc<ClusterTopology>, String> {
             let retry_status = retry_response.status();
             if retry_status.is_success() {
                 // Success! Deserialize and return
-                let topology: ClusterTopology = retry_response.json()
+                // First deserialize the full JSON to extract both topology and instance_id
+                let json_text = retry_response.text()
+                    .map_err(|e| format!("Failed to read response text: {}", e))?;
+                let json_value: serde_json::Value = serde_json::from_str(&json_text)
+                    .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+                
+                // Extract colony_instance_id first
+                let colony_instance_id = json_value.get("colony_instance_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                
+                // Deserialize topology from the same JSON
+                let topology: ClusterTopology = serde_json::from_value(json_value.clone())
                     .map_err(|e| format!("Failed to deserialize topology: {}", e))?;
-                return Ok(Arc::new(topology));
+                
+                if let Some(ref id) = colony_instance_id {
+                    eprintln!("GUI: Extracted colony instance ID from topology (retry): {}", id);
+                } else {
+                    eprintln!("GUI: Warning - colony instance ID is None in topology response (retry)");
+                }
+                
+                return Ok((Arc::new(topology), colony_instance_id));
             } else if retry_status.as_u16() != 404 {
                 // Some other error
                 let error_text = retry_response.text().unwrap_or_else(|_| "Unknown error".to_string());
@@ -1158,11 +1200,28 @@ fn retrieve_topology(mode: &str) -> Result<Arc<ClusterTopology>, String> {
         return Err(format!("HTTP error {}: {}", status, error_text));
     }
     
-    // Deserialize JSON into ClusterTopology
-    let topology: ClusterTopology = response.json()
+    // Deserialize JSON - extract instance_id and topology separately
+    let json_text = response.text()
+        .map_err(|e| format!("Failed to read response text: {}", e))?;
+    let json_value: serde_json::Value = serde_json::from_str(&json_text)
+        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    
+    // Extract colony_instance_id first
+    let colony_instance_id = json_value.get("colony_instance_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    
+    // Deserialize topology from the same JSON
+    let topology: ClusterTopology = serde_json::from_value(json_value)
         .map_err(|e| format!("Failed to deserialize topology: {}", e))?;
     
-    Ok(Arc::new(topology))
+    if let Some(ref id) = colony_instance_id {
+        eprintln!("GUI: Extracted colony instance ID from topology: {}", id);
+    } else {
+        eprintln!("GUI: Warning - colony instance ID is None in topology response");
+    }
+    
+    Ok((Arc::new(topology), colony_instance_id))
 }
 
 fn main() -> eframe::Result<()> {
@@ -1178,8 +1237,8 @@ fn main() -> eframe::Result<()> {
     }
     
     // Retrieve topology from coordinator
-    let topology = match retrieve_topology(mode) {
-        Ok(t) => t,
+    let (topology, colony_instance_id) = match retrieve_topology(mode) {
+        Ok(result) => result,
         Err(e) => {
             eprintln!("Error: Failed to retrieve topology: {}", e);
             eprintln!("Please ensure the coordinator is running and the colony is started.");
@@ -1201,6 +1260,7 @@ fn main() -> eframe::Result<()> {
     let topology_clone = Arc::clone(&topology);
     let coordinator_http_port_clone = coordinator_http_port;
     let backend_http_ports_clone = backend_http_ports;
+    let colony_instance_id_clone = colony_instance_id;
     
     let options = eframe::NativeOptions::default();
     eframe::run_native(
@@ -1215,6 +1275,7 @@ fn main() -> eframe::Result<()> {
                 deployment_mode.clone(),
                 coordinator_http_port_clone,
                 backend_http_ports_clone.clone(),
+                colony_instance_id_clone.clone(),
             )))
         }),
     )

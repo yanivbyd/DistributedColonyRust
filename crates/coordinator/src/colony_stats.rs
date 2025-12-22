@@ -9,11 +9,13 @@ use crate::backend_client;
 use shared::cluster_topology::ClusterTopology;
 use chrono::Utc;
 
-const STATS_DIR: &str = "output/s3/distributed-colony/stats_shots";
+const BASE_BUCKET_DIR: &str = "output/s3/distributed-colony";
 const MIN_HISTOGRAM_COUNT: u64 = 20;
 
 #[derive(Serialize)]
 pub struct CreatureStatistics {
+    #[serde(rename = "colony_instance_id")]
+    pub colony_instance_id: String,
     pub tick: u64,
     pub histograms: Histograms,
     pub events: Vec<ColonyEventDescription>,
@@ -67,11 +69,20 @@ pub async fn capture_colony_stats() {
     // Save to disk
     match stats_result {
         Ok(stats) => {
+            let context = CoordinatorContext::get_instance();
+            let stored_info = context.get_coord_stored_info();
+            let instance_id = match stored_info.colony_instance_id.as_deref() {
+                Some(id) => id,
+                None => {
+                    log_error!("Colony instance ID is not set, skipping statistics capture");
+                    return;
+                }
+            };
             let timestamp = get_stats_timestamp();
-            if let Err(e) = save_stats_to_disk(&stats, &timestamp) {
+            if let Err(e) = save_stats_to_disk(&stats, instance_id, &timestamp) {
                 log_error!("Failed to save statistics to disk: {}", e);
             } else {
-                log!("Successfully saved creature statistics to: {}/{}", STATS_DIR, timestamp);
+                log!("Successfully saved creature statistics to: {}/{}/stats_shots/{}.json", BASE_BUCKET_DIR, instance_id, timestamp);
             }
         }
         Err(e) => {
@@ -166,6 +177,12 @@ async fn collect_statistics(
     rules.insert("Mutation Chance".to_string(), rules_obj.mutation_chance);
     rules.insert("Random Death Chance".to_string(), rules_obj.random_death_chance);
     
+    // Get colony instance ID
+    let stored_info = context.get_coord_stored_info();
+    let colony_instance_id = stored_info.colony_instance_id.as_deref()
+        .expect("Colony instance ID must be set before capturing stats")
+        .to_string();
+    
     // Build metadata
     let partial = !missing_shards.is_empty();
     let meta = Metadata {
@@ -175,6 +192,7 @@ async fn collect_statistics(
     };
     
     Ok(CreatureStatistics {
+        colony_instance_id,
         tick: current_tick,
         histograms,
         events,
@@ -212,11 +230,11 @@ fn get_stats_timestamp() -> String {
     now.format("%Y_%m_%d__%H_%M_%S").to_string()
 }
 
-fn save_stats_to_disk(stats: &CreatureStatistics, timestamp: &str) -> Result<(), String> {
-    // Create directory if it doesn't exist
-    let dir_path = Path::new(STATS_DIR);
-    if let Err(e) = std::fs::create_dir_all(dir_path) {
-        return Err(format!("Failed to create directory {}: {}", STATS_DIR, e));
+fn save_stats_to_disk(stats: &CreatureStatistics, instance_id: &str, timestamp: &str) -> Result<(), String> {
+    // Build directory path: output/s3/distributed-colony/{id}/stats_shots
+    let dir_path = Path::new(BASE_BUCKET_DIR).join(instance_id).join("stats_shots");
+    if let Err(e) = std::fs::create_dir_all(&dir_path) {
+        return Err(format!("Failed to create directory {}: {}", dir_path.display(), e));
     }
     
     // Construct full file path

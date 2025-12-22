@@ -459,8 +459,27 @@ async fn handle_get_topology(stream: &mut tokio::net::TcpStream) {
         }
     };
     
-    // Serialize to JSON
-    match serde_json::to_string(&*topology) {
+    // Get colony instance ID (clone it before dropping the guard)
+    let instance_id = {
+        let context = CoordinatorContext::get_instance();
+        let stored_info = context.get_coord_stored_info();
+        stored_info.colony_instance_id.clone()
+    };
+    
+    // Create response with topology and instance_id
+    #[derive(serde::Serialize)]
+    struct TopologyResponse {
+        #[serde(flatten)]
+        topology: ClusterTopology,
+        colony_instance_id: Option<String>,
+    }
+    
+    let response_obj = TopologyResponse {
+        topology: (*topology).clone(),
+        colony_instance_id: instance_id,
+    };
+    
+    match serde_json::to_string(&response_obj) {
         Ok(json) => {
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",

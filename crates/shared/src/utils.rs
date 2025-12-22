@@ -100,3 +100,12 @@ pub fn random_color(rng: &mut SmallRng) -> crate::colony_model::Color {
     
     Color { red, green, blue }
 }
+
+/// Generates a 3-letter lowercase colony instance ID.
+/// This function is called by the coordinator during colony initialization.
+pub fn generate_colony_instance_id() -> String {
+    let mut rng = new_random_generator();
+    (0..3)
+        .map(|_| (rng.gen_range(b'a'..=b'z') as char))
+        .collect()
+}

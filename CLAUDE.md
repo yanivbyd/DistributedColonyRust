@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Initialization
+
+**At the start of each new Claude Code session**, please:
+1. Read `.cursor/rules/my-rules.mdc` for development guidelines and coding standards
+2. Review the **Specification Workflow** section below (lines 178-184) and follow it strictly for all feature work
+3. Familiarize yourself with the architecture and common patterns in this document
+
 ## Overview
 
 DistributedColonyRust is a distributed cellular automaton simulator that simulates creature colonies across multiple backend nodes. The system partitions a 2D grid world into spatial shards distributed across multiple backend processes, with a central coordinator managing initialization, topology, and global events.

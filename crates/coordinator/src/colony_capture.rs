@@ -7,7 +7,7 @@ use std::time::Duration;
 use std::path::Path;
 use image::{ImageBuffer, Rgb, RgbImage};
 
-const BUCKET_DIR: &str = "output/s3/distributed-colony/images_shots";
+const BASE_BUCKET_DIR: &str = "output/s3/distributed-colony";
 
 /// Main function to capture colony creature images and save to disk
 pub async fn capture_colony() {
@@ -38,8 +38,15 @@ pub async fn capture_colony() {
         return;
     }
     
-    // Get coordinator timestamp for filename
+    // Get coordinator timestamp and instance ID
     let timestamp = get_coordinator_timestamp();
+    let instance_id = match get_colony_instance_id_prefix() {
+        Some(id) => id,
+        None => {
+            log_error!("Colony instance ID is not set, skipping image capture");
+            return;
+        }
+    };
     
     // Collect shard images
     let mut shard_images: Vec<(Shard, Vec<Color>)> = Vec::new();
@@ -66,12 +73,12 @@ pub async fn capture_colony() {
     let combined_image = combine_shard_images(&shard_images, colony_width, colony_height);
     
     // Save image to disk
-    if let Err(e) = save_image_to_disk(&combined_image, &timestamp) {
+    if let Err(e) = save_image_to_disk(&combined_image, &instance_id, &timestamp) {
         log_error!("Failed to save image to disk: {}", e);
         return;
     }
     
-    log!("Successfully saved creature image to: {}/{}", BUCKET_DIR, timestamp);
+    log!("Successfully saved creature image to: {}/{}/images_shots/{}.png", BASE_BUCKET_DIR, instance_id, timestamp);
     
     // Also capture statistics snapshot
     crate::colony_stats::capture_colony_stats().await;
@@ -98,6 +105,13 @@ fn get_colony_dimensions(topology: &ClusterTopology) -> Option<(i32, i32)> {
 fn get_coordinator_timestamp() -> String {
     let now = chrono::Local::now();
     now.format("%Y_%m_%d__%H_%M_%S").to_string()
+}
+
+/// Get colony instance ID prefix for filename
+fn get_colony_instance_id_prefix() -> Option<String> {
+    let context = crate::coordinator_context::CoordinatorContext::get_instance();
+    let stored_info = context.get_coord_stored_info();
+    stored_info.colony_instance_id.clone()
 }
 
 /// Get shard creature image via HTTP API
@@ -225,11 +239,11 @@ fn combine_shard_images(shard_images: &[(Shard, Vec<Color>)], colony_width: i32,
 }
 
 /// Save PNG image to disk with bucket directory structure
-fn save_image_to_disk(image: &RgbImage, timestamp: &str) -> Result<(), String> {
-    // Create directory if it doesn't exist
-    let dir_path = Path::new(BUCKET_DIR);
-    if let Err(e) = std::fs::create_dir_all(dir_path) {
-        return Err(format!("Failed to create directory {}: {}", BUCKET_DIR, e));
+fn save_image_to_disk(image: &RgbImage, instance_id: &str, timestamp: &str) -> Result<(), String> {
+    // Build directory path: output/s3/distributed-colony/{id}/images_shots
+    let dir_path = Path::new(BASE_BUCKET_DIR).join(instance_id).join("images_shots");
+    if let Err(e) = std::fs::create_dir_all(&dir_path) {
+        return Err(format!("Failed to create directory {}: {}", dir_path.display(), e));
     }
     
     // Construct full file path

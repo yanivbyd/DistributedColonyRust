@@ -9,6 +9,20 @@ use crate::coordinator_context::CoordinatorContext;
 pub async fn colony_start_colony(idempotency_key: Option<String>) {
     log!("Starting colony-start process: discovering backends and creating shard map");
     
+    // Generate and store colony instance ID and idempotency key early (before topology initialization)
+    // This ensures it's available as soon as the topology is ready and for GET /topology requests
+    let context = CoordinatorContext::get_instance();
+    if let Some(key) = &idempotency_key {
+        let mut stored_info = context.get_coord_stored_info();
+        stored_info.colony_start_idempotency_key = Some(key.clone());
+        
+        // Generate colony instance ID on server side
+        let instance_id = shared::utils::generate_colony_instance_id();
+        stored_info.colony_instance_id = Some(instance_id.clone());
+        
+        log!("Colony instance ID generated: {}", instance_id);
+    }
+    
     // Step 1: Discover available backend nodes from AWS config
     let (available_backends, coordinator_address) = discover_and_ping_backends().await;
     
@@ -66,13 +80,16 @@ pub async fn colony_start_colony(idempotency_key: Option<String>) {
     // Note: coordinator_ticker should already be started in main()
     initialize_colony().await;
     
-    // Step 7: Store idempotency_key in memory after successful initialization
-    if let Some(key) = idempotency_key {
-        let mut stored_info = context.get_coord_stored_info();
-        stored_info.colony_start_idempotency_key = Some(key.clone());
+    // Step 7: Colony instance ID and idempotency_key are already stored (done at the start)
+    // Log completion with instance ID for visibility
+    {
+        let stored_info = context.get_coord_stored_info();
+        if let Some(ref id) = stored_info.colony_instance_id {
+            log!("Colony-start completed successfully - Colony Instance ID: {}", id);
+        } else {
+            log!("Colony-start completed successfully");
+        }
     }
-    
-    log!("Colony-start completed successfully");
 }
 
 async fn discover_and_ping_backends() -> (Vec<HostInfo>, NodeAddress) {
