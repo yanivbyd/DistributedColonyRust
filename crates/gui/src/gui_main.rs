@@ -1,7 +1,7 @@
 #![allow(deprecated)]
 use eframe::{egui, App};
 use egui_extras::RetainedImage;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use shared::be_api::{ShardLayer, ColonyLifeRules};
@@ -128,6 +128,7 @@ struct BEImageApp {
     backend_http_ports: std::collections::HashMap<shared::cluster_topology::HostInfo, u16>,
     latency_tracker: Arc<latency_tracker::LatencyTracker>,
     colony_instance_id: Option<String>,
+    tab_change_signal: Arc<(Mutex<bool>, Condvar)>,
 }
 
 impl BEImageApp {
@@ -152,6 +153,7 @@ impl BEImageApp {
         let colony_info = Arc::new(Mutex::new(None));
         let colony_events = Arc::new(Mutex::new(None));
         let current_tab = Tab::Creatures;
+        let tab_change_signal = Arc::new((Mutex::new(false), Condvar::new()));
         Self {
             creatures,
             creatures_color_data,
@@ -179,6 +181,7 @@ impl BEImageApp {
             backend_http_ports,
             latency_tracker,
             colony_instance_id,
+            tab_change_signal,
         }
     }
 }
@@ -205,6 +208,7 @@ impl App for BEImageApp {
             let last_update_time = self.last_update_time.clone();
             let deployment_mode = self.deployment_mode.clone();
             let latency_tracker = Arc::clone(&self.latency_tracker);
+            let tab_change_signal = Arc::clone(&self.tab_change_signal);
             thread::spawn(move || {
                 let refresh_interval_ms = if deployment_mode == "aws" {
                     REFRESH_INTERVAL_MS_AWS
@@ -313,7 +317,19 @@ impl App for BEImageApp {
                         }
                     }
                     ctx_clone.request_repaint();
-                    thread::sleep(Duration::from_millis(refresh_interval_ms));
+                    
+                    // Wait for either timeout or tab change signal
+                    let (lock, cvar) = &*tab_change_signal;
+                    let mut signaled = lock.lock().unwrap();
+                    let timeout = Duration::from_millis(refresh_interval_ms);
+                    let result = cvar.wait_timeout(signaled, timeout).unwrap();
+                    signaled = result.0;
+                    
+                    if *signaled {
+                        // Tab changed, reset flag and continue immediately (skip sleep)
+                        *signaled = false;
+                    }
+                    // If timeout reached, continue normally (equivalent to sleep)
                 }
             });
             self.thread_started = true;
@@ -341,6 +357,10 @@ impl App for BEImageApp {
                     if let Ok(mut shared_tab) = self.shared_current_tab.lock() {
                         *shared_tab = self.current_tab;
                     }
+                    // Signal background thread to wake up immediately
+                    let (lock, cvar) = &*self.tab_change_signal;
+                    *lock.lock().unwrap() = true;
+                    cvar.notify_one();
                 }
                 
                 // Show status indicator only when there are issues and not on Info, Stats, or Cluster tabs
