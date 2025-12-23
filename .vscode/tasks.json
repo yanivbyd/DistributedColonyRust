@@ -82,7 +82,7 @@
             }
         },
         {
-            "label": "CDK - Deploy",
+            "label": "CDK",
             "type": "shell",
             "command": "cdk deploy --require-approval never",
             "group": "build",
@@ -98,7 +98,7 @@
             }
         },
         {
-            "label": "Update ECR - Colony Image",
+            "label": "docker colony",
             "type": "shell",
             "command": "./build-and-push-colony.sh",
             "group": "build",
@@ -114,7 +114,7 @@
             }
         },
         {
-            "label": "Update ECR - Base Image",
+            "label": "docker base",
             "type": "shell",
             "command": "./build-and-push-base.sh",
             "group": "build",
@@ -130,144 +130,20 @@
             }
         },
         {
-            "label": "cargo-build-backend",
+            "label": "s3 upload",
             "type": "shell",
-            "command": "cargo",
-            "args": ["build", "--package", "backend"],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "silent",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": ["$rustc"]
-        },
-        {
-            "label": "cargo-build-coordinator",
-            "type": "shell",
-            "command": "cargo",
-            "args": ["build", "--package", "coordinator"],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "silent",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": ["$rustc"]
-        },
-        {
-            "label": "cargo-build-gui",
-            "type": "shell",
-            "command": "cargo",
-            "args": ["build", "--package", "gui"],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "silent",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": ["$rustc"]
-        },
-        {
-            "label": "cargo-build-all",
-            "type": "shell",
-            "command": "cargo",
-            "args": ["build"],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "silent",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": ["$rustc"]
-        },
-        {
-            "label": "cargo-build-backend-release",
-            "type": "shell",
-            "command": "cargo",
-            "args": ["build", "--release", "--package", "backend"],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "silent",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": ["$rustc"]
-        },
-        {
-            "label": "cargo-build-coordinator-release",
-            "type": "shell",
-            "command": "cargo",
-            "args": ["build", "--release", "--package", "coordinator"],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "silent",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": ["$rustc"]
-        },
-        {
-            "label": "cargo-build-gui-release",
-            "type": "shell",
-            "command": "cargo",
-            "args": ["build", "--release", "--package", "gui"],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "silent",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": ["$rustc"]
-        },
-        {
-            "label": "cargo-check",
-            "type": "shell",
-            "command": "cargo",
-            "args": ["check"],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "silent",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": ["$rustc"]
-        },
-        {
-            "label": "cargo-test",
-            "type": "shell",
-            "command": "cargo",
-            "args": ["test"],
-            "group": "build",
+            "command": "./scripts/s3_upload_daemon.sh",
+            "isBackground": true,
+            "problemMatcher": [],
             "presentation": {
                 "echo": true,
                 "reveal": "always",
                 "focus": false,
-                "panel": "shared"
+                "panel": "dedicated"
             },
-            "problemMatcher": ["$rustc"]
-        },
-        {
-            "label": "cargo-clippy",
-            "type": "shell",
-            "command": "cargo",
-            "args": ["clippy"],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "silent",
-                "focus": false,
-                "panel": "shared"
-            },
-            "problemMatcher": ["$rustc"]
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
         }
     ]
 }

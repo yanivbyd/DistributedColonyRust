@@ -17,7 +17,6 @@ pub struct CreatureStatistics {
     pub colony_instance_id: String,
     pub tick: u64,
     pub histograms: Histograms,
-    pub rules: BTreeMap<String, u32>,
     pub meta: Metadata,
 }
 
@@ -165,16 +164,6 @@ async fn collect_statistics(
         can_move: can_move_hist,
     };
     
-    // Get rules and serialize with human-readable names
-    let rules_obj = context.get_colony_life_rules();
-    let mut rules = BTreeMap::new();
-    rules.insert("Health Cost Per Size Unit".to_string(), rules_obj.health_cost_per_size_unit);
-    rules.insert("Eat Capacity Per Size Unit".to_string(), rules_obj.eat_capacity_per_size_unit);
-    rules.insert("Health Cost If Can Kill".to_string(), rules_obj.health_cost_if_can_kill);
-    rules.insert("Health Cost If Can Move".to_string(), rules_obj.health_cost_if_can_move);
-    rules.insert("Mutation Chance".to_string(), rules_obj.mutation_chance);
-    rules.insert("Random Death Chance".to_string(), rules_obj.random_death_chance);
-    
     // Build metadata
     let meta = Metadata {
         created_at_utc: Utc::now().to_rfc3339(),
@@ -186,7 +175,6 @@ async fn collect_statistics(
         colony_instance_id,
         tick: current_tick,
         histograms,
-        rules,
         meta,
     })
 }

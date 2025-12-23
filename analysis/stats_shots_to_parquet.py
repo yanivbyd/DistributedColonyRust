@@ -118,20 +118,6 @@ def list_stats_objects_for_colony(
     return sorted(keys)
 
 
-# --------------------------
-# Parquet schema helpers
-# --------------------------
-
-def _extract_rule_value(rules: Dict[str, Any], key: str) -> Optional[int]:
-    val = rules.get(key)
-    if val is None:
-        return None
-    try:
-        return int(val)
-    except (TypeError, ValueError):
-        return None
-
-
 def _summarize_creature_size(hist: Dict[str, Any]) -> Dict[str, Any]:
     """
     Compute total count, mean/avg, and a few percentiles over the creature_size histogram.
@@ -232,23 +218,9 @@ def snapshot_to_row(snapshot: Dict[str, Any]) -> Dict[str, Any]:
 
     meta = snapshot.get("meta") or {}
     row["created_at_utc"] = meta.get("created_at_utc")
-
-    # Rules
-    rules = snapshot.get("rules") or {}
-    row["rule_eat_capacity_per_size_unit"] = _extract_rule_value(
-        rules, "Eat Capacity Per Size Unit"
-    )
-    row["rule_health_cost_if_can_kill"] = _extract_rule_value(
-        rules, "Health Cost If Can Kill"
-    )
-    row["rule_health_cost_if_can_move"] = _extract_rule_value(
-        rules, "Health Cost If Can Move"
-    )
-    row["rule_health_cost_per_size_unit"] = _extract_rule_value(
-        rules, "Health Cost Per Size Unit"
-    )
-    row["rule_mutation_chance"] = _extract_rule_value(rules, "Mutation Chance")
-    row["rule_random_death_chance"] = _extract_rule_value(rules, "Random Death Chance")
+    # Colony dimensions (copied directly from the snapshot meta)
+    row["colony_width"] = meta.get("colony_width")
+    row["colony_height"] = meta.get("colony_height")
 
     # Histograms
     hists = snapshot.get("histograms") or {}

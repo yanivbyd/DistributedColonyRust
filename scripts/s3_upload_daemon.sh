@@ -359,6 +359,7 @@ scan_and_upload() {
 # Main loop
 main() {
     log "INFO" "Starting S3 upload daemon"
+    log "INFO" "Current working directory: $(pwd)"
     log "INFO" "Configuration: interval=${S3_UPLOAD_INTERVAL}s, root_dir=$S3_ROOT_DIR, region=$AWS_REGION, stability=${FILE_STABILITY_SECONDS}s"
     
     # Check AWS CLI

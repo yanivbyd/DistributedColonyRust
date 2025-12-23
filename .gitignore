@@ -25,3 +25,7 @@ run_logs
 #.idea/
 
 *.trace
+
+# Python bytecode
+*.pyc
+__pycache__/
