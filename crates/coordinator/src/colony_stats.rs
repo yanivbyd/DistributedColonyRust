@@ -35,10 +35,6 @@ pub struct Histograms {
 
 #[derive(Serialize)]
 pub struct Metadata {
-    pub partial: bool,
-    #[serde(rename = "missing_shards")]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub missing_shards: Vec<String>,
     #[serde(rename = "created_at_utc")]
     pub created_at_utc: String,
 }
@@ -184,10 +180,7 @@ async fn collect_statistics(
         .to_string();
     
     // Build metadata
-    let partial = !missing_shards.is_empty();
     let meta = Metadata {
-        partial,
-        missing_shards,
         created_at_utc: Utc::now().to_rfc3339(),
     };
     
