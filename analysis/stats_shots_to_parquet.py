@@ -132,47 +132,6 @@ def _extract_rule_value(rules: Dict[str, Any], key: str) -> Optional[int]:
         return None
 
 
-def _summarize_events(events: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
-    events_list = list(events)
-    if not events_list:
-        return {
-            "last_event_tick": None,
-            "last_event_type": None,
-            "last_rule_change_tick": None,
-            "last_rule_change_description": None,
-        }
-
-    # Last event overall
-    last_event = max(
-        events_list,
-        key=lambda e: e.get("tick", -1),
-    )
-    last_event_tick = last_event.get("tick")
-    last_event_type = last_event.get("event_type")
-
-    # Last "Colony Rules Change" event
-    rule_change_events = [
-        e for e in events_list if e.get("event_type") == "Colony Rules Change"
-    ]
-    if rule_change_events:
-        last_rule_event = max(
-            rule_change_events,
-            key=lambda e: e.get("tick", -1),
-        )
-        last_rule_change_tick = last_rule_event.get("tick")
-        last_rule_change_description = last_rule_event.get("description")
-    else:
-        last_rule_change_tick = None
-        last_rule_change_description = None
-
-    return {
-        "last_event_tick": last_event_tick,
-        "last_event_type": last_event_type,
-        "last_rule_change_tick": last_rule_change_tick,
-        "last_rule_change_description": last_rule_change_description,
-    }
-
-
 def _summarize_creature_size(hist: Dict[str, Any]) -> Dict[str, Any]:
     """
     Compute total count, mean/avg, and a few percentiles over the creature_size histogram.
@@ -290,10 +249,6 @@ def snapshot_to_row(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     )
     row["rule_mutation_chance"] = _extract_rule_value(rules, "Mutation Chance")
     row["rule_random_death_chance"] = _extract_rule_value(rules, "Random Death Chance")
-
-    # Events
-    events = snapshot.get("events") or []
-    row.update(_summarize_events(events))
 
     # Histograms
     hists = snapshot.get("histograms") or {}

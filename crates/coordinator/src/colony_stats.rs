@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use shared::{log, log_error};
 use shared::be_api::StatMetric;
-use shared::coordinator_api::ColonyEventDescription;
 use crate::coordinator_context::CoordinatorContext;
 use crate::backend_client;
 use shared::cluster_topology::ClusterTopology;
@@ -18,7 +17,6 @@ pub struct CreatureStatistics {
     pub colony_instance_id: String,
     pub tick: u64,
     pub histograms: Histograms,
-    pub events: Vec<ColonyEventDescription>,
     pub rules: BTreeMap<String, u32>,
     pub meta: Metadata,
 }
@@ -37,6 +35,8 @@ pub struct Histograms {
 pub struct Metadata {
     #[serde(rename = "created_at_utc")]
     pub created_at_utc: String,
+    pub colony_width: Option<i32>,
+    pub colony_height: Option<i32>,
 }
 
 /// Main function to capture colony statistics and save to disk
@@ -91,7 +91,18 @@ async fn collect_statistics(
     shards: &[shared::colony_model::Shard],
 ) -> Result<CreatureStatistics, String> {
     let context = CoordinatorContext::get_instance();
-    
+
+    // Get colony-level info from coordinator storage (ID and dimensions)
+    let stored_info = context.get_coord_stored_info();
+    let colony_instance_id = stored_info
+        .colony_instance_id
+        .as_deref()
+        .expect("Colony instance ID must be set before capturing stats")
+        .to_string();
+    let colony_width = stored_info.colony_width;
+    let colony_height = stored_info.colony_height;
+    drop(stored_info);
+
     // Get current tick from first available shard
     let current_tick = shards
         .first()
@@ -154,15 +165,6 @@ async fn collect_statistics(
         can_move: can_move_hist,
     };
     
-    // Get events (last 20, ordered newest last as per spec)
-    let mut events = context.get_colony_events();
-    // Sort by tick in descending order (most recent first) - same as HTTP API
-    events.sort_by(|a, b| b.tick.cmp(&a.tick));
-    // Take the first 20 (the 20 newest)
-    let events: Vec<ColonyEventDescription> = events.into_iter().take(20).collect();
-    // Reverse to have newest last (as per spec)
-    let events: Vec<ColonyEventDescription> = events.into_iter().rev().collect();
-    
     // Get rules and serialize with human-readable names
     let rules_obj = context.get_colony_life_rules();
     let mut rules = BTreeMap::new();
@@ -173,22 +175,17 @@ async fn collect_statistics(
     rules.insert("Mutation Chance".to_string(), rules_obj.mutation_chance);
     rules.insert("Random Death Chance".to_string(), rules_obj.random_death_chance);
     
-    // Get colony instance ID
-    let stored_info = context.get_coord_stored_info();
-    let colony_instance_id = stored_info.colony_instance_id.as_deref()
-        .expect("Colony instance ID must be set before capturing stats")
-        .to_string();
-    
     // Build metadata
     let meta = Metadata {
         created_at_utc: Utc::now().to_rfc3339(),
+        colony_width,
+        colony_height,
     };
     
     Ok(CreatureStatistics {
         colony_instance_id,
         tick: current_tick,
         histograms,
-        events,
         rules,
         meta,
     })
