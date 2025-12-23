@@ -3,7 +3,7 @@ use eframe::egui;
 use egui_extras::RetainedImage;
 use shared::be_api::{ShardLayer, Shard, Color, ColonyLifeRules};
 use shared::coordinator_api::{ColonyEventDescription, ColonyMetricStats};
-use shared::be_api::{StatMetric};
+use shared::be_api::StatMetric;
 use shared::cluster_topology::{ClusterTopology, HostInfo};
 use std::time::{Duration, Instant};
 use std::sync::Arc;
@@ -35,32 +35,64 @@ fn get_shard_retained_image(shard: Shard, topology: &ClusterTopology, latency_tr
         .ok()?;
 
     let start = Instant::now();
-    let response = client.get(&url).send();
+    let response_result = client.get(&url).send();
     let latency = start.elapsed();
 
     let key = OperationKey::new(OperationType::GetShardImage, host_info.clone());
 
-    let response = match response {
+    let response = match response_result {
         Ok(r) => {
             latency_tracker.record_success(key, latency);
             r
         },
-        Err(_) => {
+        Err(e) => {
             latency_tracker.record_error(key);
+            log_error!("GUI HTTP error: operation=GetShardImage, host={}:{}, url={}, duration_ms={:.2}, error={}",
+                       host_info.hostname, host_info.port, url, latency.as_secs_f64() * 1000.0, e);
             return None;
         }
     };
     
     if response.status().is_success() {
-        let rgb_bytes = response.bytes().ok()?;
+        let content_length = response.content_length().unwrap_or(0);
+        let content_encoding = response
+            .headers()
+            .get(reqwest::header::CONTENT_ENCODING)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("identity")
+            .to_string();
+        let rgb_bytes = match response.bytes() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log_error!(
+                    "GUI HTTP error reading body: operation=GetShardImage, host={}:{}, url={}, content_encoding={}, error={}",
+                    host_info.hostname,
+                    host_info.port,
+                    url,
+                    content_encoding,
+                    e
+                );
+                return None;
+            }
+        };
         let width = shard.width as usize;
         let height = shard.height as usize;
         
         // Convert raw RGB bytes to Vec<Color>
         if rgb_bytes.len() != width * height * 3 {
+            log_error!(
+                "GUI HTTP shard image size mismatch: shard_id={}, host={}:{}, url={}, expected_bytes={}, actual_bytes={}, content_length={}, content_encoding={}",
+                shard_id,
+                host_info.hostname,
+                host_info.port,
+                url,
+                width * height * 3,
+                rgb_bytes.len(),
+                content_length,
+                content_encoding
+            );
             return None;
         }
-        
         let mut colors = Vec::with_capacity(width * height);
         for chunk in rgb_bytes.chunks_exact(3) {
             colors.push(Color {
@@ -71,8 +103,28 @@ fn get_shard_retained_image(shard: Shard, topology: &ClusterTopology, latency_tr
         }
         
         let img = color_vec_to_image(&colors, width, height);
+        log!(
+            "GUI HTTP success: operation=GetShardImage, shard_id={}, host={}:{}, url={}, duration_ms={:.2}, bytes_received={}, content_length={}, content_encoding={}",
+            shard_id,
+            host_info.hostname,
+            host_info.port,
+            url,
+            latency.as_secs_f64() * 1000.0,
+            rgb_bytes.len(),
+            content_length,
+            content_encoding
+        );
         Some(RetainedImage::from_color_image("colony_shard", img))
     } else {
+        let status = response.status();
+        log_error!(
+            "GUI HTTP non-success status for shard image: shard_id={}, host={}:{}, url={}, status_code={}",
+            shard_id,
+            host_info.hostname,
+            host_info.port,
+            url,
+            status.as_u16()
+        );
         None
     }
 }
@@ -131,12 +183,9 @@ fn get_shard_layer_data(shard: Shard, layer: ShardLayer, topology: &ClusterTopol
     let response = match response {
         Ok(r) => {
             latency_tracker.record_success(key.clone(), latency);
-            // Log slow successful operations (> 500ms)
-            if latency_ms > 500.0 {
-                let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
-                log!("GUI HTTP slow success: operation=GetShardLayer, host={}:{}, duration_ms={:.2}, avg_latency_ms={:.2}", 
-                     host_info.hostname, host_info.port, latency_ms, avg_latency);
-            }
+            let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
+            log!("GUI HTTP success: operation=GetShardLayer, host={}:{}, url={}, duration_ms={:.2}, avg_latency_ms={:.2}",
+                 host_info.hostname, host_info.port, url, latency_ms, avg_latency);
             r
         },
         Err(e) => {
@@ -145,11 +194,11 @@ fn get_shard_layer_data(shard: Shard, layer: ShardLayer, topology: &ClusterTopol
             let is_timeout = latency_ms >= 1500.0 || e.is_timeout();
             let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
             if is_timeout {
-                log_error!("GUI HTTP timeout: operation=GetShardLayer, host={}:{}, duration_ms={:.2}, avg_latency_ms={:.2}", 
-                          host_info.hostname, host_info.port, latency_ms, avg_latency);
+                log_error!("GUI HTTP timeout: operation=GetShardLayer, host={}:{}, url={}, duration_ms={:.2}, avg_latency_ms={:.2}", 
+                          host_info.hostname, host_info.port, url, latency_ms, avg_latency);
             } else {
-                log_error!("GUI HTTP error: operation=GetShardLayer, host={}:{}, duration_ms={:.2}, error={}", 
-                          host_info.hostname, host_info.port, latency_ms, e);
+                log_error!("GUI HTTP error: operation=GetShardLayer, host={}:{}, url={}, duration_ms={:.2}, avg_latency_ms={:.2}, error={}", 
+                          host_info.hostname, host_info.port, url, latency_ms, avg_latency, e);
             }
             return None;
         }
@@ -211,21 +260,26 @@ fn get_shard_color_data(shard: Shard, topology: &ClusterTopology, latency_tracke
         .ok()?;
 
     let start = Instant::now();
-    let response = client.get(&url).send();
+    let response_result = client.get(&url).send();
     let latency = start.elapsed();
     let latency_ms = latency.as_millis() as f64;
 
     let key = OperationKey::new(OperationType::GetShardImage, host_info.clone());
 
-    let response = match response {
+    let response = match response_result {
         Ok(r) => {
             latency_tracker.record_success(key.clone(), latency);
-            // Log slow successful operations (> 500ms)
-            if latency_ms > 500.0 {
-                let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
-                log!("GUI HTTP slow success: operation=GetShardImage, host={}:{}, duration_ms={:.2}, avg_latency_ms={:.2}", 
-                     host_info.hostname, host_info.port, latency_ms, avg_latency);
-            }
+            let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
+            let content_length = r.content_length().unwrap_or(0);
+            log!(
+                "GUI HTTP success: operation=GetShardImage, host={}:{}, url={}, duration_ms={:.2}, avg_latency_ms={:.2}, content_length={}",
+                host_info.hostname,
+                host_info.port,
+                url,
+                latency_ms,
+                avg_latency,
+                content_length
+            );
             r
         },
         Err(e) => {
@@ -234,23 +288,54 @@ fn get_shard_color_data(shard: Shard, topology: &ClusterTopology, latency_tracke
             let is_timeout = latency_ms >= 1500.0 || e.is_timeout();
             let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
             if is_timeout {
-                log_error!("GUI HTTP timeout: operation=GetShardImage, host={}:{}, duration_ms={:.2}, avg_latency_ms={:.2}", 
-                          host_info.hostname, host_info.port, latency_ms, avg_latency);
+                log_error!("GUI HTTP timeout: operation=GetShardImage, host={}:{}, url={}, duration_ms={:.2}, avg_latency_ms={:.2}", 
+                          host_info.hostname, host_info.port, url, latency_ms, avg_latency);
             } else {
-                log_error!("GUI HTTP error: operation=GetShardImage, host={}:{}, duration_ms={:.2}, error={}", 
-                          host_info.hostname, host_info.port, latency_ms, e);
+                log_error!("GUI HTTP error: operation=GetShardImage, host={}:{}, url={}, duration_ms={:.2}, avg_latency_ms={:.2}, error={}", 
+                          host_info.hostname, host_info.port, url, latency_ms, avg_latency, e);
             }
             return None;
         }
     };
     
     if response.status().is_success() {
-        let rgb_bytes = response.bytes().ok()?;
+        let content_length = response.content_length().unwrap_or(0);
+        let content_encoding = response
+            .headers()
+            .get(reqwest::header::CONTENT_ENCODING)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("identity")
+            .to_string();
+        let rgb_bytes = match response.bytes() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log_error!(
+                    "GUI HTTP error reading body: operation=GetShardImage, host={}:{}, url={}, content_encoding={}, error={}",
+                    host_info.hostname,
+                    host_info.port,
+                    url,
+                    content_encoding,
+                    e
+                );
+                return None;
+            }
+        };
         let width = shard.width as usize;
         let height = shard.height as usize;
         
         // Convert raw RGB bytes to Vec<Color>
         if rgb_bytes.len() != width * height * 3 {
+            log_error!(
+                "GUI HTTP shard color data size mismatch: shard_id={}, host={}:{}, url={}, expected_bytes={}, actual_bytes={}, content_length={}, content_encoding={}",
+                shard_id,
+                host_info.hostname,
+                host_info.port,
+                url,
+                width * height * 3,
+                rgb_bytes.len(),
+                content_length,
+                content_encoding
+            );
             return None;
         }
         
@@ -265,6 +350,15 @@ fn get_shard_color_data(shard: Shard, topology: &ClusterTopology, latency_tracke
         
         Some(colors)
     } else {
+        let status = response.status();
+        log_error!(
+            "GUI HTTP non-success status for shard color data: shard_id={}, host={}:{}, url={}, status_code={}",
+            shard_id,
+            host_info.hostname,
+            host_info.port,
+            url,
+            status.as_u16()
+        );
         None
     }
 }

@@ -16,7 +16,9 @@ mod call_be;
 mod latency_tracker;
 
 const REFRESH_INTERVAL_MS_LOCALHOST: u64 = 100;
-const REFRESH_INTERVAL_MS_AWS: u64 = 5000;
+// In AWS we poll less frequently to reduce backend load.
+// 3000ms here is also used implicitly when interpreting responsiveness thresholds.
+const REFRESH_INTERVAL_MS_AWS: u64 = 3000;
 const MIN_CREATURE_SIZE_LEGEND_MAX: i32 = 30;
 const FOOD_VALUE_LEGEND_MAX: i32 = 255;
 
@@ -413,11 +415,23 @@ impl App for BEImageApp {
                         let last_update = *self.last_update_time.lock().unwrap();
                         let time_since_update = last_update.elapsed();
                         let time_since_update_ms = time_since_update.as_millis() as f64;
-                        
+
+                        // Determine responsiveness thresholds based on deployment mode.
+                        // For localhost we keep very tight thresholds (1s / 5s) so issues surface quickly.
+                        // For AWS, where the poll interval is 3s, we only mark Slow/Unresponsive
+                        // after several missed polls so transient hiccups don't look like outages.
+                        let (slow_threshold_ms, unresponsive_threshold_ms) =
+                            if self.deployment_mode == "aws" {
+                                // ~2x and ~4x the AWS poll interval
+                                (6000.0, 12000.0)
+                            } else {
+                                (1000.0, 5000.0)
+                            };
+
                         // Determine current responsiveness state
-                        let current_state = if time_since_update.as_secs() > 5 {
+                        let current_state = if time_since_update_ms > unresponsive_threshold_ms {
                             GuiResponsivenessState::Unresponsive
-                        } else if time_since_update.as_millis() > 1000 {
+                        } else if time_since_update_ms > slow_threshold_ms {
                             GuiResponsivenessState::Slow
                         } else {
                             GuiResponsivenessState::Healthy
@@ -1423,10 +1437,11 @@ fn main() -> eframe::Result<()> {
     }
     
     // Initialize logging
+    // GUI always runs locally, but use different log files based on mode for clarity
     let log_file = if mode == "aws" {
-        "/data/distributed-colony/output/logs/gui.log"
+        "output/logs/gui_aws.log"
     } else {
-        "output/logs/gui.log"
+        "output/logs/gui_local.log"
     };
     shared::logging::init_logging(log_file);
     shared::logging::log_startup("GUI");

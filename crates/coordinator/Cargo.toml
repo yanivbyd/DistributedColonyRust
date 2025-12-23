@@ -24,7 +24,7 @@ log = "0.4"
 env_logger = "0.10"
 rand = "0.8"
 backoff = { version = "0.4", features = ["tokio"] } 
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+reqwest = { version = "0.12", features = ["json", "blocking", "gzip"] }
 image = "0.24"
 chrono = "0.4"
 

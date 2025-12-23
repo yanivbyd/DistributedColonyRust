@@ -131,21 +131,42 @@ async fn get_shard_creature_image_http(topology: &ClusterTopology, shard: Shard)
     
     // Make HTTP request using blocking client (wrapped in spawn_blocking to avoid blocking async runtime)
     let url_clone = url.clone();
-    let rgb_bytes = match tokio::task::spawn_blocking(move || {
+    let rgb_bytes_and_encoding = match tokio::task::spawn_blocking(move || {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_millis(1500))
             .build()
             .ok()?;
         
-        let response = client.get(&url_clone).send().ok()?;
+        let response = client
+            .get(&url_clone)
+            .header(reqwest::header::ACCEPT_ENCODING, "gzip")
+            .send()
+            .ok()?;
         
-        if !response.status().is_success() {
+        let status = response.status();
+        let content_encoding = response
+            .headers()
+            .get(reqwest::header::CONTENT_ENCODING)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("identity")
+            .to_string();
+
+        if !status.is_success() {
+            log_error!(
+                "Coordinator HTTP non-success status: url={}, status_code={}, content_encoding={}",
+                url_clone,
+                status.as_u16(),
+                content_encoding
+            );
             return None;
         }
         
-        response.bytes().ok()
+        match response.bytes().ok() {
+            Some(bytes) => Some((bytes, content_encoding)),
+            None => None,
+        }
     }).await {
-        Ok(Some(bytes)) => bytes,
+        Ok(Some((bytes, content_encoding))) => (bytes, content_encoding),
         Ok(None) => {
             log_error!("HTTP request to {} failed or returned non-success status", url);
             return None;
@@ -155,13 +176,14 @@ async fn get_shard_creature_image_http(topology: &ClusterTopology, shard: Shard)
             return None;
         }
     };
+    let (rgb_bytes, content_encoding) = rgb_bytes_and_encoding;
     
     let request_ms = start_request.elapsed().as_secs_f64() * 1000.0;
     let bytes_received = rgb_bytes.len();
     
-    // Log all requests for comparison
-    log!("Coordinator HTTP request: shard_id={}, host={}:{}, url={}, total_ms={:.2}, bytes_received={}",
-         shard_id, host_info.hostname, http_port, url, request_ms, bytes_received);
+    // Log all requests for comparison, including content encoding
+    log!("Coordinator HTTP request: shard_id={}, host={}:{}, url={}, total_ms={:.2}, bytes_received={}, content_encoding={}",
+         shard_id, host_info.hostname, http_port, url, request_ms, bytes_received, content_encoding);
     
     // Convert raw RGB bytes to Vec<Color>
     if rgb_bytes.len() != width * height * 3 {

@@ -9,6 +9,9 @@ use crate::backend_config::{get_backend_hostname, get_backend_port};
 use std::fmt::Write;
 use std::sync::Mutex;
 use std::time::Instant;
+use std::io::Write as IoWrite;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 
 const HTTP_BIND_HOST: &str = "0.0.0.0";
 const HTTP_LATENCY_WINDOW_SIZE: usize = 100;
@@ -70,16 +73,10 @@ fn record_http_latency(endpoint: &str, latency_ms: f64, shard_id: &str) {
         &SHARD_LAYER_STATS
     };
     
-    // Log slow requests
-    if latency_ms > 500.0 {
-        let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
-        log!("Backend HTTP slow request: endpoint={}, latency_ms={:.2}, shard_id={}, host={}", 
-             endpoint, latency_ms, shard_id, backend_host);
-    } else if latency_ms > 200.0 {
-        let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
-        log!("Backend HTTP slow request: endpoint={}, latency_ms={:.2}, shard_id={}, host={}", 
-             endpoint, latency_ms, shard_id, backend_host);
-    }
+    // Log all requests for debugging/visibility
+    let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
+    log!("Backend HTTP request: endpoint={}, latency_ms={:.2}, shard_id={}, host={}", 
+         endpoint, latency_ms, shard_id, backend_host);
     
     // Update stats
     let mut stats_guard = stats.lock().unwrap();
@@ -356,12 +353,53 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
         None
     };
     
-    // Network Write
+    // Network Write (with gzip compression)
     let start_network = Instant::now();
     let bytes_sent = if let Some(rgb_bytes) = rgb_bytes {
+        // Compress rgb_bytes with gzip
+        let uncompressed_len = rgb_bytes.len();
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+        if let Err(e) = IoWrite::write_all(&mut encoder, &rgb_bytes) {
+            log_error!(
+                "Failed to gzip-compress shard image {}: {} (uncompressed_len={})",
+                shard_id,
+                e,
+                uncompressed_len
+            );
+            let error_json = r#"{"error":"Failed to compress shard image"}"#;
+            let response = format!(
+                "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                error_json.len(),
+                error_json
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+            return;
+        }
+        let compressed_bytes = match encoder.finish() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log_error!(
+                    "Failed to finish gzip compression for shard image {}: {} (uncompressed_len={})",
+                    shard_id,
+                    e,
+                    uncompressed_len
+                );
+                let error_json = r#"{"error":"Failed to compress shard image"}"#;
+                let response = format!(
+                    "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    error_json.len(),
+                    error_json
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                return;
+            }
+        };
+
+        let compressed_len = compressed_bytes.len();
+        let body_bytes = &compressed_bytes[..];
         let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
-            rgb_bytes.len()
+            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+            body_bytes.len()
         );
         let header_bytes = response.as_bytes();
         if let Err(e) = stream.write_all(header_bytes).await {
@@ -371,20 +409,29 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
             let latency = start_total.elapsed();
             let latency_ms = latency.as_secs_f64() * 1000.0;
             record_http_latency(endpoint, latency_ms, shard_id);
-            
-            // Log breakdown for slow requests even on error
-            if latency_ms > 200.0 {
-                let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
-                log!("Backend HTTP slow request breakdown: endpoint={}, shard_id={}, host={}, total_ms={:.2}, network_write_ms={:.2}, bytes_sent={}",
-                     endpoint, shard_id, backend_host, latency_ms, network_write_ms, bytes_sent);
-            }
+
+            // Log breakdown for this request even on error
+            let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
+            let content_encoding = "gzip";
+            log!(
+                "Backend HTTP request breakdown: endpoint={}, shard_id={}, host={}, total_ms={:.2}, network_write_ms={:.2}, bytes_sent={}, uncompressed_bytes={}, compressed_bytes={}, content_encoding={}",
+                endpoint,
+                shard_id,
+                backend_host,
+                latency_ms,
+                network_write_ms,
+                bytes_sent,
+                uncompressed_len,
+                compressed_len,
+                content_encoding
+            );
             return;
         }
         let mut bytes_sent = header_bytes.len();
-        if let Err(e) = stream.write_all(&rgb_bytes).await {
+        if let Err(e) = stream.write_all(body_bytes).await {
             log_error!("Failed to write shard image response body: {}", e);
         } else {
-            bytes_sent += rgb_bytes.len();
+            bytes_sent += body_bytes.len();
         }
         bytes_sent
     } else {
@@ -404,12 +451,19 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
     let total_ms = start_total.elapsed().as_secs_f64() * 1000.0;
     record_http_latency(endpoint, total_ms, shard_id);
     
-    // Log detailed breakdown for slow requests
-    if total_ms > 200.0 {
-        let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
-        log!("Backend HTTP slow request breakdown: endpoint={}, shard_id={}, host={}, total_ms={:.2}, network_write_ms={:.2}, bytes_sent={}",
-             endpoint, shard_id, backend_host, total_ms, network_write_ms, bytes_sent);
-    }
+    // Log detailed breakdown for all requests, including effective content encoding
+    let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
+    let content_encoding = "gzip";
+    log!(
+        "Backend HTTP request breakdown: endpoint={}, shard_id={}, host={}, total_ms={:.2}, network_write_ms={:.2}, bytes_sent={}, content_encoding={}",
+        endpoint,
+        shard_id,
+        backend_host,
+        total_ms,
+        network_write_ms,
+        bytes_sent,
+        content_encoding
+    );
 }
 
 async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &str, layer_name: &str) {
