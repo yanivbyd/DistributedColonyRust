@@ -3,7 +3,7 @@ use shared::colony_model::{Shard, Color};
 use shared::{log, log_error};
 use shared::ssm;
 use shared::cluster_registry::create_cluster_registry;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::path::Path;
 use image::{ImageBuffer, Rgb, RgbImage};
 
@@ -126,6 +126,9 @@ async fn get_shard_creature_image_http(topology: &ClusterTopology, shard: Shard)
     let width = shard.width as usize;
     let height = shard.height as usize;
     
+    // Track HTTP request latency
+    let start_request = Instant::now();
+    
     // Make HTTP request using blocking client (wrapped in spawn_blocking to avoid blocking async runtime)
     let url_clone = url.clone();
     let rgb_bytes = match tokio::task::spawn_blocking(move || {
@@ -152,6 +155,13 @@ async fn get_shard_creature_image_http(topology: &ClusterTopology, shard: Shard)
             return None;
         }
     };
+    
+    let request_ms = start_request.elapsed().as_secs_f64() * 1000.0;
+    let bytes_received = rgb_bytes.len();
+    
+    // Log all requests for comparison
+    log!("Coordinator HTTP request: shard_id={}, host={}:{}, url={}, total_ms={:.2}, bytes_received={}",
+         shard_id, host_info.hostname, http_port, url, request_ms, bytes_received);
     
     // Convert raw RGB bytes to Vec<Color>
     if rgb_bytes.len() != width * height * 3 {

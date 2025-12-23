@@ -291,7 +291,7 @@ fn layer_name_to_enum(layer_name: &str) -> Result<ShardLayer, String> {
 }
 
 async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &str) {
-    let start = Instant::now();
+    let start_total = Instant::now();
     let endpoint = "/api/shard/{id}/image";
     
     // Parse shard_id
@@ -305,14 +305,14 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
                 error_json
             );
             let _ = stream.write_all(response.as_bytes()).await;
-            let latency = start.elapsed();
+            let latency = start_total.elapsed();
             let latency_ms = latency.as_secs_f64() * 1000.0;
             record_http_latency(endpoint, latency_ms, shard_id);
             return;
         }
     };
     
-    // Check if colony is initialized
+    // Colony Check
     if !Colony::is_initialized() {
         let error_json = r#"{"error":"Colony not initialized"}"#;
         let response = format!(
@@ -321,21 +321,25 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
             error_json
         );
         let _ = stream.write_all(response.as_bytes()).await;
-        let latency = start.elapsed();
+        let latency = start_total.elapsed();
         let latency_ms = latency.as_secs_f64() * 1000.0;
         record_http_latency(endpoint, latency_ms, shard_id);
         return;
     }
     
-    // Get shard image using existing handler logic
+    // Colony Access
     let colony = Colony::instance();
+    
+    // Shard Lookup
     let rgb_bytes = if let Some(shard_arc) = colony.get_hosted_colony_shard_arc(&shard) {
+        // Lock Acquisition + Image Generation
         let image = {
             let shard_guard = shard_arc.lock().unwrap();
             ShardUtils::get_shard_image(&shard_guard, &shard)
         };
+        
         if let Some(image) = image {
-            // Convert Vec<Color> to raw RGB bytes (width * height * 3 bytes, row-major order)
+            // RGB Conversion
             let width = shard.width as usize;
             let height = shard.height as usize;
             let mut rgb_bytes = Vec::with_capacity(width * height * 3);
@@ -352,18 +356,37 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
         None
     };
     
-    if let Some(rgb_bytes) = rgb_bytes {
+    // Network Write
+    let start_network = Instant::now();
+    let bytes_sent = if let Some(rgb_bytes) = rgb_bytes {
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
             rgb_bytes.len()
         );
-        if let Err(e) = stream.write_all(response.as_bytes()).await {
+        let header_bytes = response.as_bytes();
+        if let Err(e) = stream.write_all(header_bytes).await {
             log_error!("Failed to write shard image response header: {}", e);
+            let network_write_ms = start_network.elapsed().as_secs_f64() * 1000.0;
+            let bytes_sent = header_bytes.len();
+            let latency = start_total.elapsed();
+            let latency_ms = latency.as_secs_f64() * 1000.0;
+            record_http_latency(endpoint, latency_ms, shard_id);
+            
+            // Log breakdown for slow requests even on error
+            if latency_ms > 200.0 {
+                let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
+                log!("Backend HTTP slow request breakdown: endpoint={}, shard_id={}, host={}, total_ms={:.2}, network_write_ms={:.2}, bytes_sent={}",
+                     endpoint, shard_id, backend_host, latency_ms, network_write_ms, bytes_sent);
+            }
             return;
         }
+        let mut bytes_sent = header_bytes.len();
         if let Err(e) = stream.write_all(&rgb_bytes).await {
             log_error!("Failed to write shard image response body: {}", e);
+        } else {
+            bytes_sent += rgb_bytes.len();
         }
+        bytes_sent
     } else {
         let error_json = r#"{"error":"Shard not available"}"#;
         let response = format!(
@@ -371,13 +394,22 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
             error_json.len(),
             error_json
         );
-        let _ = stream.write_all(response.as_bytes()).await;
-    }
+        let response_bytes = response.as_bytes();
+        let _ = stream.write_all(response_bytes).await;
+        response_bytes.len()
+    };
+    let network_write_ms = start_network.elapsed().as_secs_f64() * 1000.0;
     
-    // Record latency
-    let latency = start.elapsed();
-    let latency_ms = latency.as_secs_f64() * 1000.0;
-    record_http_latency(endpoint, latency_ms, shard_id);
+    // Record latency (existing behavior)
+    let total_ms = start_total.elapsed().as_secs_f64() * 1000.0;
+    record_http_latency(endpoint, total_ms, shard_id);
+    
+    // Log detailed breakdown for slow requests
+    if total_ms > 200.0 {
+        let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
+        log!("Backend HTTP slow request breakdown: endpoint={}, shard_id={}, host={}, total_ms={:.2}, network_write_ms={:.2}, bytes_sent={}",
+             endpoint, shard_id, backend_host, total_ms, network_write_ms, bytes_sent);
+    }
 }
 
 async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &str, layer_name: &str) {
