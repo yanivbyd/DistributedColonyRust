@@ -545,15 +545,59 @@ async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &s
     };
     
     if let Some(binary_data) = binary_data {
+        // Compress binary layer data with gzip, but keep the same binary format
+        // (length prefix + i32 values) as the uncompressed representation.
+        let uncompressed_len = binary_data.len();
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+        if let Err(e) = IoWrite::write_all(&mut encoder, &binary_data) {
+            log_error!(
+                "Failed to gzip-compress shard layer {} for shard {}: {} (uncompressed_len={})",
+                layer_name,
+                shard_id,
+                e,
+                uncompressed_len
+            );
+            let error_json = r#"{"error":"Failed to compress shard layer"}"#;
+            let response = format!(
+                "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                error_json.len(),
+                error_json
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+            return;
+        }
+
+        let compressed_bytes = match encoder.finish() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log_error!(
+                    "Failed to finish gzip compression for shard layer {} for shard {}: {} (uncompressed_len={})",
+                    layer_name,
+                    shard_id,
+                    e,
+                    uncompressed_len
+                );
+                let error_json = r#"{"error":"Failed to compress shard layer"}"#;
+                let response = format!(
+                    "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    error_json.len(),
+                    error_json
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                return;
+            }
+        };
+
+        let body_bytes = &compressed_bytes[..];
         let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
-            binary_data.len()
+            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+            body_bytes.len()
         );
         if let Err(e) = stream.write_all(response.as_bytes()).await {
             log_error!("Failed to write shard layer response header: {}", e);
             return;
         }
-        if let Err(e) = stream.write_all(&binary_data).await {
+        if let Err(e) = stream.write_all(body_bytes).await {
             log_error!("Failed to write shard layer response body: {}", e);
         }
     } else {
