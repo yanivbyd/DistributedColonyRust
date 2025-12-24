@@ -5,6 +5,8 @@ use lazy_static::lazy_static;
 
 lazy_static! {
     static ref LOG_FILE_PATH: Mutex<Option<String>> = Mutex::new(None);
+    // Mutex to protect file writes - ensures thread-safe logging
+    static ref LOG_FILE_MUTEX: Mutex<()> = Mutex::new(());
 }
 
 pub fn init_logging(log_file: &str) {
@@ -21,6 +23,8 @@ fn get_log_file() -> Option<String> {
 
 pub fn log_to_file(msg: &str) {
     if let Some(log_file) = get_log_file() {
+        // Acquire lock before writing to ensure thread-safe file access
+        let _guard = LOG_FILE_MUTEX.lock().unwrap();
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_file) {
             let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
             let _ = writeln!(file, "[{}] {}", timestamp, msg);

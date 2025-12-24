@@ -57,7 +57,7 @@ pub fn randomize_event_by_frequency(frequency: EventFrequency, colony_width: i32
 pub fn get_next_event_tick_by_frequency(frequency: EventFrequency, rng: &mut SmallRng) -> u64 {
     match frequency {
         EventFrequency::Normal => {
-            rng.gen_range(5..20)
+            rng.gen_range(400..500)
         },
         EventFrequency::Rare => {
             rng.gen_range(1000..2000)

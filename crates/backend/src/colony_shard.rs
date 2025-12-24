@@ -127,6 +127,7 @@ impl ColonyShard {
                 if random_chance(rng, 5) { return false; }
 
                 self.grid[n].color = self.grid[my_cell].color;
+                self.grid[n].original_color = self.grid[my_cell].original_color;
                 self.grid[n].health = self.grid[my_cell].health;
                 self.grid[n].age = self.grid[my_cell].age;
                 self.grid[n].traits = self.grid[my_cell].traits;
@@ -151,6 +152,7 @@ impl ColonyShard {
             if rng.gen_bool(0.1) {
                 let template = creature_templates[rng.gen_range(0..creature_templates.len())];
                 self.grid[id].color = template.color;
+                self.grid[id].original_color = template.color;
                 self.grid[id].health = 20;
                 self.grid[id].traits = template.traits;
             }
@@ -242,6 +244,7 @@ impl ColonyShard {
                 let half_health = self.grid[my_cell].health / 2;
 
                 self.grid[neighbor].color = self.grid[my_cell].color;
+                self.grid[neighbor].original_color = self.grid[my_cell].original_color;
                 self.grid[neighbor].health = half_health;
                 self.grid[neighbor].age = 1;
                 self.grid[neighbor].traits = self.grid[my_cell].traits;
@@ -273,6 +276,7 @@ impl ColonyShard {
         new_cell.color.red = (cell.color.red as i16 + red_change).clamp(0, 255) as u8;
         new_cell.color.green = (cell.color.green as i16 + green_change).clamp(0, 255) as u8;
         new_cell.color.blue = (cell.color.blue as i16 + blue_change).clamp(0, 255) as u8;     
+        // cell.original_color is not mutated
         new_cell   
     }
     
@@ -294,6 +298,7 @@ impl ColonyShard {
                 self.grid[n].health = self.grid[my_cell].health.saturating_add(nref.health);
                 self.grid[n].age = self.grid[my_cell].age;
                 self.grid[n].color = self.grid[my_cell].color;
+                self.grid[n].original_color = self.grid[my_cell].original_color;
                 self.grid[n].traits = self.grid[my_cell].traits;
                 self.grid[n].tick_bit = next_bit;
 
@@ -325,6 +330,7 @@ fn assert_blank_consistency(cell: &Cell) {
 #[inline(always)]
 fn set_blank(cell: &mut Cell) {
     cell.color = WHITE_COLOR;
+    cell.original_color = WHITE_COLOR;
     cell.health = 0;
     cell.age = 0;
     #[cfg(debug_assertions)]

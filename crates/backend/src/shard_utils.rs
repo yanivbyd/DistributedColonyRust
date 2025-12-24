@@ -31,6 +31,7 @@ impl ShardUtils {
     fn copy_cell_creature_data(dst: &mut Cell, src: &Cell, tick_bit: bool) {
         if dst.health > 0 && src.health == 0 { return; } // don't remove creatures from another shard
         dst.color = src.color;
+        dst.original_color = src.original_color;
         dst.health = src.health;
         dst.age = src.age;
         dst.traits = src.traits;
@@ -69,6 +70,7 @@ impl ShardUtils {
             grid: (0..((shard.width as usize + 2) * (shard.height as usize + 2))).map(|_| {
                 Cell { 
                     color: white_color, 
+                    original_color: white_color,
                     tick_bit: false, 
                     food: 50, 
                     extra_food_per_tick: 50,

@@ -22,7 +22,7 @@ const REFRESH_INTERVAL_MS_AWS: u64 = 3000;
 const MIN_CREATURE_SIZE_LEGEND_MAX: i32 = 30;
 const FOOD_VALUE_LEGEND_MAX: i32 = 255;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum Tab {
     Creatures,
     ExtraFood,
@@ -160,8 +160,9 @@ impl BEImageApp {
             (Arc::new(Mutex::new((0..total_shards).map(|_| None).collect())),
              Arc::new(Mutex::new((0..total_shards).map(|_| None).collect())))
         } else {
-            (Arc::new(Mutex::new(call_be::get_all_shard_retained_images(&shard_config.lock().unwrap(), cluster_topology.as_ref(), &latency_tracker, &backend_http_info))),
-             Arc::new(Mutex::new(call_be::get_all_shard_color_data(&shard_config.lock().unwrap(), cluster_topology.as_ref(), &latency_tracker, &backend_http_info))))
+            let images = call_be::get_all_shard_retained_images(&shard_config.lock().unwrap(), cluster_topology.as_ref(), &latency_tracker, &backend_http_info);
+            let color_data = call_be::get_all_shard_color_data(&shard_config.lock().unwrap(), cluster_topology.as_ref(), &latency_tracker, &backend_http_info);
+            (Arc::new(Mutex::new(images)), Arc::new(Mutex::new(color_data)))
         };
         let extra_food = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
         let sizes = Arc::new(Mutex::new((0..total_shards).map(|_| None).collect()));
@@ -288,8 +289,8 @@ impl App for BEImageApp {
                                 let mut locked = creatures_color_data.lock().unwrap();
                                 *locked = color_data;
                             }
-                    }
-                    Tab::ExtraFood => {
+                        }
+                        Tab::ExtraFood => {
                             let extra_food_data = call_be::get_all_shard_layer_data(ShardLayer::ExtraFood, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_info);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !extra_food_data.iter().all(|data| data.is_none()) {
@@ -298,8 +299,8 @@ impl App for BEImageApp {
                                 *last_update_time.lock().unwrap() = Instant::now();
                                 had_success = true;
                             }
-                    }
-                    Tab::Sizes => {
+                        }
+                        Tab::Sizes => {
                             let sizes_data = call_be::get_all_shard_layer_data(ShardLayer::CreatureSize, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_info);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
                             if !sizes_data.iter().all(|data| data.is_none()) {
@@ -308,16 +309,16 @@ impl App for BEImageApp {
                                 *last_update_time.lock().unwrap() = Instant::now();
                                 had_success = true;
                             }
-                    }
-                    Tab::Age => {
-                        let age_data = call_be::get_all_shard_layer_data(ShardLayer::Age, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_info);
-                        if !age_data.iter().all(|data| data.is_none()) {
-                            let mut locked = age.lock().unwrap();
-                            *locked = age_data;
-                            *last_update_time.lock().unwrap() = Instant::now();
-                            had_success = true;
                         }
-                    }
+                        Tab::Age => {
+                            let age_data = call_be::get_all_shard_layer_data(ShardLayer::Age, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_info);
+                            if !age_data.iter().all(|data| data.is_none()) {
+                                let mut locked = age.lock().unwrap();
+                                *locked = age_data;
+                                *last_update_time.lock().unwrap() = Instant::now();
+                                had_success = true;
+                            }
+                        }
                         Tab::CanKill => {
                             let can_kill_data = call_be::get_all_shard_layer_data(ShardLayer::CanKill, &config, cluster_topology.as_ref(), &latency_tracker, &backend_http_info);
                             // Only update if we got valid data (don't overwrite with None on backend failures)
@@ -370,11 +371,11 @@ impl App for BEImageApp {
                         }
                         Tab::Info => {
                             // No automatic polling for Info tab - data is loaded once when tab is first accessed
-                    }
-                    Tab::Cluster => {
+                        }
+                        Tab::Cluster => {
                             // No automatic polling for Cluster tab - data is static and retrieved at startup
-                    }
-                    Tab::Stats => {
+                        }
+                        Tab::Stats => {
                             // No background polling for stats
                         }
                     }

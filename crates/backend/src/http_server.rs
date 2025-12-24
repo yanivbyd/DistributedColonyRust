@@ -64,7 +64,7 @@ fn build_http_bind_addr(port: u16) -> String {
     format!("{}:{}", HTTP_BIND_HOST, port)
 }
 
-fn record_http_latency(endpoint: &str, latency_ms: f64, shard_id: &str) {
+fn record_http_latency(endpoint: &str, latency_ms: f64) {
     // Determine which stats to update based on endpoint
     let is_image = endpoint.contains("/image");
     let stats = if is_image {
@@ -74,9 +74,9 @@ fn record_http_latency(endpoint: &str, latency_ms: f64, shard_id: &str) {
     };
     
     // Log all requests for debugging/visibility
-    let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
-    log!("Backend HTTP request: endpoint={}, latency_ms={:.2}, shard_id={}, host={}", 
-         endpoint, latency_ms, shard_id, backend_host);
+    // let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
+    // log!("Backend HTTP request: endpoint={}, latency_ms={:.2}, shard_id={}, host={}", 
+    //      endpoint, latency_ms, shard_id, backend_host);
     
     // Update stats
     let mut stats_guard = stats.lock().unwrap();
@@ -304,7 +304,7 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
             let _ = stream.write_all(response.as_bytes()).await;
             let latency = start_total.elapsed();
             let latency_ms = latency.as_secs_f64() * 1000.0;
-            record_http_latency(endpoint, latency_ms, shard_id);
+            record_http_latency(endpoint, latency_ms);
             return;
         }
     };
@@ -320,7 +320,7 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
         let _ = stream.write_all(response.as_bytes()).await;
         let latency = start_total.elapsed();
         let latency_ms = latency.as_secs_f64() * 1000.0;
-        record_http_latency(endpoint, latency_ms, shard_id);
+        record_http_latency(endpoint, latency_ms);
         return;
     }
     
@@ -354,8 +354,8 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
     };
     
     // Network Write (with gzip compression)
-    let start_network = Instant::now();
-    let bytes_sent = if let Some(rgb_bytes) = rgb_bytes {
+    // let start_network = Instant::now();
+    if let Some(rgb_bytes) = rgb_bytes {
         // Compress rgb_bytes with gzip
         let uncompressed_len = rgb_bytes.len();
         let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
@@ -395,7 +395,7 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
             }
         };
 
-        let compressed_len = compressed_bytes.len();
+        // let compressed_len = compressed_bytes.len();
         let body_bytes = &compressed_bytes[..];
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
@@ -404,27 +404,27 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
         let header_bytes = response.as_bytes();
         if let Err(e) = stream.write_all(header_bytes).await {
             log_error!("Failed to write shard image response header: {}", e);
-            let network_write_ms = start_network.elapsed().as_secs_f64() * 1000.0;
-            let bytes_sent = header_bytes.len();
+            // let network_write_ms = start_network.elapsed().as_secs_f64() * 1000.0;
+            // let bytes_sent = header_bytes.len();
             let latency = start_total.elapsed();
             let latency_ms = latency.as_secs_f64() * 1000.0;
-            record_http_latency(endpoint, latency_ms, shard_id);
+            record_http_latency(endpoint, latency_ms);
 
             // Log breakdown for this request even on error
-            let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
-            let content_encoding = "gzip";
-            log!(
-                "Backend HTTP request breakdown: endpoint={}, shard_id={}, host={}, total_ms={:.2}, network_write_ms={:.2}, bytes_sent={}, uncompressed_bytes={}, compressed_bytes={}, content_encoding={}",
-                endpoint,
-                shard_id,
-                backend_host,
-                latency_ms,
-                network_write_ms,
-                bytes_sent,
-                uncompressed_len,
-                compressed_len,
-                content_encoding
-            );
+            // let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
+            // let content_encoding = "gzip";
+            // log!(
+            //     "Backend HTTP request breakdown: endpoint={}, shard_id={}, host={}, total_ms={:.2}, network_write_ms={:.2}, bytes_sent={}, uncompressed_bytes={}, compressed_bytes={}, content_encoding={}",
+            //     endpoint,
+            //     shard_id,
+            //     backend_host,
+            //     latency_ms,
+            //     network_write_ms,
+            //     bytes_sent,
+            //     uncompressed_len,
+            //     compressed_len,
+            //     content_encoding
+            // );
             return;
         }
         let mut bytes_sent = header_bytes.len();
@@ -445,25 +445,25 @@ async fn handle_get_shard_image(stream: &mut tokio::net::TcpStream, shard_id: &s
         let _ = stream.write_all(response_bytes).await;
         response_bytes.len()
     };
-    let network_write_ms = start_network.elapsed().as_secs_f64() * 1000.0;
+    // let network_write_ms = start_network.elapsed().as_secs_f64() * 1000.0;
     
     // Record latency (existing behavior)
     let total_ms = start_total.elapsed().as_secs_f64() * 1000.0;
-    record_http_latency(endpoint, total_ms, shard_id);
+    record_http_latency(endpoint, total_ms);
     
     // Log detailed breakdown for all requests, including effective content encoding
-    let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
-    let content_encoding = "gzip";
-    log!(
-        "Backend HTTP request breakdown: endpoint={}, shard_id={}, host={}, total_ms={:.2}, network_write_ms={:.2}, bytes_sent={}, content_encoding={}",
-        endpoint,
-        shard_id,
-        backend_host,
-        total_ms,
-        network_write_ms,
-        bytes_sent,
-        content_encoding
-    );
+    // let backend_host = format!("{}:{}", get_backend_hostname(), get_backend_port());
+    // let content_encoding = "gzip";
+    // log!(
+    //     "Backend HTTP request breakdown: endpoint={}, shard_id={}, host={}, total_ms={:.2}, network_write_ms={:.2}, bytes_sent={}, content_encoding={}",
+    //     endpoint,
+    //     shard_id,
+    //     backend_host,
+    //     total_ms,
+    //     network_write_ms,
+    //     bytes_sent,
+    //     content_encoding
+    // );
 }
 
 async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &str, layer_name: &str) {
@@ -483,7 +483,7 @@ async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &s
             let _ = stream.write_all(response.as_bytes()).await;
             let latency = start.elapsed();
             let latency_ms = latency.as_secs_f64() * 1000.0;
-            record_http_latency(&endpoint, latency_ms, shard_id);
+            record_http_latency(&endpoint, latency_ms);
             return;
         }
     };
@@ -501,7 +501,7 @@ async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &s
             let _ = stream.write_all(response.as_bytes()).await;
             let latency = start.elapsed();
             let latency_ms = latency.as_secs_f64() * 1000.0;
-            record_http_latency(&endpoint, latency_ms, shard_id);
+            record_http_latency(&endpoint, latency_ms);
             return;
         }
     };
@@ -517,7 +517,7 @@ async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &s
         let _ = stream.write_all(response.as_bytes()).await;
         let latency = start.elapsed();
         let latency_ms = latency.as_secs_f64() * 1000.0;
-        record_http_latency(&endpoint, latency_ms, shard_id);
+        record_http_latency(&endpoint, latency_ms);
         return;
     }
     
@@ -613,6 +613,6 @@ async fn handle_get_shard_layer(stream: &mut tokio::net::TcpStream, shard_id: &s
     // Record latency
     let latency = start.elapsed();
     let latency_ms = latency.as_secs_f64() * 1000.0;
-    record_http_latency(&endpoint, latency_ms, shard_id);
+    record_http_latency(&endpoint, latency_ms);
 }
 

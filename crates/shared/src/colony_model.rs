@@ -23,6 +23,7 @@ pub struct Cell {
 
     // Creature 
     pub color: Color,
+    pub original_color: Color,
     pub health: u16,
     pub age: u16,
 

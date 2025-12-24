@@ -8,7 +8,7 @@ use shared::cluster_topology::{ClusterTopology, HostInfo};
 use std::time::{Duration, Instant};
 use std::sync::Arc;
 use crate::latency_tracker::{LatencyTracker, OperationKey, OperationType};
-use shared::{log, log_error};
+use shared::{log_error};
 use futures::future::join_all;
 
 pub fn get_all_shard_retained_images(config: &crate::ShardConfig, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>, backend_http_info: &std::collections::HashMap<HostInfo, (String, u16)>) -> Vec<Option<RetainedImage>> {
@@ -26,7 +26,7 @@ pub fn get_all_shard_retained_images(config: &crate::ShardConfig, topology: &Clu
     
     // Create tokio runtime for parallel async fetching
     let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
+    let result = rt.block_on(async {
         let futures: Vec<_> = shard_hosts.iter().map(|(shard, host_info)| {
             let shard = *shard;
             let host_info = host_info.clone();
@@ -42,7 +42,8 @@ pub fn get_all_shard_retained_images(config: &crate::ShardConfig, topology: &Clu
             .into_iter()
             .map(|result| result.unwrap_or(None))
             .collect()
-    })
+    });
+    result
 }
 
 async fn get_shard_retained_image_with_host_async(shard: Shard, host_info: HostInfo, latency_tracker: &LatencyTracker, backend_http_info: &std::collections::HashMap<HostInfo, (String, u16)>) -> Option<RetainedImage> {
@@ -124,17 +125,17 @@ async fn get_shard_retained_image_with_host_async(shard: Shard, host_info: HostI
         }
         
         let img = color_vec_to_image(&colors, width, height);
-        log!(
-            "GUI HTTP success: operation=GetShardImage, shard_id={}, host={}:{}, url={}, duration_ms={:.2}, bytes_received={}, content_length={}, content_encoding={}",
-            shard_id,
-            host_info.hostname,
-            host_info.port,
-            url,
-            latency.as_secs_f64() * 1000.0,
-            rgb_bytes.len(),
-            content_length,
-            content_encoding
-        );
+        // log!(
+        //     "GUI HTTP success: operation=GetShardImage, shard_id={}, host={}:{}, url={}, duration_ms={:.2}, bytes_received={}, content_length={}, content_encoding={}",
+        //     shard_id,
+        //     host_info.hostname,
+        //     host_info.port,
+        //     url,
+        //     latency.as_secs_f64() * 1000.0,
+        //     rgb_bytes.len(),
+        //     content_length,
+        //     content_encoding
+        // );
         Some(RetainedImage::from_color_image("colony_shard", img))
     } else {
         let status = response.status();
@@ -232,9 +233,9 @@ async fn get_shard_layer_data_with_host_async(shard: Shard, layer: ShardLayer, h
     let response = match response {
         Ok(r) => {
             latency_tracker.record_success(key.clone(), latency);
-            let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
-            log!("GUI HTTP success: operation=GetShardLayer, host={}:{}, url={}, duration_ms={:.2}, avg_latency_ms={:.2}",
-                 host_info.hostname, host_info.port, url, latency_ms, avg_latency);
+            // let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
+            // log!("GUI HTTP success: operation=GetShardLayer, host={}:{}, url={}, duration_ms={:.2}, avg_latency_ms={:.2}",
+            //      host_info.hostname, host_info.port, url, latency_ms, avg_latency);
             r
         },
         Err(e) => {
@@ -305,7 +306,7 @@ pub fn get_all_shard_color_data(config: &crate::ShardConfig, topology: &ClusterT
     
     // Create tokio runtime for parallel async fetching
     let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
+    let result = rt.block_on(async {
         let futures: Vec<_> = shard_hosts.iter().map(|(shard, host_info)| {
             let shard = *shard;
             let host_info = host_info.clone();
@@ -321,7 +322,8 @@ pub fn get_all_shard_color_data(config: &crate::ShardConfig, topology: &ClusterT
             .into_iter()
             .map(|result| result.unwrap_or(None))
             .collect()
-    })
+    });
+    result
 }
 
 
@@ -345,17 +347,17 @@ async fn get_shard_color_data_with_host_async(shard: Shard, host_info: HostInfo,
     let response = match response_result {
         Ok(r) => {
             latency_tracker.record_success(key.clone(), latency);
-            let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
-            let content_length = r.content_length().unwrap_or(0);
-            log!(
-                "GUI HTTP success: operation=GetShardImage, host={}:{}, url={}, duration_ms={:.2}, avg_latency_ms={:.2}, content_length={}",
-                host_info.hostname,
-                host_info.port,
-                url,
-                latency_ms,
-                avg_latency,
-                content_length
-            );
+            // let avg_latency = latency_tracker.get_node_stats(&host_info).avg_latency_ms.unwrap_or(0.0);
+            // let content_length = r.content_length().unwrap_or(0);
+            // log!(
+            //     "GUI HTTP success: operation=GetShardImage, host={}:{}, url={}, duration_ms={:.2}, avg_latency_ms={:.2}, content_length={}",
+            //     host_info.hostname,
+            //     host_info.port,
+            //     url,
+            //     latency_ms,
+            //     avg_latency,
+            //     content_length
+            // );
             r
         },
         Err(e) => {
