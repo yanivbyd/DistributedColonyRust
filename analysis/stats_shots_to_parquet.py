@@ -246,6 +246,59 @@ def _summarize_boolean_hist(
     }
 
 
+def _summarize_original_color_hist(hist: Dict[str, Any], top_n: int = 5) -> Dict[str, Any]:
+    """
+    Summarize the original_color string histogram.
+    Extracts the top N colors by count and stores them as separate columns.
+    
+    Args:
+        hist: Histogram dict with 'distribution', 'was_cut', 'unique_values_count'
+        top_n: Number of top colors to extract (default 5)
+    """
+    dist = hist.get("distribution") or {}
+    was_cut = hist.get("was_cut", False)
+    unique_count = hist.get("unique_values_count")
+    
+    # Sort colors by count (descending) and take top N
+    color_counts: List[Tuple[str, int]] = []
+    for color_str, count in dist.items():
+        try:
+            count_int = int(count)
+            if count_int > 0:
+                color_counts.append((color_str, count_int))
+        except (TypeError, ValueError):
+            continue
+    
+    # Sort by count descending
+    color_counts.sort(key=lambda x: x[1], reverse=True)
+    top_colors = color_counts[:top_n]
+    
+    result: Dict[str, Any] = {
+        "original_color_was_cut": was_cut,
+        "original_color_unique_values_count": unique_count,
+    }
+    
+    # Store top N colors and their counts
+    for i, (color_str, count) in enumerate(top_colors, start=1):
+        result[f"original_color_top{i}"] = color_str
+        result[f"original_color_top{i}_count"] = count
+    
+    # Fill in None for missing top colors if we have fewer than top_n
+    for i in range(len(top_colors) + 1, top_n + 1):
+        result[f"original_color_top{i}"] = None
+        result[f"original_color_top{i}_count"] = None
+    
+    # Also store the dominant color (top 1) for convenience
+    if top_colors:
+        result["original_color_dominant"] = top_colors[0][0]
+        result["original_color_dominant_count"] = top_colors[0][1]
+    else:
+        result["original_color_dominant"] = None
+        result["original_color_dominant_count"] = None
+    
+    return result
+
+
 def snapshot_to_row(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     """
     Convert a single stats JSON snapshot into a flat row dict following the Parquet schema.
@@ -275,6 +328,9 @@ def snapshot_to_row(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     # Boolean histograms
     can_kill_hist = hists.get("can_kill") or {}
     can_move_hist = hists.get("can_move") or {}
+    
+    # String histogram (original_color)
+    original_color_hist = hists.get("original_color") or {}
 
     # Process all histograms
     row.update(_summarize_creature_size(creature_size_hist))
@@ -283,6 +339,7 @@ def snapshot_to_row(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     row.update(_summarize_numeric_hist(age_hist, "age", use_hist_average=True))
     row.update(_summarize_boolean_hist(can_kill_hist, prefix="can_kill"))
     row.update(_summarize_boolean_hist(can_move_hist, prefix="can_move"))
+    row.update(_summarize_original_color_hist(original_color_hist, top_n=5))
 
     return row
 

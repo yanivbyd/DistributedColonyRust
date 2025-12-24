@@ -75,6 +75,7 @@ pub enum StatMetric {
     CanMove,
     Food,
     Age,
+    OriginalColor,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -84,9 +85,16 @@ pub struct StatBucket {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct StringStatBucket {
+    pub value: String,
+    pub occs: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ShardStatResult {
     pub shard: Shard,
     pub metrics: Vec<(StatMetric, Vec<StatBucket>)>,
+    pub string_metrics: Vec<(StatMetric, Vec<StringStatBucket>)>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

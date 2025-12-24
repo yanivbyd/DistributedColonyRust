@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::colony_shard::{ColonyShard, is_blank};
-use shared::{be_api::{Cell, ColonyLifeRules, Color, Shard, Traits, UpdatedShardContentsRequest, ShardLayer, StatMetric, ShardStatResult, StatBucket}};
+use shared::{be_api::{Cell, ColonyLifeRules, Color, Shard, Traits, UpdatedShardContentsRequest, ShardLayer, StatMetric, ShardStatResult, StatBucket, StringStatBucket}};
 use shared::log;
 use rand::rngs::SmallRng;
 
@@ -28,6 +28,27 @@ impl ShardUtils {
         }
         counts.into_iter().map(|(value, occs)| StatBucket { value, occs }).collect()
     }
+
+    #[inline]
+    fn accumulate_string_counts<F>(shard: &ColonyShard, mapper: F, include_blank_cells: bool) -> Vec<StringStatBucket>
+    where
+        F: Fn(&Cell) -> String,
+    {
+        let width = shard.shard.width as usize;
+        let height = shard.shard.height as usize;
+        let row_size = width + 2;
+        let mut counts: BTreeMap<String, u64> = BTreeMap::new();
+        for row_iter in 1..=height {
+            let start = row_iter * row_size + 1;
+            let end = start + width;
+            for cell in &shard.grid[start..end] {
+                if !include_blank_cells && cell.health == 0 { continue; }
+                let value = mapper(cell);
+                *counts.entry(value).or_insert(0) += 1;
+            }
+        }
+        counts.into_iter().map(|(value, occs)| StringStatBucket { value, occs }).collect()
+    }
     fn copy_cell_creature_data(dst: &mut Cell, src: &Cell, tick_bit: bool) {
         if dst.health > 0 && src.health == 0 { return; } // don't remove creatures from another shard
         dst.color = src.color;
@@ -45,20 +66,49 @@ impl ShardUtils {
             return None;
         }
 
-        let mut metric_buckets: Vec<(StatMetric, Vec<StatBucket>)> = Vec::with_capacity(stats.len());
+        let mut metric_buckets: Vec<(StatMetric, Vec<StatBucket>)> = Vec::new();
+        let mut string_metric_buckets: Vec<(StatMetric, Vec<StringStatBucket>)> = Vec::new();
+        
         for stat in stats.iter().copied() {
-            let buckets = match stat {
-                StatMetric::Health => Self::accumulate_counts(shard, |c| c.health as i32, false),
-                StatMetric::Size => Self::accumulate_counts(shard, |c| c.traits.size as i32, false),
-                StatMetric::CanKill => Self::accumulate_counts(shard, |c| if c.traits.can_kill { 1 } else { 0 }, false),
-                StatMetric::CanMove => Self::accumulate_counts(shard, |c| if c.traits.can_move { 1 } else { 0 }, false),
-                StatMetric::Food => Self::accumulate_counts(shard, |c| c.food as i32, true),
-                StatMetric::Age => Self::accumulate_counts(shard, |c| c.age as i32, false),
-            };
-            metric_buckets.push((stat, buckets));
+            match stat {
+                StatMetric::Health => {
+                    let buckets = Self::accumulate_counts(shard, |c| c.health as i32, false);
+                    metric_buckets.push((stat, buckets));
+                }
+                StatMetric::Size => {
+                    let buckets = Self::accumulate_counts(shard, |c| c.traits.size as i32, false);
+                    metric_buckets.push((stat, buckets));
+                }
+                StatMetric::CanKill => {
+                    let buckets = Self::accumulate_counts(shard, |c| if c.traits.can_kill { 1 } else { 0 }, false);
+                    metric_buckets.push((stat, buckets));
+                }
+                StatMetric::CanMove => {
+                    let buckets = Self::accumulate_counts(shard, |c| if c.traits.can_move { 1 } else { 0 }, false);
+                    metric_buckets.push((stat, buckets));
+                }
+                StatMetric::Food => {
+                    let buckets = Self::accumulate_counts(shard, |c| c.food as i32, true);
+                    metric_buckets.push((stat, buckets));
+                }
+                StatMetric::Age => {
+                    let buckets = Self::accumulate_counts(shard, |c| c.age as i32, false);
+                    metric_buckets.push((stat, buckets));
+                }
+                StatMetric::OriginalColor => {
+                    let buckets = Self::accumulate_string_counts(shard, |c| {
+                        format!("{}_{}_{}", c.original_color.red, c.original_color.green, c.original_color.blue)
+                    }, false);
+                    string_metric_buckets.push((stat, buckets));
+                }
+            }
         }
 
-        Some(vec![ShardStatResult { shard: shard.shard.clone(), metrics: metric_buckets }])
+        Some(vec![ShardStatResult { 
+            shard: shard.shard.clone(), 
+            metrics: metric_buckets,
+            string_metrics: string_metric_buckets,
+        }])
     }
 
     pub fn new_colony_shard(shard: &Shard, colony_life_rules: &ColonyLifeRules, rng: &mut SmallRng) -> ColonyShard {

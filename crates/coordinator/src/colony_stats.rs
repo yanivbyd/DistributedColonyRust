@@ -34,6 +34,15 @@ pub struct HistogramWithAverage {
 }
 
 #[derive(Serialize)]
+pub struct HistogramWithoutAverage {
+    pub distribution: BTreeMap<String, u64>,
+    #[serde(rename = "was_cut")]
+    pub was_cut: bool,
+    #[serde(rename = "unique_values_count")]
+    pub unique_values_count: usize,
+}
+
+#[derive(Serialize)]
 pub struct Histograms {
     #[serde(rename = "health")]
     pub health: HistogramWithAverage,
@@ -47,6 +56,8 @@ pub struct Histograms {
     pub food: HistogramWithAverage,
     #[serde(rename = "age")]
     pub age: HistogramWithAverage,
+    #[serde(rename = "original_color")]
+    pub original_color: HistogramWithoutAverage,
 }
 
 /// Get all StatMetric variants
@@ -62,6 +73,7 @@ pub fn all_stat_metrics() -> Vec<StatMetric> {
         StatMetric::CanMove,
         StatMetric::Food,
         StatMetric::Age,
+        StatMetric::OriginalColor,
     ]
 }
 
@@ -84,6 +96,7 @@ pub fn enumerate_all_stat_metric_variants() -> Vec<StatMetric> {
             StatMetric::CanMove => StatMetric::CanMove,
             StatMetric::Food => StatMetric::Food,
             StatMetric::Age => StatMetric::Age,
+            StatMetric::OriginalColor => StatMetric::OriginalColor,
         }
     };
     
@@ -95,6 +108,7 @@ pub fn enumerate_all_stat_metric_variants() -> Vec<StatMetric> {
         StatMetric::CanMove,
         StatMetric::Food,
         StatMetric::Age,
+        StatMetric::OriginalColor,
     ]
 }
 
@@ -188,6 +202,7 @@ async fn collect_statistics(
             StatMetric::CanMove => 3,
             StatMetric::Food => 4,
             StatMetric::Age => 5,
+            StatMetric::OriginalColor => 6,
         }
     }
     
@@ -198,15 +213,24 @@ async fn collect_statistics(
     
     let mut missing_shards = Vec::new();
     let mut counts_per_metric: Vec<BTreeMap<i32, u64>> = vec![BTreeMap::new(); metrics.len()];
+    let mut string_counts_per_metric: Vec<BTreeMap<String, u64>> = vec![BTreeMap::new(); metrics.len()];
     
     for shard in shards {
         match backend_client::call_backend_get_shard_stats(*shard, metrics.clone()) {
-            Some((_tick, per_metric)) => {
+            Some((_tick, per_metric, per_string_metric)) => {
                 for (_metric_idx, (metric, buckets)) in per_metric.into_iter().enumerate() {
                     if let Some(&pos) = pos_by_id.get(&metric_id(metric)) {
                         let entry = counts_per_metric.get_mut(pos).unwrap();
                         for b in buckets {
                             *entry.entry(b.value).or_insert(0) += b.occs;
+                        }
+                    }
+                }
+                for (_metric_idx, (metric, buckets)) in per_string_metric.into_iter().enumerate() {
+                    if let Some(&pos) = pos_by_id.get(&metric_id(metric)) {
+                        let entry = string_counts_per_metric.get_mut(pos).unwrap();
+                        for b in buckets {
+                            *entry.entry(b.value.clone()).or_insert(0) += b.occs;
                         }
                     }
                 }
@@ -225,6 +249,7 @@ async fn collect_statistics(
     let mut can_move_idx = None;
     let mut food_idx = None;
     let mut age_idx = None;
+    let mut original_color_idx = None;
     
     for (idx, metric) in metrics.iter().enumerate() {
         match metric {
@@ -234,6 +259,7 @@ async fn collect_statistics(
             StatMetric::CanMove => can_move_idx = Some(idx),
             StatMetric::Food => food_idx = Some(idx),
             StatMetric::Age => age_idx = Some(idx),
+            StatMetric::OriginalColor => original_color_idx = Some(idx),
         }
     }
     
@@ -277,6 +303,11 @@ async fn collect_statistics(
         age: age_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_else(|| HistogramWithAverage {
             distribution: BTreeMap::new(),
             average: 0.0,
+            was_cut: false,
+            unique_values_count: 0,
+        }),
+        original_color: original_color_idx.map(|idx| build_string_histogram(&string_counts_per_metric[idx])).unwrap_or_else(|| HistogramWithoutAverage {
+            distribution: BTreeMap::new(),
             was_cut: false,
             unique_values_count: 0,
         }),
@@ -349,6 +380,35 @@ fn build_histogram(counts: &BTreeMap<i32, u64>, is_boolean: bool) -> HistogramWi
     HistogramWithAverage {
         distribution: hist,
         average,
+        was_cut,
+        unique_values_count,
+    }
+}
+
+fn build_string_histogram(counts: &BTreeMap<String, u64>) -> HistogramWithoutAverage {
+    // Filter: only include counts >= MIN_HISTOGRAM_COUNT, then take top 20 by count
+    let mut filtered: Vec<(String, u64)> = counts
+        .iter()
+        .filter(|(_, &count)| count >= MIN_HISTOGRAM_COUNT)
+        .map(|(value, &count)| (value.clone(), count))
+        .collect();
+    
+    // Record the number of unique values before cutting to top 20
+    let unique_values_count = filtered.len();
+    let was_cut = unique_values_count > TOP_VALUES_LIMIT;
+    
+    // Sort by count descending, then take top 20
+    filtered.sort_by(|a, b| b.1.cmp(&a.1));
+    filtered.truncate(TOP_VALUES_LIMIT);
+    
+    // Build histogram map
+    let mut hist = BTreeMap::new();
+    for (value, count) in filtered {
+        hist.insert(value, count);
+    }
+    
+    HistogramWithoutAverage {
+        distribution: hist,
         was_cut,
         unique_values_count,
     }

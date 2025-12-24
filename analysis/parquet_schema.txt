@@ -71,10 +71,29 @@ Can Move (Boolean) Histogram Fields
 - can_move_was_cut (boolean): Whether the histogram was truncated
 - can_move_unique_values_count (integer): Number of unique values (should be 2 for boolean)
 
+Original Color (String) Histogram Fields
+-----------------------------------------
+- original_color_dominant (string): The most common original color in format "R_G_B" (e.g., "255_128_64")
+- original_color_dominant_count (integer): Number of creatures with the dominant original color
+- original_color_top1 (string): Top 1 original color by count (same as dominant)
+- original_color_top1_count (integer): Count for top 1 color
+- original_color_top2 (string): Top 2 original color by count
+- original_color_top2_count (integer): Count for top 2 color
+- original_color_top3 (string): Top 3 original color by count
+- original_color_top3_count (integer): Count for top 3 color
+- original_color_top4 (string): Top 4 original color by count
+- original_color_top4_count (integer): Count for top 4 color
+- original_color_top5 (string): Top 5 original color by count
+- original_color_top5_count (integer): Count for top 5 color
+- original_color_was_cut (boolean): Whether the histogram was truncated due to too many unique values
+- original_color_unique_values_count (integer): Number of unique original color values in the distribution
+
 Notes
 -----
 - All float fields may be NULL/None if the histogram is empty or cannot be computed
 - Percentiles (p50, p90, p99) are computed from the distribution data
 - Mean/avg values use the histogram's pre-computed average when available
 - Boolean histograms represent binary traits (can_kill, can_move) as 0/1 counts
+- Original color values are stored as strings in "R_G_B" format where R, G, B are 0-255 integers
+- Top N color fields may be NULL if there are fewer than N unique colors in the distribution
 
