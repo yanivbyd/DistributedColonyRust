@@ -47,7 +47,7 @@ pub struct ShardConfig {
 }
 
 impl ShardConfig {
-    fn from_topology(topology: &ClusterTopology) -> Self {
+    pub fn from_topology(topology: &ClusterTopology) -> Self {
         let width_in_shards = topology.calculate_width_in_shards();
         let height_in_shards = topology.calculate_height_in_shards();
         let shard_width = topology.get_shard_width_from_mapping();
@@ -611,22 +611,28 @@ impl BEImageApp {
         
         // Upload/update a persistent texture and display it
         let texture_options = egui::TextureOptions::LINEAR;
+        let display_width = config.total_width as f32;
+        let display_height = config.total_height as f32;
+        
+        // Update or create texture
         if let Some(tex) = &mut self.combined_texture {
             tex.set(combined_img, texture_options);
-            ui.add(
-                egui::Image::new(&*tex)
-                    .fit_to_exact_size(egui::vec2(800.0, 600.0))
-            );
         } else {
             let tex = ui.ctx().load_texture("combined", combined_img, texture_options);
-            let handle = tex;
-            self.combined_texture = Some(handle);
-            let tex_ref = self.combined_texture.as_ref().unwrap();
-            ui.add(
-                egui::Image::new(tex_ref)
-                    .fit_to_exact_size(egui::vec2(800.0, 600.0))
-            );
+            self.combined_texture = Some(tex);
         }
+        
+        // Wrap in scroll area to allow horizontal and vertical scrolling
+        egui::ScrollArea::both()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| {
+                if let Some(tex) = &self.combined_texture {
+                    ui.add(
+                        egui::Image::new(tex)
+                            .fit_to_exact_size(egui::vec2(display_width, display_height))
+                    );
+                }
+            });
     }
 
     fn show_layer_tab(&mut self, ui: &mut egui::Ui, data: &Arc<Mutex<Vec<Option<Vec<i32>>>>>) {
@@ -1512,7 +1518,34 @@ fn main() -> eframe::Result<()> {
     let backend_http_info_clone = backend_http_info;
     let colony_instance_id_clone = colony_instance_id;
     
-    let options = eframe::NativeOptions::default();
+    // Calculate window size based on colony dimensions
+    let shard_config = ShardConfig::from_topology(topology.as_ref());
+    let canvas_width = shard_config.total_width as f32;
+    let canvas_height = shard_config.total_height as f32;
+    
+    // Add padding for UI elements (tabs, status bar, etc.)
+    const UI_PADDING_WIDTH: f32 = 50.0;
+    const UI_PADDING_HEIGHT: f32 = 150.0;
+    const MAX_WINDOW_WIDTH: f32 = 1200.0;
+    const MAX_WINDOW_HEIGHT: f32 = 900.0;
+    
+    let mut window_width = canvas_width + UI_PADDING_WIDTH;
+    let mut window_height = canvas_height + UI_PADDING_HEIGHT;
+    
+    // Scale down if exceeds maximum while maintaining aspect ratio
+    if window_width > MAX_WINDOW_WIDTH || window_height > MAX_WINDOW_HEIGHT {
+        let scale_w = MAX_WINDOW_WIDTH / window_width;
+        let scale_h = MAX_WINDOW_HEIGHT / window_height;
+        let scale = scale_w.min(scale_h);
+        window_width = window_width * scale;
+        window_height = window_height * scale;
+    }
+    
+    let mut options = eframe::NativeOptions::default();
+    options.viewport = egui::ViewportBuilder::default()
+        .with_inner_size([window_width, window_height])
+        .with_resizable(true);
+    
     eframe::run_native(
         "Colony Viewer",
         options,

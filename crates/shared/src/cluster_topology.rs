@@ -5,8 +5,8 @@ use std::sync::{Arc, OnceLock, RwLock};
 use crate::log;
 
 // Default shard dimensions for first initialization
-const DEFAULT_WIDTH_IN_SHARDS: i32 = 8;
-const DEFAULT_HEIGHT_IN_SHARDS: i32 = 5;
+const DEFAULT_WIDTH_IN_SHARDS: i32 = 5;
+const DEFAULT_HEIGHT_IN_SHARDS: i32 = 4;
 const DEFAULT_SHARD_WIDTH: i32 = 250;
 const DEFAULT_SHARD_HEIGHT: i32 = 250;
 
@@ -449,7 +449,7 @@ impl ClusterTopology {
     }
     
     /// Get width in shards based on deployment mode
-    /// AWS mode: 2 shards, Localhost mode: 8 shards
+    /// AWS mode: 2 shards, Localhost mode: 6 shards
     pub fn width_in_shards_for_mode(deployment_mode: &str) -> i32 {
         match deployment_mode.to_lowercase().as_str() {
             "aws" => 2,
@@ -459,7 +459,7 @@ impl ClusterTopology {
     }
     
     /// Get height in shards based on deployment mode
-    /// AWS mode: 2 shards, Localhost mode: 5 shards
+    /// AWS mode: 2 shards, Localhost mode: 4 shards
     pub fn height_in_shards_for_mode(deployment_mode: &str) -> i32 {
         match deployment_mode.to_lowercase().as_str() {
             "aws" => 2,
