@@ -11,11 +11,6 @@ use crate::latency_tracker::{LatencyTracker, OperationKey, OperationType};
 use shared::{log, log_error};
 use futures::future::join_all;
 
-fn get_shard_endpoint(topology: &ClusterTopology, shard: Shard) -> HostInfo {
-    topology.get_host_for_shard(&shard).cloned().expect("Shard not found in cluster topology")
-}
-
-
 pub fn get_all_shard_retained_images(config: &crate::ShardConfig, topology: &ClusterTopology, latency_tracker: &Arc<LatencyTracker>, backend_http_info: &std::collections::HashMap<HostInfo, (String, u16)>) -> Vec<Option<RetainedImage>> {
     let shards: Vec<Shard> = (0..config.total_shards())
         .map(|i| config.get_shard(i))

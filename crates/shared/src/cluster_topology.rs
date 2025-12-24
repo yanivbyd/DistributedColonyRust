@@ -313,7 +313,7 @@ pub fn start_periodic_discovery(topology: Arc<Mutex<DiscoveredTopology>>) {
         loop {
             timer.tick().await;
             
-            log!("Running periodic topology refresh...");
+            // log!("Running periodic topology refresh...");
             let mut topology_guard = topology.lock().await;
             topology_guard.refresh_topology().await;
             drop(topology_guard);

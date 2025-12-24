@@ -277,8 +277,8 @@ impl ClusterRegistry for SsmClusterRegistry {
                         // Try JSON format first (new format with internal_port and http_port)
                         match parse_address_json(&value) {
                             Some(address) => {
-                                log!("SSM ClusterRegistry: coordinator entry = {} (internal), {} (http)", 
-                                     address.to_internal_address(), address.to_http_address());
+                                // log!("SSM ClusterRegistry: coordinator entry = {} (internal), {} (http)", 
+                                //      address.to_internal_address(), address.to_http_address());
                                 return Some(address);
                             }
                             None => {
@@ -294,8 +294,8 @@ impl ClusterRegistry for SsmClusterRegistry {
                                         let http_port = if port == 8082 { 8083 } else { port };
                                         let ip = parts[0].to_string();
                                         let address = NodeAddress::new(ip.clone(), ip, port, http_port);
-                                        log!("SSM ClusterRegistry: coordinator entry (legacy format IP:port) = {} (internal), {} (http)", 
-                                             address.to_internal_address(), address.to_http_address());
+                                        // log!("SSM ClusterRegistry: coordinator entry (legacy format IP:port) = {} (internal), {} (http)", 
+                                        //      address.to_internal_address(), address.to_http_address());
                                         return Some(address);
                                     }
                                 }
@@ -345,7 +345,7 @@ impl ClusterRegistry for SsmClusterRegistry {
                         }
                     }
                 }
-                log!("SSM ClusterRegistry: discovered {} backend entries", backends.len());
+            // log!("SSM ClusterRegistry: discovered {} backend entries", backends.len());
             }
             Err(err) => {
                 let error_code = err.code();
