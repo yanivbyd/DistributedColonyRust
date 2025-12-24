@@ -4,12 +4,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::colony_start::colony_start_colony;
 use crate::coordinator_context::CoordinatorContext;
 use crate::coordinator_storage::ColonyStatus;
-use crate::backend_client;
 use shared::ssm;
 use shared::cluster_topology::ClusterTopology;
-use shared::coordinator_api::{ColonyEventDescription, ColonyMetricStats};
-use shared::be_api::StatMetric;
-use std::collections::{BTreeMap, HashMap};
+use shared::coordinator_api::ColonyEventDescription;
 use std::fmt::Write;
 
 const HTTP_BIND_HOST: &str = "0.0.0.0";
@@ -110,10 +107,6 @@ pub async fn start_http_server(http_port: u16) {
                             }
                         } else if request.starts_with("GET /api/colony-events") {
                             handle_get_colony_events(&mut stream, &request).await;
-                        } else if request.starts_with("POST /api/colony-stats") {
-                            // Read full request body for POST requests
-                            let body = read_post_body(&mut stream, &request, &buffer[..n]).await;
-                            handle_post_colony_stats(&mut stream, &body).await;
                         } else if request.starts_with("GET /topology") {
                             handle_get_topology(&mut stream).await;
                         } else if request.starts_with("GET /debug-ssm") {
@@ -272,184 +265,6 @@ async fn handle_get_colony_events(stream: &mut tokio::net::TcpStream, request: &
     }
 }
 
-async fn handle_post_colony_stats(stream: &mut tokio::net::TcpStream, body: &str) {
-    // Check if colony is initialized
-    if !is_colony_already_started() {
-        let error_json = r#"{"error":"Colony not initialized"}"#;
-        let response = format!(
-            "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-            error_json.len(),
-            error_json
-        );
-        let _ = stream.write_all(response.as_bytes()).await;
-        return;
-    }
-    
-    // Parse request body
-    #[derive(serde::Deserialize)]
-    struct Request {
-        metrics: Vec<String>,
-    }
-    
-    let request: Request = match serde_json::from_str(body) {
-        Ok(req) => req,
-        Err(e) => {
-            let error_json = format!(r#"{{"error":"Invalid request body: {}"}}"#, e);
-            let response = format!(
-                "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                error_json.len(),
-                error_json
-            );
-            let _ = stream.write_all(response.as_bytes()).await;
-            return;
-        }
-    };
-    
-    // Convert string metrics to StatMetric enum
-    let mut stat_metrics = Vec::new();
-    for metric_str in &request.metrics {
-        let metric = match metric_str.as_str() {
-            "Health" => StatMetric::Health,
-            "CreatureSize" => StatMetric::CreatureSize,
-            "CreateCanKill" => StatMetric::CreateCanKill,
-            "CreateCanMove" => StatMetric::CreateCanMove,
-            "Food" => StatMetric::Food,
-            "Age" => StatMetric::Age,
-            _ => {
-                let error_json = format!(r#"{{"error":"Invalid metric: {}"}}"#, metric_str);
-                let response = format!(
-                    "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                    error_json.len(),
-                    error_json
-                );
-                let _ = stream.write_all(response.as_bytes()).await;
-                return;
-            }
-        };
-        stat_metrics.push(metric);
-    }
-    
-    // Call handler logic (duplicated from coordinator_main since it's not accessible as a module)
-    let (tick_count, metrics) = handle_get_colony_stats_http(stat_metrics).await;
-    
-    // Build JSON response
-    #[derive(serde::Serialize)]
-    struct MetricResponse {
-        metric: String,
-        avg: f64,
-        buckets: Vec<shared::be_api::StatBucket>,
-    }
-    
-    #[derive(serde::Serialize)]
-    struct Response {
-        tick_count: u64,
-        metrics: Vec<MetricResponse>,
-    }
-    
-    let metric_responses: Vec<MetricResponse> = metrics.into_iter().map(|m| {
-        let metric_str = match m.metric {
-            StatMetric::Health => "Health",
-            StatMetric::CreatureSize => "CreatureSize",
-            StatMetric::CreateCanKill => "CreateCanKill",
-            StatMetric::CreateCanMove => "CreateCanMove",
-            StatMetric::Food => "Food",
-            StatMetric::Age => "Age",
-        };
-        MetricResponse {
-            metric: metric_str.to_string(),
-            avg: m.avg,
-            buckets: m.buckets,
-        }
-    }).collect();
-    
-    match serde_json::to_string(&Response { tick_count, metrics: metric_responses }) {
-        Ok(json) => {
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                json.len(),
-                json
-            );
-            if let Err(e) = stream.write_all(response.as_bytes()).await {
-                log_error!("Failed to write colony-stats response: {}", e);
-            }
-        }
-        Err(e) => {
-            let error_json = format!(r#"{{"error":"Failed to serialize stats: {}"}}"#, e);
-            let response = format!(
-                "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                error_json.len(),
-                error_json
-            );
-            let _ = stream.write_all(response.as_bytes()).await;
-            log_error!("Failed to serialize colony stats: {}", e);
-        }
-    }
-}
-
-async fn handle_get_colony_stats_http(metrics: Vec<StatMetric>) -> (u64, Vec<ColonyMetricStats>) {
-    // Aggregate across all shards
-    let topology = match ClusterTopology::get_instance() {
-        Some(t) => t,
-        None => {
-            log_error!("Topology not initialized");
-            return (0, Vec::new());
-        }
-    };
-    let shards = topology.get_all_shards();
-    if shards.is_empty() {
-        return (0, Vec::new());
-    }
-
-    // Prepare index mapping for requested metrics
-    fn metric_id(m: StatMetric) -> u8 {
-        match m {
-            StatMetric::Health => 0,
-            StatMetric::CreatureSize => 1,
-            StatMetric::CreateCanKill => 2,
-            StatMetric::CreateCanMove => 3,
-            StatMetric::Food => 4,
-            StatMetric::Age => 5,
-        }
-    }
-    let mut pos_by_id: HashMap<u8, usize> = HashMap::new();
-    for (idx, m) in metrics.iter().copied().enumerate() {
-        pos_by_id.insert(metric_id(m), idx);
-    }
-    // counts_per_metric: per requested metric (by index) -> value -> occs
-    let mut counts_per_metric: Vec<BTreeMap<i32, u64>> = vec![BTreeMap::new(); metrics.len()];
-
-    let mut min_tick: Option<u64> = None;
-    for shard in shards {
-        if let Some((tick, per_metric)) = backend_client::call_backend_get_shard_stats(shard, metrics.clone()) {
-            min_tick = Some(match min_tick { Some(t) => t.min(tick), None => tick });
-            for (metric, buckets) in per_metric {
-                if let Some(&idx) = pos_by_id.get(&metric_id(metric)) {
-                    let entry = counts_per_metric.get_mut(idx).unwrap();
-                    for b in buckets {
-                        *entry.entry(b.value).or_insert(0) += b.occs;
-                    }
-                }
-            }
-        }
-    }
-
-    // Build ordered results following the requested metrics order
-    let mut results: Vec<ColonyMetricStats> = Vec::with_capacity(metrics.len());
-    for (i, metric) in metrics.into_iter().enumerate() {
-        let counts = std::mem::take(&mut counts_per_metric[i]);
-        let mut sum: i64 = 0;
-        let mut total: i64 = 0;
-        for (value, occs) in &counts {
-            sum += *value as i64 * *occs as i64;
-            total += *occs as i64;
-        }
-        let avg = if total > 0 { sum as f64 / total as f64 } else { 0.0 };
-        let buckets = counts.into_iter().map(|(value, occs)| shared::be_api::StatBucket { value, occs }).collect();
-        results.push(ColonyMetricStats { metric, avg, buckets });
-    }
-
-    (min_tick.unwrap_or(0), results)
-}
 
 async fn handle_get_topology(stream: &mut tokio::net::TcpStream) {
     // Check colony status first

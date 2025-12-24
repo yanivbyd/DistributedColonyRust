@@ -2,8 +2,7 @@
 use eframe::egui;
 use egui_extras::RetainedImage;
 use shared::be_api::{ShardLayer, Shard, Color, ColonyLifeRules};
-use shared::coordinator_api::{ColonyEventDescription, ColonyMetricStats};
-use shared::be_api::StatMetric;
+use shared::coordinator_api::ColonyEventDescription;
 use shared::cluster_topology::{ClusterTopology, HostInfo};
 use std::time::{Duration, Instant};
 use std::sync::Arc;
@@ -496,75 +495,6 @@ pub fn get_colony_events(limit: usize, coordinator_http_info: Option<&(String, u
             events: Vec<ColonyEventDescription>,
         }
         response.json::<Response>().ok().map(|r| r.events)
-    } else {
-        None
-    }
-}
-
-pub fn get_colony_stats(metrics: Vec<StatMetric>, coordinator_http_info: Option<&(String, u16)>) -> Option<(u64, Vec<ColonyMetricStats>)> {
-    let (coordinator_host, http_port) = coordinator_http_info?.clone();
-    
-    // Convert StatMetric enum to string
-    let metric_strings: Vec<String> = metrics.iter().map(|m| {
-        match m {
-            StatMetric::Health => "Health",
-            StatMetric::CreatureSize => "CreatureSize",
-            StatMetric::CreateCanKill => "CreateCanKill",
-            StatMetric::CreateCanMove => "CreateCanMove",
-            StatMetric::Food => "Food",
-            StatMetric::Age => "Age",
-        }.to_string()
-    }).collect();
-    
-    let url = format!("http://{}:{}/api/colony-stats", coordinator_host, http_port);
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_millis(1500))
-        .build()
-        .ok()?;
-    
-    #[derive(serde::Serialize)]
-    struct Request {
-        metrics: Vec<String>,
-    }
-    
-    let request_body = Request { metrics: metric_strings };
-    let response = client.post(&url).json(&request_body).send().ok()?;
-    
-    if response.status().is_success() {
-        #[derive(serde::Deserialize)]
-        struct MetricResponse {
-            metric: String,
-            avg: f64,
-            buckets: Vec<shared::be_api::StatBucket>,
-        }
-        
-        #[derive(serde::Deserialize)]
-        struct Response {
-            tick_count: u64,
-            metrics: Vec<MetricResponse>,
-        }
-        
-        let resp_data = response.json::<Response>().ok()?;
-        
-        // Convert back to StatMetric enum
-        let metric_stats: Vec<ColonyMetricStats> = resp_data.metrics.into_iter().map(|m| {
-            let metric = match m.metric.as_str() {
-                "Health" => StatMetric::Health,
-                "CreatureSize" => StatMetric::CreatureSize,
-                "CreateCanKill" => StatMetric::CreateCanKill,
-                "CreateCanMove" => StatMetric::CreateCanMove,
-                "Food" => StatMetric::Food,
-                "Age" => StatMetric::Age,
-                _ => StatMetric::Health, // Default fallback
-            };
-            ColonyMetricStats {
-                metric,
-                avg: m.avg,
-                buckets: m.buckets,
-            }
-        }).collect();
-        
-        Some((resp_data.tick_count, metric_stats))
     } else {
         None
     }
