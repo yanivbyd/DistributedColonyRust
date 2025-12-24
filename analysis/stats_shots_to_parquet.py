@@ -118,46 +118,66 @@ def list_stats_objects_for_colony(
     return sorted(keys)
 
 
-def _summarize_creature_size(hist: Dict[str, Any]) -> Dict[str, Any]:
+def _summarize_numeric_hist(
+    hist: Dict[str, Any],
+    prefix: str,
+    use_hist_average: bool = True,
+) -> Dict[str, Any]:
     """
-    Compute total count, mean/avg, and a few percentiles over the creature_size histogram.
+    Compute mean/avg and percentiles over a numeric histogram.
+    
+    Args:
+        hist: Histogram dict with 'distribution', 'average', 'was_cut', 'unique_values_count'
+        prefix: Prefix for output column names (e.g., 'creature_size', 'health', 'food', 'age')
+        use_hist_average: If True, use the histogram's 'average' field; otherwise compute from distribution
     """
-    items: List[Tuple[int, int]] = []
-    for k, v in hist.items():
+    dist = hist.get("distribution") or {}
+    hist_avg = hist.get("average")
+    was_cut = hist.get("was_cut", False)
+    unique_count = hist.get("unique_values_count")
+    
+    items: List[Tuple[float, int]] = []
+    for k, v in dist.items():
         try:
-            size = int(k)
+            value = float(k)
             count = int(v)
         except (TypeError, ValueError):
             continue
         if count <= 0:
             continue
-        items.append((size, count))
+        items.append((value, count))
 
     if not items:
-        return {
-            "creature_count": 0,
-            "creature_size_mean": None,
-            "creature_size_avg": None,
-            "creature_size_p50": None,
-            "creature_size_p90": None,
-            "creature_size_p99": None,
+        result = {
+            f"{prefix}_mean": None,
+            f"{prefix}_avg": None,
+            f"{prefix}_p50": None,
+            f"{prefix}_p90": None,
+            f"{prefix}_p99": None,
+            f"{prefix}_was_cut": was_cut,
+            f"{prefix}_unique_values_count": unique_count,
         }
+        return result
 
     items.sort(key=lambda x: x[0])
     total = sum(c for _, c in items)
-    total_weighted = sum(size * count for size, count in items)
+    total_weighted = sum(value * count for value, count in items)
 
-    mean = total_weighted / total if total > 0 else None
+    # Use histogram average if available and requested, otherwise compute from distribution
+    if use_hist_average and hist_avg is not None:
+        mean = float(hist_avg)
+    else:
+        mean = total_weighted / total if total > 0 else None
 
     def percentile(p: float) -> Optional[float]:
         if total <= 0:
             return None
         threshold = total * p
         running = 0
-        for size, count in items:
+        for value, count in items:
             running += count
             if running >= threshold:
-                return float(size)
+                return float(value)
         return float(items[-1][0])
 
     p50 = percentile(0.5)
@@ -165,13 +185,22 @@ def _summarize_creature_size(hist: Dict[str, Any]) -> Dict[str, Any]:
     p99 = percentile(0.99)
 
     return {
-        "creature_count": total,
-        "creature_size_mean": float(mean) if mean is not None else None,
-        "creature_size_avg": float(mean) if mean is not None else None,
-        "creature_size_p50": p50,
-        "creature_size_p90": p90,
-        "creature_size_p99": p99,
+        f"{prefix}_mean": float(mean) if mean is not None else None,
+        f"{prefix}_avg": float(mean) if mean is not None else None,
+        f"{prefix}_p50": p50,
+        f"{prefix}_p90": p90,
+        f"{prefix}_p99": p99,
+        f"{prefix}_was_cut": was_cut,
+        f"{prefix}_unique_values_count": unique_count,
     }
+
+
+def _summarize_creature_size(hist: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Compute mean/avg and percentiles over the creature_size histogram.
+    Uses the new nested histogram structure.
+    """
+    return _summarize_numeric_hist(hist, "creature_size", use_hist_average=True)
 
 
 def _summarize_boolean_hist(
@@ -182,14 +211,19 @@ def _summarize_boolean_hist(
 ) -> Dict[str, Any]:
     """
     Summarize a boolean histogram like:
-      { "0": count_false, "1": count_true }
+      { "distribution": { "0": count_false, "1": count_true }, "average": ..., "was_cut": ..., "unique_values_count": ... }
     """
+    dist = hist.get("distribution") or {}
+    hist_avg = hist.get("average")
+    was_cut = hist.get("was_cut", False)
+    unique_count = hist.get("unique_values_count")
+    
     try:
-        true_count = int(hist.get(true_key, 0))
+        true_count = int(dist.get(true_key, 0))
     except (TypeError, ValueError):
         true_count = 0
     try:
-        false_count = int(hist.get(false_key, 0))
+        false_count = int(dist.get(false_key, 0))
     except (TypeError, ValueError):
         false_count = 0
 
@@ -199,10 +233,16 @@ def _summarize_boolean_hist(
     else:
         frac_true = None
 
+    # Use histogram average if available, otherwise compute from distribution
+    avg = hist_avg if hist_avg is not None else (float(frac_true) if frac_true is not None else None)
+
     return {
         f"{prefix}_true_count": true_count,
         f"{prefix}_false_count": false_count,
         f"{prefix}_true_fraction": float(frac_true) if frac_true is not None else None,
+        f"{prefix}_average": float(avg) if avg is not None else None,
+        f"{prefix}_was_cut": was_cut,
+        f"{prefix}_unique_values_count": unique_count,
     }
 
 
@@ -215,6 +255,7 @@ def snapshot_to_row(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     # Identity & core metadata
     row["colony_id"] = snapshot.get("colony_instance_id")
     row["tick"] = snapshot.get("tick")
+    row["creatures_count"] = snapshot.get("creatures_count")
 
     meta = snapshot.get("meta") or {}
     row["created_at_utc"] = meta.get("created_at_utc")
@@ -222,13 +263,24 @@ def snapshot_to_row(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     row["colony_width"] = meta.get("colony_width")
     row["colony_height"] = meta.get("colony_height")
 
-    # Histograms
+    # Histograms (now with nested structure: { "distribution": {...}, "average": ..., "was_cut": ..., "unique_values_count": ... })
     hists = snapshot.get("histograms") or {}
+    
+    # Numeric histograms
     creature_size_hist = hists.get("creature_size") or {}
+    health_hist = hists.get("health") or {}
+    food_hist = hists.get("food") or {}
+    age_hist = hists.get("age") or {}
+    
+    # Boolean histograms
     can_kill_hist = hists.get("can_kill") or {}
     can_move_hist = hists.get("can_move") or {}
 
+    # Process all histograms
     row.update(_summarize_creature_size(creature_size_hist))
+    row.update(_summarize_numeric_hist(health_hist, "health", use_hist_average=True))
+    row.update(_summarize_numeric_hist(food_hist, "food", use_hist_average=True))
+    row.update(_summarize_numeric_hist(age_hist, "age", use_hist_average=True))
     row.update(_summarize_boolean_hist(can_kill_hist, prefix="can_kill"))
     row.update(_summarize_boolean_hist(can_move_hist, prefix="can_move"))
 

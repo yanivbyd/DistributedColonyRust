@@ -10,30 +10,43 @@ use chrono::Utc;
 
 const BASE_BUCKET_DIR: &str = "output/s3/distributed-colony";
 const MIN_HISTOGRAM_COUNT: u64 = 20;
+const TOP_VALUES_LIMIT: usize = 20;
 
 #[derive(Serialize)]
 pub struct CreatureStatistics {
     #[serde(rename = "colony_instance_id")]
     pub colony_instance_id: String,
     pub tick: u64,
+    #[serde(rename = "creatures_count")]
+    pub creatures_count: u64,
     pub histograms: Histograms,
     pub meta: Metadata,
 }
 
 #[derive(Serialize)]
+pub struct HistogramWithAverage {
+    pub distribution: BTreeMap<String, u64>,
+    pub average: f64,
+    #[serde(rename = "was_cut")]
+    pub was_cut: bool,
+    #[serde(rename = "unique_values_count")]
+    pub unique_values_count: usize,
+}
+
+#[derive(Serialize)]
 pub struct Histograms {
     #[serde(rename = "health")]
-    pub health: BTreeMap<String, u64>,
+    pub health: HistogramWithAverage,
     #[serde(rename = "creature_size")]
-    pub creature_size: BTreeMap<String, u64>,
+    pub creature_size: HistogramWithAverage,
     #[serde(rename = "can_kill")]
-    pub can_kill: BTreeMap<String, u64>,
+    pub can_kill: HistogramWithAverage,
     #[serde(rename = "can_move")]
-    pub can_move: BTreeMap<String, u64>,
+    pub can_move: HistogramWithAverage,
     #[serde(rename = "food")]
-    pub food: BTreeMap<String, u64>,
+    pub food: HistogramWithAverage,
     #[serde(rename = "age")]
-    pub age: BTreeMap<String, u64>,
+    pub age: HistogramWithAverage,
 }
 
 /// Get all StatMetric variants
@@ -224,13 +237,49 @@ async fn collect_statistics(
         }
     }
     
+    // Calculate creatures_count from the CanKill metric
+    let creatures_count = can_kill_idx
+        .and_then(|idx| counts_per_metric.get(idx))
+        .map(|counts| counts.values().sum::<u64>())
+        .unwrap_or(0);
+    
     let histograms = Histograms {
-        health: health_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_default(),
-        creature_size: creature_size_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_default(),
-        can_kill: can_kill_idx.map(|idx| build_histogram(&counts_per_metric[idx], true)).unwrap_or_default(),
-        can_move: can_move_idx.map(|idx| build_histogram(&counts_per_metric[idx], true)).unwrap_or_default(),
-        food: food_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_default(),
-        age: age_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_default(),
+        health: health_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_else(|| HistogramWithAverage {
+            distribution: BTreeMap::new(),
+            average: 0.0,
+            was_cut: false,
+            unique_values_count: 0,
+        }),
+        creature_size: creature_size_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_else(|| HistogramWithAverage {
+            distribution: BTreeMap::new(),
+            average: 0.0,
+            was_cut: false,
+            unique_values_count: 0,
+        }),
+        can_kill: can_kill_idx.map(|idx| build_histogram(&counts_per_metric[idx], true)).unwrap_or_else(|| HistogramWithAverage {
+            distribution: BTreeMap::new(),
+            average: 0.0,
+            was_cut: false,
+            unique_values_count: 0,
+        }),
+        can_move: can_move_idx.map(|idx| build_histogram(&counts_per_metric[idx], true)).unwrap_or_else(|| HistogramWithAverage {
+            distribution: BTreeMap::new(),
+            average: 0.0,
+            was_cut: false,
+            unique_values_count: 0,
+        }),
+        food: food_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_else(|| HistogramWithAverage {
+            distribution: BTreeMap::new(),
+            average: 0.0,
+            was_cut: false,
+            unique_values_count: 0,
+        }),
+        age: age_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_else(|| HistogramWithAverage {
+            distribution: BTreeMap::new(),
+            average: 0.0,
+            was_cut: false,
+            unique_values_count: 0,
+        }),
     };
     
     // Build metadata
@@ -243,33 +292,66 @@ async fn collect_statistics(
     Ok(CreatureStatistics {
         colony_instance_id,
         tick: current_tick,
+        creatures_count,
         histograms,
         meta,
     })
 }
 
-fn build_histogram(counts: &BTreeMap<i32, u64>, is_boolean: bool) -> BTreeMap<String, u64> {
-    let mut hist = BTreeMap::new();
-    
+fn build_histogram(counts: &BTreeMap<i32, u64>, is_boolean: bool) -> HistogramWithAverage {
+    // Calculate average
+    let mut total_value: i64 = 0;
+    let mut total_count: u64 = 0;
     for (&value, &count) in counts.iter() {
-        // Filter: only include counts >= 20
-        if count >= MIN_HISTOGRAM_COUNT {
-            let key = if is_boolean {
-                // Boolean traits: "0" for false, "1" for true
-                if value == 0 {
-                    "0".to_string()
-                } else {
-                    "1".to_string()
-                }
+        total_value += value as i64 * count as i64;
+        total_count += count;
+    }
+    let average = if total_count > 0 {
+        let raw_average = total_value as f64 / total_count as f64;
+        // Round to 3 decimal places
+        (raw_average * 1000.0).round() / 1000.0
+    } else {
+        0.0
+    };
+    
+    // Filter: only include counts >= MIN_HISTOGRAM_COUNT, then take top 20 by count
+    let mut filtered: Vec<(i32, u64)> = counts
+        .iter()
+        .filter(|(_, &count)| count >= MIN_HISTOGRAM_COUNT)
+        .map(|(&value, &count)| (value, count))
+        .collect();
+    
+    // Record the number of unique values before cutting to top 20
+    let unique_values_count = filtered.len();
+    let was_cut = unique_values_count > TOP_VALUES_LIMIT;
+    
+    // Sort by count descending, then take top 20
+    filtered.sort_by(|a, b| b.1.cmp(&a.1));
+    filtered.truncate(TOP_VALUES_LIMIT);
+    
+    // Build histogram map
+    let mut hist = BTreeMap::new();
+    for (value, count) in filtered {
+        let key = if is_boolean {
+            // Boolean traits: "0" for false, "1" for true
+            if value == 0 {
+                "0".to_string()
             } else {
-                // Non-boolean traits: use value as string
-                value.to_string()
-            };
-            hist.insert(key, count);
-        }
+                "1".to_string()
+            }
+        } else {
+            // Non-boolean traits: use value as string
+            value.to_string()
+        };
+        hist.insert(key, count);
     }
     
-    hist
+    HistogramWithAverage {
+        distribution: hist,
+        average,
+        was_cut,
+        unique_values_count,
+    }
 }
 
 fn get_stats_timestamp() -> String {

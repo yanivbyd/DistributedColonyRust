@@ -160,6 +160,46 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             }
+        },
+        {
+            "label": "stats to parquet",
+            "type": "shell",
+            "command": "source venv/bin/activate && python3 analysis/stats_shots_to_parquet.py --colony-id ${input:colonyId}",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        },
+        {
+            "label": "stats to parquet (all colonies)",
+            "type": "shell",
+            "command": "source venv/bin/activate && python3 analysis/stats_shots_to_parquet.py",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "colonyId",
+            "description": "Enter colony ID (e.g., 'mbo')",
+            "default": "mbo",
+            "type": "promptString"
         }
     ]
 }
