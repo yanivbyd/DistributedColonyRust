@@ -157,56 +157,6 @@ async fn render_ssm_state() -> String {
     body
 }
 
-async fn read_post_body(stream: &mut tokio::net::TcpStream, request: &str, initial_buffer: &[u8]) -> String {
-    // Try to extract Content-Length from headers
-    let content_length = request
-        .lines()
-        .find(|line| line.to_lowercase().starts_with("content-length:"))
-        .and_then(|line| {
-            line.split(':')
-                .nth(1)
-                .and_then(|s| s.trim().parse::<usize>().ok())
-        });
-    
-    if let Some(len) = content_length {
-        // Find where body starts (after \r\n\r\n)
-        let body_start = request.find("\r\n\r\n")
-            .or_else(|| request.find("\n\n"))
-            .map(|pos| pos + 4)
-            .unwrap_or(request.len());
-        
-        let body_in_request = if body_start < initial_buffer.len() {
-            String::from_utf8_lossy(&initial_buffer[body_start..]).to_string()
-        } else {
-            String::new()
-        };
-        
-        // If we need more bytes, read them
-        if body_in_request.len() < len {
-            let mut remaining = vec![0u8; len - body_in_request.len()];
-            if let Ok(_) = stream.read_exact(&mut remaining).await {
-                body_in_request + &String::from_utf8_lossy(&remaining)
-            } else {
-                body_in_request
-            }
-        } else {
-            body_in_request[..len.min(body_in_request.len())].to_string()
-        }
-    } else {
-        // No Content-Length, try to read from initial buffer
-        let body_start = request.find("\r\n\r\n")
-            .or_else(|| request.find("\n\n"))
-            .map(|pos| pos + 4)
-            .unwrap_or(request.len());
-        
-        if body_start < initial_buffer.len() {
-            String::from_utf8_lossy(&initial_buffer[body_start..]).to_string()
-        } else {
-            String::new()
-        }
-    }
-}
-
 async fn handle_get_colony_events(stream: &mut tokio::net::TcpStream, request: &str) {
     // Check if colony is initialized
     if !is_colony_already_started() {

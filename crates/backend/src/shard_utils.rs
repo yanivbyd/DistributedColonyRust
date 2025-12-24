@@ -49,9 +49,9 @@ impl ShardUtils {
         for stat in stats.iter().copied() {
             let buckets = match stat {
                 StatMetric::Health => Self::accumulate_counts(shard, |c| c.health as i32, false),
-                StatMetric::CreatureSize => Self::accumulate_counts(shard, |c| c.traits.size as i32, false),
-                StatMetric::CreateCanKill => Self::accumulate_counts(shard, |c| if c.traits.can_kill { 1 } else { 0 }, false),
-                StatMetric::CreateCanMove => Self::accumulate_counts(shard, |c| if c.traits.can_move { 1 } else { 0 }, false),
+                StatMetric::Size => Self::accumulate_counts(shard, |c| c.traits.size as i32, false),
+                StatMetric::CanKill => Self::accumulate_counts(shard, |c| if c.traits.can_kill { 1 } else { 0 }, false),
+                StatMetric::CanMove => Self::accumulate_counts(shard, |c| if c.traits.can_move { 1 } else { 0 }, false),
                 StatMetric::Food => Self::accumulate_counts(shard, |c| c.food as i32, true),
                 StatMetric::Age => Self::accumulate_counts(shard, |c| c.age as i32, false),
             };

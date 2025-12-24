@@ -22,12 +22,67 @@ pub struct CreatureStatistics {
 
 #[derive(Serialize)]
 pub struct Histograms {
+    #[serde(rename = "health")]
+    pub health: BTreeMap<String, u64>,
     #[serde(rename = "creature_size")]
     pub creature_size: BTreeMap<String, u64>,
     #[serde(rename = "can_kill")]
     pub can_kill: BTreeMap<String, u64>,
     #[serde(rename = "can_move")]
     pub can_move: BTreeMap<String, u64>,
+    #[serde(rename = "food")]
+    pub food: BTreeMap<String, u64>,
+    #[serde(rename = "age")]
+    pub age: BTreeMap<String, u64>,
+}
+
+/// Get all StatMetric variants
+/// 
+/// This function must include all variants of StatMetric.
+/// If a new variant is added to StatMetric, it must be added here.
+/// See the test `test_all_stat_metrics_completeness` for validation.
+pub fn all_stat_metrics() -> Vec<StatMetric> {
+    vec![
+        StatMetric::Health,
+        StatMetric::Size,
+        StatMetric::CanKill,
+        StatMetric::CanMove,
+        StatMetric::Food,
+        StatMetric::Age,
+    ]
+}
+
+/// Helper function that enumerates all StatMetric variants using an exhaustive match.
+/// This will cause a compile error if a new variant is added to StatMetric but not handled here.
+/// 
+/// This function serves as the source of truth for all variants - if a new variant is added,
+/// the compiler will force us to update this match statement.
+/// 
+/// This is primarily used for testing to ensure all_stat_metrics() includes all variants.
+#[allow(dead_code)] // Used in tests/test_colony_stats.rs
+pub fn enumerate_all_stat_metric_variants() -> Vec<StatMetric> {
+    // Use a dummy value to force exhaustive matching
+    // If a new variant is added, this match will fail to compile
+    let _exhaustive_check = |m: StatMetric| -> StatMetric {
+        match m {
+            StatMetric::Health => StatMetric::Health,
+            StatMetric::Size => StatMetric::Size,
+            StatMetric::CanKill => StatMetric::CanKill,
+            StatMetric::CanMove => StatMetric::CanMove,
+            StatMetric::Food => StatMetric::Food,
+            StatMetric::Age => StatMetric::Age,
+        }
+    };
+    
+    // Return all variants explicitly (must match the match above)
+    vec![
+        StatMetric::Health,
+        StatMetric::Size,
+        StatMetric::CanKill,
+        StatMetric::CanMove,
+        StatMetric::Food,
+        StatMetric::Age,
+    ]
 }
 
 #[derive(Serialize)]
@@ -108,20 +163,16 @@ async fn collect_statistics(
         .and_then(|shard| backend_client::call_backend_for_tick_count(*shard))
         .ok_or_else(|| "Could not get current tick".to_string())?;
     
-    // Collect histograms for creature_size, can_kill, can_move
-    let metrics = vec![
-        StatMetric::CreatureSize,
-        StatMetric::CreateCanKill,
-        StatMetric::CreateCanMove,
-    ];
+    // Collect histograms for all metrics
+    let metrics = all_stat_metrics();
     
     // Helper to map StatMetric to index
     fn metric_id(m: StatMetric) -> u8 {
         match m {
             StatMetric::Health => 0,
-            StatMetric::CreatureSize => 1,
-            StatMetric::CreateCanKill => 2,
-            StatMetric::CreateCanMove => 3,
+            StatMetric::Size => 1,
+            StatMetric::CanKill => 2,
+            StatMetric::CanMove => 3,
             StatMetric::Food => 4,
             StatMetric::Age => 5,
         }
@@ -154,14 +205,32 @@ async fn collect_statistics(
     }
     
     // Build histograms with filtering (count >= 20)
-    let creature_size_hist = build_histogram(&counts_per_metric[0], false);
-    let can_kill_hist = build_histogram(&counts_per_metric[1], true);
-    let can_move_hist = build_histogram(&counts_per_metric[2], true);
+    // Find indices for each metric we want to include in output
+    let mut health_idx = None;
+    let mut creature_size_idx = None;
+    let mut can_kill_idx = None;
+    let mut can_move_idx = None;
+    let mut food_idx = None;
+    let mut age_idx = None;
+    
+    for (idx, metric) in metrics.iter().enumerate() {
+        match metric {
+            StatMetric::Health => health_idx = Some(idx),
+            StatMetric::Size => creature_size_idx = Some(idx),
+            StatMetric::CanKill => can_kill_idx = Some(idx),
+            StatMetric::CanMove => can_move_idx = Some(idx),
+            StatMetric::Food => food_idx = Some(idx),
+            StatMetric::Age => age_idx = Some(idx),
+        }
+    }
     
     let histograms = Histograms {
-        creature_size: creature_size_hist,
-        can_kill: can_kill_hist,
-        can_move: can_move_hist,
+        health: health_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_default(),
+        creature_size: creature_size_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_default(),
+        can_kill: can_kill_idx.map(|idx| build_histogram(&counts_per_metric[idx], true)).unwrap_or_default(),
+        can_move: can_move_idx.map(|idx| build_histogram(&counts_per_metric[idx], true)).unwrap_or_default(),
+        food: food_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_default(),
+        age: age_idx.map(|idx| build_histogram(&counts_per_metric[idx], false)).unwrap_or_default(),
     };
     
     // Build metadata

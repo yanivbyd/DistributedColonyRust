@@ -70,9 +70,9 @@ pub enum InitColonyResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum StatMetric {
     Health,
-    CreatureSize,
-    CreateCanKill,
-    CreateCanMove,
+    Size,
+    CanKill,
+    CanMove,
     Food,
     Age,
 }
