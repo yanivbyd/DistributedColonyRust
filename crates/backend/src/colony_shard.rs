@@ -144,7 +144,11 @@ impl ColonyShard {
         let creature_templates: Vec<CreatureTemplate> = (0..NUM_RANDOM_CREATURES)
             .map(|_| CreatureTemplate {
                 color: random_color(rng),
-                traits: Traits { size: 18, can_move: true, can_kill: true },
+                traits: Traits { 
+                    size: rng.gen_range(15..20),
+                    can_move: rng.gen_bool(0.5),
+                    can_kill: rng.gen_bool(0.5),
+                },
             })
             .collect();
 
@@ -153,7 +157,7 @@ impl ColonyShard {
                 let template = creature_templates[rng.gen_range(0..creature_templates.len())];
                 self.grid[id].color = template.color;
                 self.grid[id].original_color = template.color;
-                self.grid[id].health = 20;
+                self.grid[id].health = 80;
                 self.grid[id].traits = template.traits;
             }
         }
