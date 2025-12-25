@@ -22,6 +22,9 @@ use shared::logging::{log_startup, init_logging, set_panic_hook};
 use shared::{log_error, log};
 use bincode;
 use futures_util::SinkExt;
+use crate::http_server::start_http_server;
+
+
 #[derive(Debug, Clone, PartialEq)]
 enum DeploymentMode {
     Localhost,
@@ -37,8 +40,6 @@ impl DeploymentMode {
         }
     }
 }
-
-use crate::http_server::start_http_server;
 
 type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
 

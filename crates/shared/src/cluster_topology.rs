@@ -4,11 +4,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock, RwLock};
 use crate::log;
 
-// Default shard dimensions for first initialization
-const DEFAULT_WIDTH_IN_SHARDS: i32 = 5;
-const DEFAULT_HEIGHT_IN_SHARDS: i32 = 4;
-const DEFAULT_SHARD_WIDTH: i32 = 250;
-const DEFAULT_SHARD_HEIGHT: i32 = 250;
+const LOCALHOST_WIDTH_IN_SHARDS: i32 = 5;
+const LOCALHOST_HEIGHT_IN_SHARDS: i32 = 4;
+const AWS_WIDTH_IN_SHARDS: i32 = 3;
+const AWS_HEIGHT_IN_SHARDS: i32 = 4;
+const SHARD_WIDTH: i32 = 250;
+const SHARD_HEIGHT: i32 = 250;
 
 /// Configuration for initializing topology
 #[derive(Debug, Clone)]
@@ -440,21 +441,21 @@ impl ClusterTopology {
     
     /// Get default width in shards for first initialization
     pub fn default_width_in_shards() -> i32 {
-        DEFAULT_WIDTH_IN_SHARDS
+        LOCALHOST_WIDTH_IN_SHARDS
     }
     
     /// Get default height in shards for first initialization
     pub fn default_height_in_shards() -> i32 {
-        DEFAULT_HEIGHT_IN_SHARDS
+        LOCALHOST_HEIGHT_IN_SHARDS
     }
     
     /// Get width in shards based on deployment mode
     /// AWS mode: 2 shards, Localhost mode: 6 shards
     pub fn width_in_shards_for_mode(deployment_mode: &str) -> i32 {
         match deployment_mode.to_lowercase().as_str() {
-            "aws" => 2,
-            "localhost" => DEFAULT_WIDTH_IN_SHARDS,
-            _ => DEFAULT_WIDTH_IN_SHARDS,
+            "aws" => AWS_WIDTH_IN_SHARDS,
+            "localhost" => LOCALHOST_WIDTH_IN_SHARDS,
+            _ => LOCALHOST_WIDTH_IN_SHARDS,
         }
     }
     
@@ -462,20 +463,20 @@ impl ClusterTopology {
     /// AWS mode: 2 shards, Localhost mode: 4 shards
     pub fn height_in_shards_for_mode(deployment_mode: &str) -> i32 {
         match deployment_mode.to_lowercase().as_str() {
-            "aws" => 2,
-            "localhost" => DEFAULT_HEIGHT_IN_SHARDS,
-            _ => DEFAULT_HEIGHT_IN_SHARDS,
+            "aws" => AWS_HEIGHT_IN_SHARDS,
+            "localhost" => LOCALHOST_HEIGHT_IN_SHARDS,
+            _ => LOCALHOST_HEIGHT_IN_SHARDS,
         }
     }
     
     /// Get default shard width for first initialization
     pub fn default_shard_width() -> i32 {
-        DEFAULT_SHARD_WIDTH
+        SHARD_WIDTH
     }
     
     /// Get default shard height for first initialization
     pub fn default_shard_height() -> i32 {
-        DEFAULT_SHARD_HEIGHT
+        SHARD_HEIGHT
     }
     
     pub fn get_all_backend_hosts(&self) -> &Vec<HostInfo> {
