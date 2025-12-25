@@ -79,9 +79,6 @@ pub async fn capture_colony() {
     }
     
     log!("Successfully saved creature image to: {}/{}/images_shots/{}.png", BASE_BUCKET_DIR, instance_id, timestamp);
-    
-    // Also capture statistics snapshot
-    crate::colony_stats::capture_colony_stats().await;
 }
 
 /// Get colony dimensions from topology

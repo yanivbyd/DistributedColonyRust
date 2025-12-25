@@ -285,6 +285,17 @@ async fn main() {
         }
     });
 
+    tokio::spawn(async move {
+        use tokio::time::{interval, Duration};
+        let mut stats_interval = interval(Duration::from_secs(10));
+        stats_interval.tick().await;
+        
+        loop {
+            stats_interval.tick().await;
+            crate::colony_stats::capture_colony_stats().await;
+        }
+    });
+
     loop {
         match listener.accept().await {
             Ok((socket, _)) => {
