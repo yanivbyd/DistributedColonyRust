@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-Stats shots → Parquet converter for Distributed Colony.
+Stats shots and Events → Parquet converter for Distributed Colony.
 
 Responsibilities:
-- Discover colony IDs with stats shots in S3 (or process a single colony when requested).
-- Download and parse stats shot JSON files (plain JSON or gzip-compressed).
-- Normalize them into a wide, analytics-friendly tabular schema (one row per snapshot).
-- Write a per-colony Parquet file under the local `output/bi/<colony_id>/stats.parquet` directory.
-- Optionally upload each Parquet file to S3 under `<colony_id>/stats_parquet/<colony_id>.parquet`.
+- Discover colony IDs with stats shots and events in S3 (or process a single colony when requested).
+- Download and parse stats shot and event JSON files (plain JSON or gzip-compressed).
+- Normalize them into wide, analytics-friendly tabular schemas (one row per snapshot/event).
+- Write per-colony Parquet files under the local `output/bi/<colony_id>/` directory:
+  - `stats.parquet` for stats snapshots
+  - `events.parquet` for colony events
+- Optionally upload each Parquet file to S3 under `<colony_id>/stats_parquet/` and `<colony_id>/events_parquet/`.
 
 Configuration is intentionally simple and mostly hard-coded, matching the spec.
 """
@@ -40,7 +42,9 @@ LOCAL_ANALYTICS_DIR = os.path.join("output", "bi")
 
 # S3 layout for Parquet outputs:
 #   s3://distributed-colony/<colony_id>/stats_parquet/<colony_id>.parquet
-PARQUET_S3_SUBPATH = "stats_parquet"
+#   s3://distributed-colony/<colony_id>/events_parquet/<colony_id>.parquet
+STATS_PARQUET_S3_SUBPATH = "stats_parquet"
+EVENTS_PARQUET_S3_SUBPATH = "events_parquet"
 
 
 # --------------------------
@@ -83,17 +87,18 @@ def list_colony_ids(client, bucket: str, prefix: str) -> List[str]:
     """
     Discover colony IDs from keys shaped like:
       <colony_id>/stats_shots/...
+      <colony_id>/events/...
     """
-    log(f"Listing colony IDs under s3://{bucket}/{prefix or ''} (scanning for '<colony_id>/stats_shots/' prefixes)")
+    log(f"Listing colony IDs under s3://{bucket}/{prefix or ''} (scanning for '<colony_id>/stats_shots/' and '<colony_id>/events/' prefixes)")
     paginator = client.get_paginator("list_objects_v2")
     colony_ids: set[str] = set()
 
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
             key = obj["Key"]
-            # Expect keys like: "<colony_id>/stats_shots/..."
+            # Expect keys like: "<colony_id>/stats_shots/..." or "<colony_id>/events/..."
             parts = key.split("/", 2)
-            if len(parts) >= 2 and parts[1] == "stats_shots":
+            if len(parts) >= 2 and (parts[1] == "stats_shots" or parts[1] == "events"):
                 colony_ids.add(parts[0])
 
     return sorted(colony_ids)
@@ -107,6 +112,25 @@ def list_stats_objects_for_colony(
     """
     # Keys live under "<colony_id>/stats_shots/"
     prefix = f"{colony_id}/stats_shots/"
+    log(f"[{colony_id}] Scanning S3 prefix s3://{bucket}/{prefix}")
+    paginator = client.get_paginator("list_objects_v2")
+    keys: List[str] = []
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            keys.append(obj["Key"])
+
+    return sorted(keys)
+
+
+def list_event_objects_for_colony(
+    client, bucket: str, colony_id: str
+) -> List[str]:
+    """
+    List all event keys for a given colony ID.
+    """
+    # Keys live under "<colony_id>/events/"
+    prefix = f"{colony_id}/events/"
     log(f"[{colony_id}] Scanning S3 prefix s3://{bucket}/{prefix}")
     paginator = client.get_paginator("list_objects_v2")
     keys: List[str] = []
@@ -344,6 +368,242 @@ def snapshot_to_row(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     return row
 
 
+def event_to_row(event: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert a single event JSON into a flat row dict following the Parquet schema.
+    """
+    row: Dict[str, Any] = {}
+
+    # Identity & core metadata
+    row["colony_id"] = event.get("colony_instance_id")
+    row["tick"] = event.get("tick")
+    row["event_type"] = event.get("event_type")
+    row["event_description"] = event.get("event_description")
+
+    # Rules (flattened)
+    rules = event.get("rules") or {}
+    row["rules_health_cost_per_size_unit"] = rules.get("health_cost_per_size_unit")
+    row["rules_eat_capacity_per_size_unit"] = rules.get("eat_capacity_per_size_unit")
+    row["rules_health_cost_if_can_kill"] = rules.get("health_cost_if_can_kill")
+    row["rules_health_cost_if_can_move"] = rules.get("health_cost_if_can_move")
+    row["rules_mutation_chance"] = rules.get("mutation_chance")
+    row["rules_random_death_chance"] = rules.get("random_death_chance")
+
+    # Event data (flattened based on event type)
+    event_data = event.get("event_data")
+    if event_data is None:
+        # ColonyCreated events don't have event_data
+        row["event_data_type"] = None
+        row["event_data_value"] = None
+        row["event_data_region_type"] = None
+        row["event_data_region_x"] = None
+        row["event_data_region_y"] = None
+        row["event_data_region_radius_x"] = None
+        row["event_data_region_radius_y"] = None
+        row["event_data_color_r"] = None
+        row["event_data_color_g"] = None
+        row["event_data_color_b"] = None
+        row["event_data_traits_size"] = None
+        row["event_data_traits_can_kill"] = None
+        row["event_data_traits_can_move"] = None
+        row["event_data_starting_health"] = None
+        row["event_data_new_rules_health_cost_per_size_unit"] = None
+        row["event_data_new_rules_eat_capacity_per_size_unit"] = None
+        row["event_data_new_rules_health_cost_if_can_kill"] = None
+        row["event_data_new_rules_health_cost_if_can_move"] = None
+        row["event_data_new_rules_mutation_chance"] = None
+        row["event_data_new_rules_random_death_chance"] = None
+    elif isinstance(event_data, dict):
+        # Handle different event data structures
+        if "CreateCreature" in event_data:
+            create_data = event_data["CreateCreature"]
+            row["event_data_type"] = "CreateCreature"
+            
+            # Region data
+            region = create_data[0] if isinstance(create_data, list) and len(create_data) > 0 else {}
+            if isinstance(region, dict) and "Ellipse" in region:
+                ellipse = region["Ellipse"]
+                row["event_data_region_type"] = "Ellipse"
+                row["event_data_region_x"] = ellipse.get("x")
+                row["event_data_region_y"] = ellipse.get("y")
+                row["event_data_region_radius_x"] = ellipse.get("radius_x")
+                row["event_data_region_radius_y"] = ellipse.get("radius_y")
+            else:
+                row["event_data_region_type"] = None
+                row["event_data_region_x"] = None
+                row["event_data_region_y"] = None
+                row["event_data_region_radius_x"] = None
+                row["event_data_region_radius_y"] = None
+            
+            # Creature params
+            params = create_data[1] if isinstance(create_data, list) and len(create_data) > 1 else {}
+            if isinstance(params, dict):
+                color = params.get("color") or {}
+                row["event_data_color_r"] = color.get("r") if isinstance(color, dict) else None
+                row["event_data_color_g"] = color.get("g") if isinstance(color, dict) else None
+                row["event_data_color_b"] = color.get("b") if isinstance(color, dict) else None
+                
+                traits = params.get("traits") or {}
+                row["event_data_traits_size"] = traits.get("size") if isinstance(traits, dict) else None
+                row["event_data_traits_can_kill"] = traits.get("can_kill") if isinstance(traits, dict) else None
+                row["event_data_traits_can_move"] = traits.get("can_move") if isinstance(traits, dict) else None
+                row["event_data_starting_health"] = params.get("starting_health")
+            else:
+                row["event_data_color_r"] = None
+                row["event_data_color_g"] = None
+                row["event_data_color_b"] = None
+                row["event_data_traits_size"] = None
+                row["event_data_traits_can_kill"] = None
+                row["event_data_traits_can_move"] = None
+                row["event_data_starting_health"] = None
+            
+            row["event_data_value"] = None
+        elif "ChangeExtraFoodPerTick" in event_data:
+            row["event_data_type"] = "ChangeExtraFoodPerTick"
+            # Convert to string to avoid type conflicts with ChangeColonyRules events
+            row["event_data_value"] = str(event_data["ChangeExtraFoodPerTick"])
+            row["event_data_region_type"] = None
+            row["event_data_region_x"] = None
+            row["event_data_region_y"] = None
+            row["event_data_region_radius_x"] = None
+            row["event_data_region_radius_y"] = None
+            row["event_data_color_r"] = None
+            row["event_data_color_g"] = None
+            row["event_data_color_b"] = None
+            row["event_data_traits_size"] = None
+            row["event_data_traits_can_kill"] = None
+            row["event_data_traits_can_move"] = None
+            row["event_data_starting_health"] = None
+            row["event_data_new_rules_health_cost_per_size_unit"] = None
+            row["event_data_new_rules_eat_capacity_per_size_unit"] = None
+            row["event_data_new_rules_health_cost_if_can_kill"] = None
+            row["event_data_new_rules_health_cost_if_can_move"] = None
+            row["event_data_new_rules_mutation_chance"] = None
+            row["event_data_new_rules_random_death_chance"] = None
+        elif "Extinction" in event_data:
+            row["event_data_type"] = "Extinction"
+            row["event_data_value"] = None
+            row["event_data_region_type"] = None
+            row["event_data_region_x"] = None
+            row["event_data_region_y"] = None
+            row["event_data_region_radius_x"] = None
+            row["event_data_region_radius_y"] = None
+            row["event_data_color_r"] = None
+            row["event_data_color_g"] = None
+            row["event_data_color_b"] = None
+            row["event_data_traits_size"] = None
+            row["event_data_traits_can_kill"] = None
+            row["event_data_traits_can_move"] = None
+            row["event_data_starting_health"] = None
+            row["event_data_new_rules_health_cost_per_size_unit"] = None
+            row["event_data_new_rules_eat_capacity_per_size_unit"] = None
+            row["event_data_new_rules_health_cost_if_can_kill"] = None
+            row["event_data_new_rules_health_cost_if_can_move"] = None
+            row["event_data_new_rules_mutation_chance"] = None
+            row["event_data_new_rules_random_death_chance"] = None
+        elif "NewTopography" in event_data:
+            row["event_data_type"] = "NewTopography"
+            row["event_data_value"] = None
+            row["event_data_region_type"] = None
+            row["event_data_region_x"] = None
+            row["event_data_region_y"] = None
+            row["event_data_region_radius_x"] = None
+            row["event_data_region_radius_y"] = None
+            row["event_data_color_r"] = None
+            row["event_data_color_g"] = None
+            row["event_data_color_b"] = None
+            row["event_data_traits_size"] = None
+            row["event_data_traits_can_kill"] = None
+            row["event_data_traits_can_move"] = None
+            row["event_data_starting_health"] = None
+            row["event_data_new_rules_health_cost_per_size_unit"] = None
+            row["event_data_new_rules_eat_capacity_per_size_unit"] = None
+            row["event_data_new_rules_health_cost_if_can_kill"] = None
+            row["event_data_new_rules_health_cost_if_can_move"] = None
+            row["event_data_new_rules_mutation_chance"] = None
+            row["event_data_new_rules_random_death_chance"] = None
+        elif "ChangeColonyRules" in event_data:
+            row["event_data_type"] = "ChangeColonyRules"
+            change_data = event_data["ChangeColonyRules"]
+            if isinstance(change_data, dict):
+                row["event_data_value"] = change_data.get("description")
+                new_rules = change_data.get("new_rules") or {}
+                # Store new rules in separate columns
+                row["event_data_new_rules_health_cost_per_size_unit"] = new_rules.get("health_cost_per_size_unit")
+                row["event_data_new_rules_eat_capacity_per_size_unit"] = new_rules.get("eat_capacity_per_size_unit")
+                row["event_data_new_rules_health_cost_if_can_kill"] = new_rules.get("health_cost_if_can_kill")
+                row["event_data_new_rules_health_cost_if_can_move"] = new_rules.get("health_cost_if_can_move")
+                row["event_data_new_rules_mutation_chance"] = new_rules.get("mutation_chance")
+                row["event_data_new_rules_random_death_chance"] = new_rules.get("random_death_chance")
+            else:
+                row["event_data_value"] = None
+                row["event_data_new_rules_health_cost_per_size_unit"] = None
+                row["event_data_new_rules_eat_capacity_per_size_unit"] = None
+                row["event_data_new_rules_health_cost_if_can_kill"] = None
+                row["event_data_new_rules_health_cost_if_can_move"] = None
+                row["event_data_new_rules_mutation_chance"] = None
+                row["event_data_new_rules_random_death_chance"] = None
+            row["event_data_region_type"] = None
+            row["event_data_region_x"] = None
+            row["event_data_region_y"] = None
+            row["event_data_region_radius_x"] = None
+            row["event_data_region_radius_y"] = None
+            row["event_data_color_r"] = None
+            row["event_data_color_g"] = None
+            row["event_data_color_b"] = None
+            row["event_data_traits_size"] = None
+            row["event_data_traits_can_kill"] = None
+            row["event_data_traits_can_move"] = None
+            row["event_data_starting_health"] = None
+        else:
+            # Unknown event type - store as JSON string
+            row["event_data_type"] = "Unknown"
+            row["event_data_value"] = json.dumps(event_data) if event_data else None
+            row["event_data_region_type"] = None
+            row["event_data_region_x"] = None
+            row["event_data_region_y"] = None
+            row["event_data_region_radius_x"] = None
+            row["event_data_region_radius_y"] = None
+            row["event_data_color_r"] = None
+            row["event_data_color_g"] = None
+            row["event_data_color_b"] = None
+            row["event_data_traits_size"] = None
+            row["event_data_traits_can_kill"] = None
+            row["event_data_traits_can_move"] = None
+            row["event_data_starting_health"] = None
+            row["event_data_new_rules_health_cost_per_size_unit"] = None
+            row["event_data_new_rules_eat_capacity_per_size_unit"] = None
+            row["event_data_new_rules_health_cost_if_can_kill"] = None
+            row["event_data_new_rules_health_cost_if_can_move"] = None
+            row["event_data_new_rules_mutation_chance"] = None
+            row["event_data_new_rules_random_death_chance"] = None
+    else:
+        # Simple value (e.g., ChangeExtraFoodPerTick as direct value)
+        row["event_data_type"] = None
+        # Convert to string to avoid type conflicts
+        row["event_data_value"] = str(event_data) if event_data is not None else None
+        row["event_data_region_type"] = None
+        row["event_data_region_x"] = None
+        row["event_data_region_y"] = None
+        row["event_data_region_radius_x"] = None
+        row["event_data_region_radius_y"] = None
+        row["event_data_color_r"] = None
+        row["event_data_color_g"] = None
+        row["event_data_color_b"] = None
+        row["event_data_traits_size"] = None
+        row["event_data_traits_can_kill"] = None
+        row["event_data_traits_can_move"] = None
+        row["event_data_starting_health"] = None
+        row["event_data_new_rules_health_cost_per_size_unit"] = None
+        row["event_data_new_rules_eat_capacity_per_size_unit"] = None
+        row["event_data_new_rules_health_cost_if_can_kill"] = None
+        row["event_data_new_rules_health_cost_if_can_move"] = None
+        row["event_data_new_rules_mutation_chance"] = None
+        row["event_data_new_rules_random_death_chance"] = None
+
+    return row
+
+
 # --------------------------
 # Main processing
 # --------------------------
@@ -354,56 +614,90 @@ def process_colony(
     upload: bool,
 ) -> None:
     """
-    Process all stats snapshots for a single colony:
+    Process all stats snapshots and events for a single colony:
     - Download & parse JSON
     - Normalize to rows
-    - Write Parquet locally
-    - Optionally upload Parquet to S3
+    - Write Parquet locally (stats.parquet and events.parquet)
+    - Optionally upload Parquet files to S3
     """
-    keys = list_stats_objects_for_colony(client, BUCKET_NAME, colony_id)
-    if not keys:
-        log(f"[{colony_id}] No stats_shots objects found; skipping.")
-        return
-
-    log(f"[{colony_id}] Found {len(keys)} stats_shots objects.")
-    rows: List[Dict[str, Any]] = []
-
-    for key in keys:
-        log(f"[{colony_id}] Reading {key}")
-        snapshot = read_s3_json(client, BUCKET_NAME, key)
-        row = snapshot_to_row(snapshot)
-        if row.get("colony_id") != colony_id:
-            # Be strict: mismatch between key path and payload colony_id is suspicious.
-            raise ValueError(
-                f"Colony ID mismatch for key {key}: "
-                f"payload colony_instance_id={row.get('colony_id')}, expected {colony_id}"
-            )
-        rows.append(row)
-
-    if not rows:
-        raise RuntimeError(f"[{colony_id}] No rows produced from stats_shots JSON.")
-
     colony_dir = os.path.join(LOCAL_ANALYTICS_DIR, colony_id)
     os.makedirs(colony_dir, exist_ok=True)
-    local_path = os.path.join(colony_dir, "stats.parquet")
 
-    log(f"[{colony_id}] Writing Parquet to {local_path}")
-    df = pd.DataFrame(rows)
-    # Let pandas/pyarrow infer types; we rely on the schema definition in the spec.
-    df.to_parquet(local_path, engine="pyarrow", compression="snappy", index=False)
+    # Process stats snapshots
+    stats_keys = list_stats_objects_for_colony(client, BUCKET_NAME, colony_id)
+    if stats_keys:
+        log(f"[{colony_id}] Found {len(stats_keys)} stats_shots objects.")
+        stats_rows: List[Dict[str, Any]] = []
 
-    if upload:
-        s3_key = f"{colony_id}/{PARQUET_S3_SUBPATH}/{colony_id}.parquet"
-        log(f"[{colony_id}] Uploading Parquet to s3://{BUCKET_NAME}/{s3_key}")
-        client.upload_file(local_path, BUCKET_NAME, s3_key)
+        for key in stats_keys:
+            log(f"[{colony_id}] Reading {key}")
+            snapshot = read_s3_json(client, BUCKET_NAME, key)
+            row = snapshot_to_row(snapshot)
+            if row.get("colony_id") != colony_id:
+                # Be strict: mismatch between key path and payload colony_id is suspicious.
+                raise ValueError(
+                    f"Colony ID mismatch for key {key}: "
+                    f"payload colony_instance_id={row.get('colony_id')}, expected {colony_id}"
+                )
+            stats_rows.append(row)
+
+        if stats_rows:
+            local_path = os.path.join(colony_dir, "stats.parquet")
+            log(f"[{colony_id}] Writing stats Parquet to {local_path}")
+            df = pd.DataFrame(stats_rows)
+            df.to_parquet(local_path, engine="pyarrow", compression="snappy", index=False)
+
+            if upload:
+                s3_key = f"{colony_id}/{STATS_PARQUET_S3_SUBPATH}/{colony_id}.parquet"
+                log(f"[{colony_id}] Uploading stats Parquet to s3://{BUCKET_NAME}/{s3_key}")
+                client.upload_file(local_path, BUCKET_NAME, s3_key)
+            else:
+                log(f"[{colony_id}] Upload disabled; stats Parquet only written locally.")
+        else:
+            log(f"[{colony_id}] No rows produced from stats_shots JSON; skipping stats.parquet.")
     else:
-        log(f"[{colony_id}] Upload disabled; Parquet only written locally.")
+        log(f"[{colony_id}] No stats_shots objects found; skipping stats.parquet.")
+
+    # Process events
+    event_keys = list_event_objects_for_colony(client, BUCKET_NAME, colony_id)
+    if event_keys:
+        log(f"[{colony_id}] Found {len(event_keys)} event objects.")
+        event_rows: List[Dict[str, Any]] = []
+
+        for key in event_keys:
+            log(f"[{colony_id}] Reading {key}")
+            event = read_s3_json(client, BUCKET_NAME, key)
+            row = event_to_row(event)
+            if row.get("colony_id") != colony_id:
+                # Be strict: mismatch between key path and payload colony_id is suspicious.
+                raise ValueError(
+                    f"Colony ID mismatch for key {key}: "
+                    f"payload colony_instance_id={row.get('colony_id')}, expected {colony_id}"
+                )
+            event_rows.append(row)
+
+        if event_rows:
+            local_path = os.path.join(colony_dir, "events.parquet")
+            log(f"[{colony_id}] Writing events Parquet to {local_path}")
+            df = pd.DataFrame(event_rows)
+            df.to_parquet(local_path, engine="pyarrow", compression="snappy", index=False)
+
+            if upload:
+                s3_key = f"{colony_id}/{EVENTS_PARQUET_S3_SUBPATH}/{colony_id}.parquet"
+                log(f"[{colony_id}] Uploading events Parquet to s3://{BUCKET_NAME}/{s3_key}")
+                client.upload_file(local_path, BUCKET_NAME, s3_key)
+            else:
+                log(f"[{colony_id}] Upload disabled; events Parquet only written locally.")
+        else:
+            log(f"[{colony_id}] No rows produced from event JSON; skipping events.parquet.")
+    else:
+        log(f"[{colony_id}] No event objects found; skipping events.parquet.")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Convert stats_shots JSON snapshots from S3 into Parquet for analytics. "
+            "Convert stats_shots JSON snapshots and event JSON files from S3 into Parquet for analytics. "
             "By default processes all colonies; use --colony-id to limit to one."
         )
     )
@@ -418,7 +712,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help=(
             "If set, upload the generated Parquet files to S3 under "
-            "<colony_id>/stats_parquet/<colony_id>.parquet."
+            "<colony_id>/stats_parquet/<colony_id>.parquet and "
+            "<colony_id>/events_parquet/<colony_id>.parquet."
         ),
     )
 
@@ -436,7 +731,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             log(f"Discovered {len(colony_ids)} colony IDs: {', '.join(colony_ids)}")
 
         if not colony_ids:
-            log("No colonies found under stats_shots/; nothing to do.")
+            log("No colonies found under stats_shots/ or events/; nothing to do.")
             return 0
 
         for colony_id in colony_ids:

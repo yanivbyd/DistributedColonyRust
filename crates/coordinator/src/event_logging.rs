@@ -30,6 +30,8 @@ pub struct ColonyCreatedEventJson {
     pub tick: Option<u64>,
     #[serde(rename = "event_type")]
     pub event_type: String,
+    #[serde(rename = "event_description")]
+    pub event_description: String,
     pub rules: ColonyLifeRules,
 }
 
@@ -90,6 +92,7 @@ pub fn write_colony_created_event_json(rules: ColonyLifeRules) -> Result<(), Str
     let event_json = ColonyCreatedEventJson {
         colony_instance_id: instance_id.to_string(),
         event_type: "ColonyCreated".to_string(),
+        event_description: "Colony Created".to_string(),
         tick: Some(1),
         rules,
     };
