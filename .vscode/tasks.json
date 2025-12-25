@@ -176,6 +176,26 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             }
+        },
+        {
+            "label": "BI dashboard",
+            "type": "shell",
+            "command": "source venv/bin/activate && python3 -m streamlit run bi/dashboard.py --server.headless false",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "isBackground": true,
+            "runOptions": {
+                "reevaluateOnRerun": false
+            }
         }
     ],
     "inputs": [
