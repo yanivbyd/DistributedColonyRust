@@ -7,6 +7,7 @@ use shared::utils::new_random_generator;
 use crate::backend_client;
 use crate::tick_monitor::TickMonitor;
 use crate::global_topography::{GlobalTopography, GlobalTopographyInfo};
+use crate::event_logging;
 use std::sync::Mutex;
 use std::collections::HashMap;
 
@@ -94,15 +95,47 @@ fn handle_colony_events(tick_count: u64, next_event_ticks: &mut HashMap<EventFre
                 if matches!(event, shared::colony_events::ColonyEvent::NewTopography()) {
                     // Run async function in a blocking context
                     let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-                    rt.block_on(handle_new_topography_event(colony_width, colony_height));                    
+                    rt.block_on(handle_new_topography_event(colony_width, colony_height));
+                    
+                    // Log event to S3 after topography is generated
+                    let event_description = create_colony_event_description(&event, tick_count);
+                    let rules = CoordinatorContext::get_instance().get_colony_life_rules();
+                    if let Err(e) = event_logging::write_event_json(
+                        &event,
+                        tick_count,
+                        &event_description.event_type,
+                        &event_description.description,
+                        rules,
+                    ) {
+                        shared::log_error!("Failed to write event JSON: {}", e);
+                    }
+                    
                     set_event_pause(tick_count, TOPOGRAPHY_EVENT_PAUSE_TICKS);
                     next_event_ticks.clear();
                 } else {
+                    // Clone event for logging (before broadcasting consumes it)
+                    let event_clone = event.clone();
+                    
                     if let shared::colony_events::ColonyEvent::ChangeColonyRules(rule_change) = &event {
                         CoordinatorContext::get_instance().update_colony_rules(rule_change.new_rules);
                     }
                     
                     backend_client::broadcast_event_to_backends(event);
+                    
+                    // Log event to S3 after event is applied (excluding CreateCreature events)
+                    if !matches!(event_clone, shared::colony_events::ColonyEvent::CreateCreature(_, _)) {
+                        let event_description = create_colony_event_description(&event_clone, tick_count);
+                        let rules = CoordinatorContext::get_instance().get_colony_life_rules();
+                        if let Err(e) = event_logging::write_event_json(
+                            &event_clone,
+                            tick_count,
+                            &event_description.event_type,
+                            &event_description.description,
+                            rules,
+                        ) {
+                            shared::log_error!("Failed to write event JSON: {}", e);
+                        }
+                    }
                 }
                 
                 next_event_ticks.insert(*frequency, tick_count + get_next_event_tick_by_frequency(*frequency, &mut event_rng));

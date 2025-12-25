@@ -9,4 +9,5 @@ pub mod backend_client;
 pub mod tick_monitor;
 pub mod colony_event_generator;
 pub mod colony_stats;
+pub mod event_logging;
 

@@ -15,6 +15,7 @@ use std::time::Duration;
 use std::sync::Arc;
 use crate::coordinator_storage::{CoordinatorStoredInfo, ColonyStatus};
 use crate::coordinator_context::CoordinatorContext;
+use crate::event_logging;
 
 pub const COLONY_LIFE_INITIAL_RULES: ColonyLifeRules = ColonyLifeRules { 
     health_cost_per_size_unit: 2,
@@ -257,6 +258,12 @@ pub async fn initialize_colony() {
     }
     
     log!("Colony initialization completed with status: {:?}", context.get_coord_stored_info().status);
+    
+    // Log colony creation event
+    let rules = context.get_colony_life_rules();
+    if let Err(e) = event_logging::write_colony_created_event_json(rules) {
+        log_error!("Failed to write colony creation event JSON: {}", e);
+    }
     
     // Step 4: Start colony ticking (coordinator ticker + notify all backends)
     start_colony_ticking().await;
