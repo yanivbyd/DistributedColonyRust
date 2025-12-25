@@ -6,7 +6,7 @@ Responsibilities:
 - Discover colony IDs with stats shots in S3 (or process a single colony when requested).
 - Download and parse stats shot JSON files (plain JSON or gzip-compressed).
 - Normalize them into a wide, analytics-friendly tabular schema (one row per snapshot).
-- Write a per-colony Parquet file under the local `output/analytics` directory.
+- Write a per-colony Parquet file under the local `output/bi/<colony_id>/stats.parquet` directory.
 - Optionally upload each Parquet file to S3 under `<colony_id>/stats_parquet/<colony_id>.parquet`.
 
 Configuration is intentionally simple and mostly hard-coded, matching the spec.
@@ -36,7 +36,7 @@ BUCKET_NAME = "distributed-colony"
 STATS_SHOTS_PREFIX = ""  # we derive <colony_id>/stats_shots/ per colony
 
 # Local output directory for Parquet files (created if missing)
-LOCAL_ANALYTICS_DIR = os.path.join("output", "analytics")
+LOCAL_ANALYTICS_DIR = os.path.join("output", "bi")
 
 # S3 layout for Parquet outputs:
 #   s3://distributed-colony/<colony_id>/stats_parquet/<colony_id>.parquet
@@ -383,8 +383,9 @@ def process_colony(
     if not rows:
         raise RuntimeError(f"[{colony_id}] No rows produced from stats_shots JSON.")
 
-    os.makedirs(LOCAL_ANALYTICS_DIR, exist_ok=True)
-    local_path = os.path.join(LOCAL_ANALYTICS_DIR, f"{colony_id}.parquet")
+    colony_dir = os.path.join(LOCAL_ANALYTICS_DIR, colony_id)
+    os.makedirs(colony_dir, exist_ok=True)
+    local_path = os.path.join(colony_dir, "stats.parquet")
 
     log(f"[{colony_id}] Writing Parquet to {local_path}")
     df = pd.DataFrame(rows)
