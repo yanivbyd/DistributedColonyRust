@@ -19,6 +19,7 @@ import gzip
 import io
 import json
 import os
+import shutil
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -37,14 +38,19 @@ BUCKET_NAME = "distributed-colony"
 # e.g. s3://distributed-colony/tbk/stats_shots/0000020.json (tick 20, zero-padded to 7 digits)
 STATS_SHOTS_PREFIX = ""  # we derive <colony_id>/stats_shots/ per colony
 
+# Local S3 directory (checked first before S3)
+LOCAL_S3_DIR = os.path.join("output", "s3", "distributed-colony")
+
 # Local output directory for Parquet files (created if missing)
 LOCAL_ANALYTICS_DIR = os.path.join("output", "bi")
 
 # S3 layout for Parquet outputs:
 #   s3://distributed-colony/<colony_id>/stats_parquet/<colony_id>.parquet
 #   s3://distributed-colony/<colony_id>/events_parquet/<colony_id>.parquet
+#   s3://distributed-colony/<colony_id>/images_parquet/<colony_id>.parquet
 STATS_PARQUET_S3_SUBPATH = "stats_parquet"
 EVENTS_PARQUET_S3_SUBPATH = "events_parquet"
+IMAGES_PARQUET_S3_SUBPATH = "images_parquet"
 
 
 # --------------------------
@@ -57,12 +63,48 @@ def log(msg: str) -> None:
     print(f"[{ts}] {msg}")
 
 
-def read_s3_json(client, bucket: str, key: str) -> Dict[str, Any]:
+def read_json_file(file_path: str) -> Dict[str, Any]:
     """
-    Read a JSON object from S3, supporting both plain JSON and gzip-compressed JSON.
+    Read a JSON object from local filesystem, supporting both plain JSON and gzip-compressed JSON.
 
     Fails (raises) on any JSON parsing error, as per spec.
     """
+    try:
+        with open(file_path, "rb") as f:
+            body = f.read()
+    except FileNotFoundError:
+        raise ValueError(f"File not found: {file_path}") from None
+
+    # Try to handle gzip transparently: attempt gzip decode first; if it fails,
+    # treat the content as plain UTF-8 JSON.
+    text: str
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(body)) as gz:
+            text = gz.read().decode("utf-8")
+    except OSError:
+        # Not gzip (or invalid gzip) – assume plain JSON text.
+        text = body.decode("utf-8")
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        # Surface malformed JSON immediately; caller will abort the run.
+        raise ValueError(f"Malformed JSON in {file_path}: {exc}") from exc
+
+
+def read_s3_json(client, bucket: str, key: str) -> Dict[str, Any]:
+    """
+    Read a JSON object from S3, supporting both plain JSON and gzip-compressed JSON.
+    First checks local filesystem at output/s3/distributed-colony, then falls back to S3.
+
+    Fails (raises) on any JSON parsing error, as per spec.
+    """
+    # First check local filesystem
+    local_path = os.path.join(LOCAL_S3_DIR, key)
+    if os.path.exists(local_path):
+        return read_json_file(local_path)
+    
+    # Fall back to S3
     resp = client.get_object(Bucket=bucket, Key=key)
     body = resp["Body"].read()
 
@@ -88,17 +130,35 @@ def list_colony_ids(client, bucket: str, prefix: str) -> List[str]:
     Discover colony IDs from keys shaped like:
       <colony_id>/stats_shots/...
       <colony_id>/events/...
+      <colony_id>/images_shots/...
+    
+    First checks local filesystem at output/s3/distributed-colony, then falls back to S3.
     """
-    log(f"Listing colony IDs under s3://{bucket}/{prefix or ''} (scanning for '<colony_id>/stats_shots/' and '<colony_id>/events/' prefixes)")
-    paginator = client.get_paginator("list_objects_v2")
     colony_ids: set[str] = set()
+    
+    # First check local filesystem
+    if os.path.exists(LOCAL_S3_DIR):
+        log(f"Checking local directory {LOCAL_S3_DIR} for colony IDs")
+        for item in os.listdir(LOCAL_S3_DIR):
+            colony_path = os.path.join(LOCAL_S3_DIR, item)
+            if os.path.isdir(colony_path):
+                # Check if this directory has stats_shots, events, or images_shots subdirectories
+                for subdir in ["stats_shots", "events", "images_shots"]:
+                    subdir_path = os.path.join(colony_path, subdir)
+                    if os.path.isdir(subdir_path):
+                        colony_ids.add(item)
+                        break
+    
+    # Also check S3 to find colonies that might not be local
+    log(f"Listing colony IDs from S3 under s3://{bucket}/{prefix or ''} (scanning for '<colony_id>/stats_shots/', '<colony_id>/events/', and '<colony_id>/images_shots/' prefixes)")
+    paginator = client.get_paginator("list_objects_v2")
 
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
             key = obj["Key"]
-            # Expect keys like: "<colony_id>/stats_shots/..." or "<colony_id>/events/..."
+            # Expect keys like: "<colony_id>/stats_shots/..." or "<colony_id>/events/..." or "<colony_id>/images_shots/..."
             parts = key.split("/", 2)
-            if len(parts) >= 2 and (parts[1] == "stats_shots" or parts[1] == "events"):
+            if len(parts) >= 2 and (parts[1] == "stats_shots" or parts[1] == "events" or parts[1] == "images_shots"):
                 colony_ids.add(parts[0])
 
     return sorted(colony_ids)
@@ -109,12 +169,25 @@ def list_stats_objects_for_colony(
 ) -> List[str]:
     """
     List all stats_shots keys for a given colony ID.
+    First checks local filesystem at output/s3/distributed-colony, then falls back to S3.
     """
-    # Keys live under "<colony_id>/stats_shots/"
+    keys: List[str] = []
+    
+    # First check local filesystem
+    local_stats_dir = os.path.join(LOCAL_S3_DIR, colony_id, "stats_shots")
+    if os.path.exists(local_stats_dir):
+        log(f"[{colony_id}] Scanning local directory {local_stats_dir}")
+        for filename in os.listdir(local_stats_dir):
+            if filename.endswith(".json"):
+                key = f"{colony_id}/stats_shots/{filename}"
+                keys.append(key)
+        if keys:
+            return sorted(keys)
+    
+    # Fall back to S3
     prefix = f"{colony_id}/stats_shots/"
     log(f"[{colony_id}] Scanning S3 prefix s3://{bucket}/{prefix}")
     paginator = client.get_paginator("list_objects_v2")
-    keys: List[str] = []
 
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
@@ -128,12 +201,57 @@ def list_event_objects_for_colony(
 ) -> List[str]:
     """
     List all event keys for a given colony ID.
+    First checks local filesystem at output/s3/distributed-colony, then falls back to S3.
     """
-    # Keys live under "<colony_id>/events/"
+    keys: List[str] = []
+    
+    # First check local filesystem
+    local_events_dir = os.path.join(LOCAL_S3_DIR, colony_id, "events")
+    if os.path.exists(local_events_dir):
+        log(f"[{colony_id}] Scanning local directory {local_events_dir}")
+        for filename in os.listdir(local_events_dir):
+            if filename.endswith(".json"):
+                key = f"{colony_id}/events/{filename}"
+                keys.append(key)
+        if keys:
+            return sorted(keys)
+    
+    # Fall back to S3
     prefix = f"{colony_id}/events/"
     log(f"[{colony_id}] Scanning S3 prefix s3://{bucket}/{prefix}")
     paginator = client.get_paginator("list_objects_v2")
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            keys.append(obj["Key"])
+
+    return sorted(keys)
+
+
+def list_image_objects_for_colony(
+    client, bucket: str, colony_id: str
+) -> List[str]:
+    """
+    List all image keys for a given colony ID.
+    First checks local filesystem at output/s3/distributed-colony, then falls back to S3.
+    """
     keys: List[str] = []
+    
+    # First check local filesystem
+    local_images_dir = os.path.join(LOCAL_S3_DIR, colony_id, "images_shots")
+    if os.path.exists(local_images_dir):
+        log(f"[{colony_id}] Scanning local directory {local_images_dir}")
+        for filename in os.listdir(local_images_dir):
+            if filename.endswith(".png"):
+                key = f"{colony_id}/images_shots/{filename}"
+                keys.append(key)
+        if keys:
+            return sorted(keys)
+    
+    # Fall back to S3
+    prefix = f"{colony_id}/images_shots/"
+    log(f"[{colony_id}] Scanning S3 prefix s3://{bucket}/{prefix}")
+    paginator = client.get_paginator("list_objects_v2")
 
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
@@ -604,6 +722,32 @@ def event_to_row(event: Dict[str, Any]) -> Dict[str, Any]:
     return row
 
 
+def image_key_to_row(key: str, colony_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Convert an image S3 key into a row dict with tick and file_name.
+    
+    Image filenames are in format: <colony_id>/images_shots/0000020.png
+    where 0000020 is the zero-padded 7-digit tick number.
+    """
+    # Extract filename from key (e.g., "0000020.png" from "<colony_id>/images_shots/0000020.png")
+    filename = key.split("/")[-1]
+    
+    # Extract tick from filename (remove .png extension and parse as integer)
+    # Filename format: "0000020.png" -> tick = 20
+    try:
+        tick_str = filename.replace(".png", "")
+        tick = int(tick_str)
+    except ValueError:
+        # If parsing fails, log warning and skip this file
+        log(f"Warning: Could not parse tick from image filename {filename}, skipping")
+        return None
+    
+    return {
+        "tick": tick,
+        "file_name": filename,
+    }
+
+
 # --------------------------
 # Main processing
 # --------------------------
@@ -614,10 +758,10 @@ def process_colony(
     upload: bool,
 ) -> None:
     """
-    Process all stats snapshots and events for a single colony:
+    Process all stats snapshots, events, and images for a single colony:
     - Download & parse JSON
     - Normalize to rows
-    - Write Parquet locally (stats.parquet and events.parquet)
+    - Write Parquet locally (stats.parquet, events.parquet, and images.parquet)
     - Optionally upload Parquet files to S3
     """
     colony_dir = os.path.join(LOCAL_ANALYTICS_DIR, colony_id)
@@ -693,11 +837,65 @@ def process_colony(
     else:
         log(f"[{colony_id}] No event objects found; skipping events.parquet.")
 
+    # Process images
+    image_keys = list_image_objects_for_colony(client, BUCKET_NAME, colony_id)
+    if image_keys:
+        log(f"[{colony_id}] Found {len(image_keys)} image objects.")
+        image_rows: List[Dict[str, Any]] = []
+        
+        # Create images directory for copying images
+        images_dir = os.path.join(colony_dir, "images")
+        os.makedirs(images_dir, exist_ok=True)
+
+        for key in image_keys:
+            log(f"[{colony_id}] Processing {key}")
+            row = image_key_to_row(key, colony_id)
+            if row is not None:
+                image_rows.append(row)
+                
+                # Copy image file to output/bi/<colony_id>/images/
+                file_name = row["file_name"]
+                source_path = os.path.join(LOCAL_S3_DIR, key)
+                dest_path = os.path.join(images_dir, file_name)
+                
+                # Check if source exists locally first
+                if os.path.exists(source_path):
+                    try:
+                        shutil.copy2(source_path, dest_path)
+                        log(f"[{colony_id}] Copied image {file_name} to {dest_path}")
+                    except Exception as e:
+                        log(f"[{colony_id}] Warning: Failed to copy image {file_name}: {e}")
+                else:
+                    # If not local, try to download from S3
+                    try:
+                        log(f"[{colony_id}] Downloading image {key} from S3")
+                        client.download_file(BUCKET_NAME, key, dest_path)
+                        log(f"[{colony_id}] Downloaded image {file_name} to {dest_path}")
+                    except Exception as e:
+                        log(f"[{colony_id}] Warning: Failed to download image {key} from S3: {e}")
+
+        if image_rows:
+            local_path = os.path.join(colony_dir, "images.parquet")
+            log(f"[{colony_id}] Writing images Parquet to {local_path}")
+            df = pd.DataFrame(image_rows)
+            df.to_parquet(local_path, engine="pyarrow", compression="snappy", index=False)
+
+            if upload:
+                s3_key = f"{colony_id}/{IMAGES_PARQUET_S3_SUBPATH}/{colony_id}.parquet"
+                log(f"[{colony_id}] Uploading images Parquet to s3://{BUCKET_NAME}/{s3_key}")
+                client.upload_file(local_path, BUCKET_NAME, s3_key)
+            else:
+                log(f"[{colony_id}] Upload disabled; images Parquet only written locally.")
+        else:
+            log(f"[{colony_id}] No rows produced from image files; skipping images.parquet.")
+    else:
+        log(f"[{colony_id}] No image objects found; skipping images.parquet.")
+
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Convert stats_shots JSON snapshots and event JSON files from S3 into Parquet for analytics. "
+            "Convert stats_shots JSON snapshots, event JSON files, and image files from S3 into Parquet for analytics. "
             "By default processes all colonies; use --colony-id to limit to one."
         )
     )
@@ -712,8 +910,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help=(
             "If set, upload the generated Parquet files to S3 under "
-            "<colony_id>/stats_parquet/<colony_id>.parquet and "
-            "<colony_id>/events_parquet/<colony_id>.parquet."
+            "<colony_id>/stats_parquet/<colony_id>.parquet, "
+            "<colony_id>/events_parquet/<colony_id>.parquet, and "
+            "<colony_id>/images_parquet/<colony_id>.parquet."
         ),
     )
 
@@ -731,7 +930,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             log(f"Discovered {len(colony_ids)} colony IDs: {', '.join(colony_ids)}")
 
         if not colony_ids:
-            log("No colonies found under stats_shots/ or events/; nothing to do.")
+            log("No colonies found under stats_shots/, events/, or images_shots/; nothing to do.")
             return 0
 
         for colony_id in colony_ids:

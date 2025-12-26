@@ -10,6 +10,8 @@ Features:
 """
 
 import os
+import base64
+from io import BytesIO
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -18,10 +20,12 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import streamlit as st
+from PIL import Image
 
 # Configuration
 PROJECT_ROOT = Path(__file__).parent.parent
 ANALYTICS_DIR = PROJECT_ROOT / "output" / "bi"
+LOCAL_S3_DIR = PROJECT_ROOT / "output" / "s3" / "distributed-colony"
 
 
 @st.cache_data
@@ -41,15 +45,17 @@ def discover_colonies() -> List[Tuple[str, Path]]:
 
 
 @st.cache_data
-def load_colony_data(colony_path: Path) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
-    """Load stats and events parquet files for a colony."""
+def load_colony_data(colony_path: Path) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+    """Load stats, events, and images parquet files for a colony."""
     stats_file = colony_path / "stats.parquet"
     events_file = colony_path / "events.parquet"
+    images_file = colony_path / "images.parquet"
     
     df_stats = pd.read_parquet(stats_file)
     df_events = pd.read_parquet(events_file) if events_file.exists() else None
+    df_images = pd.read_parquet(images_file) if images_file.exists() else None
     
-    return df_stats, df_events
+    return df_stats, df_events, df_images
 
 
 def get_colony_id(df: pd.DataFrame, colony_path: Path) -> str:
@@ -627,6 +633,228 @@ def create_traits_chart(df: pd.DataFrame, df_events: Optional[pd.DataFrame] = No
     return fig
 
 
+def create_images_chart(df_images: pd.DataFrame, df_events: Optional[pd.DataFrame] = None) -> go.Figure:
+    """Create images timeline chart with clickable markers."""
+    if df_images is None or len(df_images) == 0:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No images data available",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5,
+            showarrow=False
+        )
+        fig.update_layout(
+            title="Images Timeline",
+            height=300,
+            template="plotly_white"
+        )
+        return fig
+    
+    plot_df = df_images.sort_values("tick").copy()
+    
+    # Create a simple line chart showing when images exist
+    # Use y=1 for all points to create a horizontal line
+    fig = go.Figure()
+    
+    # Store both tick and file_name in customdata for click handling
+    customdata = [[tick, file_name] for tick, file_name in zip(plot_df["tick"], plot_df["file_name"])]
+    
+    fig.add_trace(go.Scatter(
+        x=plot_df["tick"],
+        y=[1] * len(plot_df),
+        mode='lines+markers',
+        line=dict(width=2, color='purple'),
+        marker=dict(size=10, color='purple', symbol='square', line=dict(width=2, color='white')),
+        name='Images',
+        showlegend=False,
+        hovertemplate='<b>Image Available</b><br>Tick: %{x}<br>File: %{customdata[1]}<br><i>Click to view</i><extra></extra>',
+        customdata=customdata,
+    ))
+    
+    # Add event vertical lines
+    if df_events is not None and len(df_events) > 0:
+        add_events_to_figure(fig, df_events, y_min=0, y_max=1)
+    
+    fig.update_layout(
+        title="Images Timeline (Click on a point to view the image)",
+        xaxis_title="Tick",
+        yaxis_title="",
+        height=300,
+        yaxis_range=[0, 1.2],
+        yaxis=dict(showticklabels=False, showgrid=False),
+        xaxis=dict(showgrid=False),
+        template="plotly_white",
+        hovermode='closest',
+        clickmode='event+select'
+    )
+    
+    return fig
+
+
+def get_image_path(colony_id: str, file_name: str) -> Optional[Path]:
+    """Get the local path to an image file.
+    
+    First checks output/bi/<colony_id>/images/, then falls back to
+    output/s3/distributed-colony/<colony_id>/images_shots/
+    """
+    # First check the copied images directory
+    colony_path = ANALYTICS_DIR / colony_id / "images" / file_name
+    if colony_path.exists():
+        return colony_path
+    
+    # Fall back to original location
+    image_path = LOCAL_S3_DIR / colony_id / "images_shots" / file_name
+    if image_path.exists():
+        return image_path
+    
+    return None
+
+
+def show_image_modal(img: Image.Image, tick: int, file_name: str, modal_key: str) -> None:
+    """Display an image in a modal popup using custom HTML/CSS."""
+    # Convert image to base64 for embedding
+    buffered = BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    
+    # Create modal HTML/CSS/JavaScript
+    modal_html = f"""
+    <style>
+    .image-modal {{
+        display: block;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0, 0, 0, 0.9);
+        animation: fadeIn 0.3s;
+    }}
+    @keyframes fadeIn {{
+        from {{ opacity: 0; }}
+        to {{ opacity: 1; }}
+    }}
+    .image-modal-content {{
+        margin: auto;
+        display: block;
+        width: 90%;
+        max-width: 90%;
+        max-height: 90vh;
+        margin-top: 5vh;
+        animation: zoomIn 0.3s;
+        object-fit: contain;
+    }}
+    @keyframes zoomIn {{
+        from {{ transform: scale(0.8); opacity: 0; }}
+        to {{ transform: scale(1); opacity: 1; }}
+    }}
+    .image-modal-close {{
+        position: absolute;
+        top: 20px;
+        right: 35px;
+        color: #f1f1f1;
+        font-size: 40px;
+        font-weight: bold;
+        cursor: pointer;
+        z-index: 1001;
+        line-height: 1;
+        user-select: none;
+    }}
+    .image-modal-close:hover {{
+        color: #bbb;
+    }}
+    .image-modal-header {{
+        position: absolute;
+        top: 20px;
+        left: 35px;
+        color: #f1f1f1;
+        font-size: 20px;
+        font-weight: bold;
+        z-index: 1001;
+        background-color: rgba(0, 0, 0, 0.5);
+        padding: 10px 15px;
+        border-radius: 5px;
+    }}
+    </style>
+    
+    <div id="imageModal_{tick}" class="image-modal">
+        <span class="image-modal-close" id="closeBtn_{tick}">&times;</span>
+        <div class="image-modal-header">Tick {tick} - {file_name}</div>
+        <img class="image-modal-content" src="data:image/png;base64,{img_str}" alt="Colony Image at Tick {tick}" style="width: auto; height: auto; max-width: 90%; max-height: 90vh; object-fit: contain;">
+    </div>
+    
+    <script>
+        (function() {{
+            var modal = document.getElementById('imageModal_{tick}');
+            if (!modal) return;
+            
+            var closeBtn = document.getElementById('closeBtn_{tick}');
+            
+            function closeModal() {{
+                modal.style.display = 'none';
+                // Trigger the close function if available
+                if (typeof window.closeModal_{tick} === 'function') {{
+                    window.closeModal_{tick}();
+                }}
+            }}
+            
+            // Close button click
+            if (closeBtn) {{
+                closeBtn.onclick = function(e) {{
+                    e.stopPropagation();
+                    closeModal();
+                }};
+            }}
+            
+            // Close modal when clicking outside the image
+            modal.onclick = function(event) {{
+                if (event.target === this) {{
+                    closeModal();
+                }}
+            }};
+            
+            // Close modal with Escape key
+            function handleEscape(event) {{
+                if (event.key === 'Escape' && modal.style.display !== 'none') {{
+                    closeModal();
+                }}
+            }}
+            document.addEventListener('keydown', handleEscape);
+        }})();
+    </script>
+    """
+    
+    # Inject JavaScript function first (before modal HTML that uses it)
+    trigger_script = f"""
+    <script>
+        (function() {{
+            window.closeModal_{tick} = function() {{
+                // Find the Close button by looking for button with text "Close"
+                var buttons = Array.from(document.querySelectorAll('button'));
+                var closeBtn = buttons.find(function(btn) {{
+                    var text = (btn.textContent || btn.innerText || '').trim();
+                    return text === 'Close';
+                }});
+                if (closeBtn) {{
+                    closeBtn.click();
+                }}
+            }};
+        }})();
+    </script>
+    """
+    st.markdown(trigger_script, unsafe_allow_html=True)
+    
+    # Add a close button that updates session state
+    if st.button("Close", key=f"close_modal_{tick}", use_container_width=True):
+        st.session_state[modal_key] = False
+        st.rerun()
+    
+    # Display the modal HTML (which uses the function defined above)
+    st.markdown(modal_html, unsafe_allow_html=True)
+
+
 def main():
     st.set_page_config(
         page_title="Distributed Colony Analytics",
@@ -654,7 +882,7 @@ def main():
     selected_colony_path = next(path for name, path in colonies if name == selected_colony_name)
     
     # Load data
-    df_stats, df_events = load_colony_data(selected_colony_path)
+    df_stats, df_events, df_images = load_colony_data(selected_colony_path)
     colony_id = get_colony_id(df_stats, selected_colony_path)
     
     # Sidebar: Show events checkbox
@@ -705,8 +933,91 @@ def main():
     
     # Traits details are shown in hover tooltips
     
-    # 5. Events Timeline (last section)
+    # 5. Images Timeline
+    if df_images is not None and len(df_images) > 0:
+        st.subheader("Images Timeline")
+        fig_images = create_images_chart(df_images, events_for_charts)
+        
+        # Initialize session state for selected image
+        if 'selected_image_tick' not in st.session_state:
+            st.session_state.selected_image_tick = None
+            st.session_state.selected_image_file = None
+        
+        # Display chart - Streamlit will handle click events via selection
+        selected_data = st.plotly_chart(
+            fig_images,
+            use_container_width=True,
+            key="images"
+        )
+        
+        # Handle image selection from chart click
+        # Check if user selected a point in the chart
+        if selected_data and hasattr(selected_data, 'selection') and selected_data.selection:
+            points = selected_data.selection.points if hasattr(selected_data.selection, 'points') else []
+            if points and len(points) > 0:
+                # Get the first selected point
+                point = points[0]
+                # Extract tick and file_name from customdata
+                if hasattr(point, 'customdata') and point.customdata:
+                    tick = point.customdata[0] if isinstance(point.customdata, list) and len(point.customdata) > 0 else None
+                    file_name = point.customdata[1] if isinstance(point.customdata, list) and len(point.customdata) > 1 else None
+                    if tick is not None and file_name:
+                        st.session_state.selected_image_tick = tick
+                        st.session_state.selected_image_file = file_name
+        
+        # Also provide a dropdown to select images by tick (always available)
+        st.subheader("Select Image by Tick")
+        sorted_images = df_images.sort_values("tick")
+        image_options = [f"Tick {row['tick']} - {row['file_name']}" for _, row in sorted_images.iterrows()]
+        image_values = [(row['tick'], row['file_name']) for _, row in sorted_images.iterrows()]
+        
+        selected_option = st.selectbox(
+            "Choose an image to view:",
+            options=range(len(image_options)),
+            format_func=lambda x: image_options[x],
+            key="image_selector"
+        )
+        
+        # Determine which image to display (from dropdown or chart click)
+        display_tick = None
+        display_file = None
+        
+        if selected_option is not None:
+            display_tick, display_file = image_values[selected_option]
+        elif st.session_state.selected_image_tick is not None and st.session_state.selected_image_file:
+            display_tick = st.session_state.selected_image_tick
+            display_file = st.session_state.selected_image_file
+        
+        # Display the selected image in a popup/modal
+        if display_tick is not None and display_file:
+            image_path = get_image_path(colony_id, display_file)
+            if image_path and image_path.exists():
+                try:
+                    img = Image.open(image_path)
+                    
+                    # Initialize modal state (default to False - don't auto-open)
+                    modal_key = f"show_modal_{display_tick}_{display_file}"
+                    if modal_key not in st.session_state:
+                        st.session_state[modal_key] = False
+                    
+                    # Show button to open modal
+                    if st.button(f"View Image at Tick {display_tick}", use_container_width=True, key=f"btn_{display_tick}"):
+                        st.session_state[modal_key] = True
+                        st.rerun()
+                    
+                    # Display modal only if state is True (button was clicked)
+                    if st.session_state.get(modal_key, False):
+                        show_image_modal(img, display_tick, display_file, modal_key)
+                except Exception as e:
+                    st.error(f"Error loading image: {e}")
+            else:
+                st.warning(f"Image file not found: {display_file}")
+    else:
+        st.info("No images data available. Run ingest_bi.py to generate images.parquet")
+    
+    # 6. Events Timeline (last section)
     if df_events is not None and len(df_events) > 0:
+        st.subheader("Events Timeline")
         fig_events = create_events_chart(df_stats, df_events)
         if fig_events is not None:
             st.plotly_chart(
