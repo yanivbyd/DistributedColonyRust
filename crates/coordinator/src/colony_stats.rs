@@ -155,11 +155,11 @@ pub async fn capture_colony_stats() {
                     return;
                 }
             };
-            let timestamp = get_stats_timestamp();
-            if let Err(e) = save_stats_to_disk(&stats, instance_id, &timestamp) {
+            let tick_str = format_tick_filename(stats.tick);
+            if let Err(e) = save_stats_to_disk(&stats, instance_id, &tick_str) {
                 log_error!("Failed to save statistics to disk: {}", e);
             } else {
-                log!("Successfully saved creature statistics to: {}/{}/stats_shots/{}.json", BASE_BUCKET_DIR, instance_id, timestamp);
+                log!("Successfully saved creature statistics to: {}/{}/stats_shots/{}.json", BASE_BUCKET_DIR, instance_id, tick_str);
             }
         }
         Err(e) => {
@@ -414,12 +414,12 @@ fn build_string_histogram(counts: &BTreeMap<String, u64>) -> HistogramWithoutAve
     }
 }
 
-fn get_stats_timestamp() -> String {
-    let now = chrono::Local::now();
-    now.format("%Y_%m_%d__%H_%M_%S").to_string()
+/// Format tick number as zero-padded 7-digit string (e.g., 20 -> "0000020")
+fn format_tick_filename(tick: u64) -> String {
+    format!("{:07}", tick)
 }
 
-fn save_stats_to_disk(stats: &CreatureStatistics, instance_id: &str, timestamp: &str) -> Result<(), String> {
+fn save_stats_to_disk(stats: &CreatureStatistics, instance_id: &str, tick_str: &str) -> Result<(), String> {
     // Build directory path: output/s3/distributed-colony/{id}/stats_shots
     let dir_path = Path::new(BASE_BUCKET_DIR).join(instance_id).join("stats_shots");
     if let Err(e) = std::fs::create_dir_all(&dir_path) {
@@ -427,7 +427,7 @@ fn save_stats_to_disk(stats: &CreatureStatistics, instance_id: &str, timestamp: 
     }
     
     // Construct full file path
-    let filename = format!("{}.json", timestamp);
+    let filename = format!("{}.json", tick_str);
     let file_path = dir_path.join(&filename);
     
     // Serialize to JSON

@@ -34,7 +34,7 @@ import pandas as pd
 BUCKET_NAME = "distributed-colony"
 # In S3, stats shots live under:
 #   <colony_id>/stats_shots/...
-# e.g. s3://distributed-colony/tbk/stats_shots/2025_12_22__17_07_48.json
+# e.g. s3://distributed-colony/tbk/stats_shots/0000020.json (tick 20, zero-padded to 7 digits)
 STATS_SHOTS_PREFIX = ""  # we derive <colony_id>/stats_shots/ per colony
 
 # Local output directory for Parquet files (created if missing)

@@ -35,10 +35,9 @@ pub struct ColonyCreatedEventJson {
     pub rules: ColonyLifeRules,
 }
 
-/// Get timestamp string in format YYYY_MM_DD__HH_MM_SS
-fn get_event_timestamp() -> String {
-    let now = chrono::Local::now();
-    now.format("%Y_%m_%d__%H_%M_%S").to_string()
+/// Format tick number as zero-padded 7-digit string (e.g., 20 -> "0000020")
+fn format_tick_filename(tick: u64) -> String {
+    format!("{:07}", tick)
 }
 
 /// Write event JSON to disk
@@ -60,7 +59,7 @@ pub fn write_event_json(
         }
     };
     
-    let timestamp = get_event_timestamp();
+    let tick_str = format_tick_filename(tick);
     
     let event_json = EventJson {
         colony_instance_id: instance_id.to_string(),
@@ -71,7 +70,7 @@ pub fn write_event_json(
         rules,
     };
     
-    save_event_to_disk(&event_json, instance_id, &timestamp)
+    save_event_to_disk(&event_json, instance_id, &tick_str)
 }
 
 /// Write colony creation event JSON to disk
@@ -87,7 +86,7 @@ pub fn write_colony_created_event_json(rules: ColonyLifeRules) -> Result<(), Str
         }
     };
     
-    let timestamp = get_event_timestamp();
+    let tick_str = format_tick_filename(1);
     
     let event_json = ColonyCreatedEventJson {
         colony_instance_id: instance_id.to_string(),
@@ -97,18 +96,18 @@ pub fn write_colony_created_event_json(rules: ColonyLifeRules) -> Result<(), Str
         rules,
     };
     
-    save_colony_created_event_to_disk(&event_json, instance_id, &timestamp)
+    save_colony_created_event_to_disk(&event_json, instance_id, &tick_str)
 }
 
-fn save_event_to_disk(event_json: &EventJson, instance_id: &str, timestamp: &str) -> Result<(), String> {
+fn save_event_to_disk(event_json: &EventJson, instance_id: &str, tick_str: &str) -> Result<(), String> {
     // Build directory path: output/s3/distributed-colony/{id}/events
     let dir_path = Path::new(BASE_BUCKET_DIR).join(instance_id).join("events");
     if let Err(e) = std::fs::create_dir_all(&dir_path) {
         return Err(format!("Failed to create directory {}: {}", dir_path.display(), e));
     }
     
-    // Construct full file path: event_{timestamp}.json
-    let filename = format!("event_{}.json", timestamp);
+    // Construct full file path: event_{tick}.json
+    let filename = format!("event_{}.json", tick_str);
     let file_path = dir_path.join(&filename);
     
     // Serialize to JSON
@@ -124,15 +123,15 @@ fn save_event_to_disk(event_json: &EventJson, instance_id: &str, timestamp: &str
     Ok(())
 }
 
-fn save_colony_created_event_to_disk(event_json: &ColonyCreatedEventJson, instance_id: &str, timestamp: &str) -> Result<(), String> {
+fn save_colony_created_event_to_disk(event_json: &ColonyCreatedEventJson, instance_id: &str, tick_str: &str) -> Result<(), String> {
     // Build directory path: output/s3/distributed-colony/{id}/events
     let dir_path = Path::new(BASE_BUCKET_DIR).join(instance_id).join("events");
     if let Err(e) = std::fs::create_dir_all(&dir_path) {
         return Err(format!("Failed to create directory {}: {}", dir_path.display(), e));
     }
     
-    // Construct full file path: event_{timestamp}.json
-    let filename = format!("event_{}.json", timestamp);
+    // Construct full file path: event_{tick}.json
+    let filename = format!("event_{}.json", tick_str);
     let file_path = dir_path.join(&filename);
     
     // Serialize to JSON
