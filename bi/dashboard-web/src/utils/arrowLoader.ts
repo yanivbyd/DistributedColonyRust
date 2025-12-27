@@ -50,3 +50,50 @@ export async function loadStatsArrow(url: string): Promise<StatsRow[]> {
   return rows;
 }
 
+export interface EventData {
+  tick: number;
+  event_type: string;
+  event_description: string | null;
+}
+
+export async function loadEventsArrow(url: string): Promise<EventData[]> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      // Events file might not exist, return empty array
+      return [];
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const table = tableFromIPC(arrayBuffer);
+    
+    const tickColumn = table.getChild('tick');
+    const eventTypeColumn = table.getChild('event_type');
+    const eventDescColumn = table.getChild('event_description');
+    
+    if (!tickColumn) {
+      return [];
+    }
+    
+    const events: EventData[] = [];
+    for (let i = 0; i < table.numRows; i++) {
+      const tick = tickColumn.get(i);
+      if (tick !== null && tick !== undefined) {
+        const eventType = eventTypeColumn?.get(i);
+        const eventDesc = eventDescColumn?.get(i);
+        
+        events.push({
+          tick: Number(tick),
+          event_type: eventType ? String(eventType) : 'Unknown',
+          event_description: eventDesc ? String(eventDesc) : null,
+        });
+      }
+    }
+    
+    return events;
+  } catch (err) {
+    // If events file doesn't exist or can't be loaded, return empty array
+    return [];
+  }
+}
+

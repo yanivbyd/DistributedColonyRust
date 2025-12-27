@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 
 interface ColonySelectorProps {
   onColonySelect: (colonyId: string | null) => void;
+  onColoniesLoaded?: (colonies: string[]) => void;
+  hide?: boolean;
 }
 
-export function ColonySelector({ onColonySelect }: ColonySelectorProps) {
+export function ColonySelector({ onColonySelect, onColoniesLoaded, hide }: ColonySelectorProps) {
   const [colonies, setColonies] = useState<string[]>([]);
   const [selectedColony, setSelectedColony] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -19,17 +21,32 @@ export function ColonySelector({ onColonySelect }: ColonySelectorProps) {
           throw new Error(`Failed to fetch colonies: ${response.statusText}`);
         }
         const data = await response.json();
-        setColonies(data.colonies || []);
+        const coloniesList = data.colonies || [];
+        setColonies(coloniesList);
         setError(null);
+        
+        if (onColoniesLoaded) {
+          onColoniesLoaded(coloniesList);
+        }
+        
+        // Auto-select if there's only one colony
+        if (coloniesList.length === 1) {
+          setSelectedColony(coloniesList[0]);
+          onColonySelect(coloniesList[0]);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
         setColonies([]);
+        if (onColoniesLoaded) {
+          onColoniesLoaded([]);
+        }
       } finally {
         setLoading(false);
       }
     }
 
     fetchColonies();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -37,6 +54,10 @@ export function ColonySelector({ onColonySelect }: ColonySelectorProps) {
     setSelectedColony(value);
     onColonySelect(value === '' ? null : value);
   };
+
+  if (hide) {
+    return null;
+  }
 
   if (loading) {
     return (
