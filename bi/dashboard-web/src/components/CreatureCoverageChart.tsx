@@ -15,8 +15,8 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
   const [images, setImages] = useState<ImageData[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
   const [selectedImage, setSelectedImage] = useState<ImageData | null>(null);
-  const [showEvents, setShowEvents] = useState<boolean>(true);
-  const [showImages, setShowImages] = useState<boolean>(true);
+  const [showEvents, setShowEvents] = useState<boolean>(false);
+  const [showImages, setShowImages] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imageModalPosition, setImageModalPosition] = useState({ x: 0, y: 0 });
@@ -753,9 +753,21 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
   };
 
   return (
-    <>
-      <div className="mb-3">
-        <div className="form-check form-check-inline me-3">
+    <div style={{ display: 'flex', gap: '20px', width: '100%' }}>
+      {/* Left Sidebar */}
+      <div
+        style={{
+          width: '200px',
+          minWidth: '200px',
+          backgroundColor: '#1a1a1a',
+          border: '2px solid #444',
+          borderRadius: '8px',
+          padding: '15px',
+          height: 'fit-content',
+        }}
+      >
+        <h6 className="text-light mb-3" style={{ fontSize: '14px', fontWeight: 'bold' }}>Controls</h6>
+        <div className="form-check mb-3">
           <input
             className="form-check-input"
             type="checkbox"
@@ -763,11 +775,11 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
             checked={showEvents}
             onChange={(e) => setShowEvents(e.target.checked)}
           />
-          <label className="form-check-label text-light" htmlFor="showEventsCheckbox">
+          <label className="form-check-label text-light" htmlFor="showEventsCheckbox" style={{ fontSize: '13px' }}>
             Show Events ({validEvents.length})
           </label>
         </div>
-        <div className="form-check form-check-inline">
+        <div className="form-check">
           <input
             className="form-check-input"
             type="checkbox"
@@ -775,11 +787,14 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
             checked={showImages}
             onChange={(e) => setShowImages(e.target.checked)}
           />
-          <label className="form-check-label text-light" htmlFor="showImagesCheckbox">
+          <label className="form-check-label text-light" htmlFor="showImagesCheckbox" style={{ fontSize: '13px' }}>
             Show Images ({validImages.length})
           </label>
         </div>
       </div>
+
+      {/* Main Content Area */}
+      <div style={{ flex: 1, minWidth: 0 }}>
       {selectedEvent && (
         <div className="modal show d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <div className="modal-dialog modal-dialog-centered">
@@ -906,7 +921,8 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
           />
         </div>
       )}
-    </>
+      </div>
+    </div>
   );
 }
 
