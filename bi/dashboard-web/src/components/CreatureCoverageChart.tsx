@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { loadStatsArrow, loadEventsArrow, loadImagesArrow, EventData, ImageData } from '../utils/arrowLoader';
+import { loadStatsArrow, loadEventsArrow, loadImagesArrow, EventData, ImageData, StatsRow } from '../utils/arrowLoader';
 import { transformStatsData, transformColorCountData, ChartDataPoint, ColorCountDataPoint } from '../utils/dataTransform';
 
 interface CreatureCoverageChartProps {
@@ -9,6 +9,7 @@ interface CreatureCoverageChartProps {
 
 export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) {
   const [data, setData] = useState<ChartDataPoint[]>([]);
+  const [rows, setRows] = useState<StatsRow[]>([]);
   const [colorData, setColorData] = useState<ColorCountDataPoint[]>([]);
   const [colorMap, setColorMap] = useState<Map<string, string>>(new Map());
   const [events, setEvents] = useState<EventData[]>([]);
@@ -26,6 +27,7 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
   useEffect(() => {
     if (!colonyId) {
       setData([]);
+      setRows([]);
       setColorData([]);
       setColorMap(new Map());
       setEvents([]);
@@ -44,15 +46,16 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
         const eventsUrl = `/bi/${colonyId}/events.arrow`;
         const imagesUrl = `/bi/${colonyId}/images.arrow`;
         
-        const [rows, eventData, imageData] = await Promise.all([
+        const [rowsData, eventData, imageData] = await Promise.all([
           loadStatsArrow(statsUrl),
           loadEventsArrow(eventsUrl),
           loadImagesArrow(imagesUrl),
         ]);
         
-        const transformed = transformStatsData(rows);
-        const { data: colorCountData, colors } = transformColorCountData(rows);
+        const transformed = transformStatsData(rowsData);
+        const { data: colorCountData, colors } = transformColorCountData(rowsData);
         setData(transformed);
+        setRows(rowsData);
         setColorData(colorCountData);
         setColorMap(colors);
         setEvents(eventData);
@@ -60,6 +63,7 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load data');
         setData([]);
+        setRows([]);
         setColorData([]);
         setColorMap(new Map());
         setEvents([]);
@@ -298,13 +302,6 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
             Empty Cells: ${emptyPct.toFixed(2)}%
           </div>
         `;
-      },
-    },
-    legend: {
-      data: ['Creature Coverage', 'Empty Cells'],
-      top: 30,
-      textStyle: {
-        color: '#e0e0e0',
       },
     },
     grid: {
@@ -752,6 +749,431 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
     ],
   };
 
+  // Helper function to create gene chart option
+  const createGeneChartOption = (
+    title: string,
+    yAxisName: string,
+    data: number[],
+    ticks: number[],
+    color: string
+  ) => {
+    const markLines = createMarkLines(ticks);
+    return {
+      backgroundColor: 'transparent',
+      textStyle: {
+        color: '#e0e0e0',
+      },
+      title: {
+        text: title,
+        left: 'center',
+        textStyle: {
+          color: '#ffffff',
+          fontSize: 14,
+        },
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'cross',
+        },
+        backgroundColor: '#2d2d2d',
+        borderColor: '#444',
+        textStyle: {
+          color: '#e0e0e0',
+        },
+      },
+      grid: {
+        left: '10%',
+        right: '10%',
+        bottom: '15%',
+        top: '20%',
+        containLabel: true,
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: ticks,
+        name: 'Tick',
+        nameTextStyle: {
+          color: '#e0e0e0',
+        },
+        axisLine: {
+          lineStyle: {
+            color: '#666',
+          },
+        },
+        axisLabel: {
+          color: '#b0b0b0',
+          fontSize: 10,
+        },
+      },
+      yAxis: {
+        type: 'value',
+        name: yAxisName,
+        nameTextStyle: {
+          color: '#e0e0e0',
+        },
+        axisLine: {
+          lineStyle: {
+            color: '#666',
+          },
+        },
+        axisLabel: {
+          color: '#b0b0b0',
+          fontSize: 10,
+        },
+        splitLine: {
+          lineStyle: {
+            color: '#333',
+          },
+        },
+      },
+      series: [
+        {
+          name: title,
+          type: 'line' as const,
+          data: data,
+          smooth: true,
+          areaStyle: {
+            color: color,
+            opacity: 0.3,
+          },
+          lineStyle: {
+            color: color,
+            width: 2,
+          },
+          itemStyle: {
+            color: color,
+          },
+          markLine: markLines.length > 0 ? {
+            data: markLines,
+            silent: false,
+            symbol: ['none', 'none'],
+            animation: false,
+          } : undefined,
+        },
+        // Invisible series for event clicks
+        ...(showEvents && validEvents.length > 0 ? [{
+          name: 'Events',
+          type: 'scatter' as const,
+          data: validEvents.map((event) => {
+            let closestIndex = 0;
+            let minDiff = Math.abs(ticks[0] - event.tick);
+            for (let i = 0; i < ticks.length; i++) {
+              const diff = Math.abs(ticks[i] - event.tick);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closestIndex = i;
+              }
+            }
+            const midValue = data[closestIndex] || 0;
+            return [closestIndex, midValue];
+          }),
+          symbolSize: 20,
+          itemStyle: {
+            color: 'transparent',
+          },
+          label: {
+            show: false,
+          },
+          tooltip: {
+            show: false,
+          },
+        }] : []),
+        // Invisible series for image clicks
+        ...(showImages && validImages.length > 0 ? [{
+          name: 'Images',
+          type: 'scatter' as const,
+          data: validImages.map((image) => {
+            let closestIndex = 0;
+            let minDiff = Math.abs(ticks[0] - image.tick);
+            for (let i = 0; i < ticks.length; i++) {
+              const diff = Math.abs(ticks[i] - image.tick);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closestIndex = i;
+              }
+            }
+            const midValue = data[closestIndex] || 0;
+            return [closestIndex, midValue];
+          }),
+          symbolSize: 20,
+          itemStyle: {
+            color: 'transparent',
+          },
+          label: {
+            show: false,
+          },
+          tooltip: {
+            show: false,
+          },
+        }] : []),
+      ],
+    };
+  };
+
+  // Helper function to create stacked boolean chart option
+  const createStackedBooleanChartOption = (
+    title: string,
+    trueData: number[],
+    falseData: number[],
+    ticks: number[]
+  ) => {
+    const markLines = createMarkLines(ticks);
+    return {
+      backgroundColor: 'transparent',
+      textStyle: {
+        color: '#e0e0e0',
+      },
+      title: {
+        text: title,
+        left: 'center',
+        textStyle: {
+          color: '#ffffff',
+          fontSize: 14,
+        },
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'cross',
+        },
+        backgroundColor: '#2d2d2d',
+        borderColor: '#444',
+        textStyle: {
+          color: '#e0e0e0',
+        },
+      },
+      legend: {
+        data: ['True', 'False'],
+        top: 30,
+        textStyle: {
+          color: '#e0e0e0',
+          fontSize: 11,
+        },
+      },
+      grid: {
+        left: '10%',
+        right: '10%',
+        bottom: '15%',
+        top: '25%',
+        containLabel: true,
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: ticks,
+        name: 'Tick',
+        nameTextStyle: {
+          color: '#e0e0e0',
+        },
+        axisLine: {
+          lineStyle: {
+            color: '#666',
+          },
+        },
+        axisLabel: {
+          color: '#b0b0b0',
+          fontSize: 10,
+        },
+      },
+      yAxis: {
+        type: 'value',
+        name: 'Percentage (%)',
+        min: 0,
+        max: 100,
+        nameTextStyle: {
+          color: '#e0e0e0',
+        },
+        axisLine: {
+          lineStyle: {
+            color: '#666',
+          },
+        },
+        axisLabel: {
+          color: '#b0b0b0',
+          fontSize: 10,
+          formatter: '{value}%',
+        },
+        splitLine: {
+          lineStyle: {
+            color: '#333',
+          },
+        },
+      },
+      series: [
+        {
+          name: 'True',
+          type: 'line' as const,
+          stack: 'Total',
+          data: trueData,
+          smooth: true,
+          areaStyle: {
+            color: '#dc3545', // Red for true
+            opacity: 0.6,
+          },
+          lineStyle: {
+            color: '#dc3545',
+            width: 2,
+          },
+          itemStyle: {
+            color: '#dc3545',
+          },
+          markLine: markLines.length > 0 ? {
+            data: markLines,
+            silent: false,
+            symbol: ['none', 'none'],
+            animation: false,
+          } : undefined,
+        },
+        {
+          name: 'False',
+          type: 'line' as const,
+          stack: 'Total',
+          data: falseData,
+          smooth: true,
+          areaStyle: {
+            color: '#28a745', // Green for false
+            opacity: 0.6,
+          },
+          lineStyle: {
+            color: '#28a745',
+            width: 2,
+          },
+          itemStyle: {
+            color: '#28a745',
+          },
+        },
+        // Invisible series for event clicks
+        ...(showEvents && validEvents.length > 0 ? [{
+          name: 'Events',
+          type: 'scatter' as const,
+          data: validEvents.map((event) => {
+            let closestIndex = 0;
+            let minDiff = Math.abs(ticks[0] - event.tick);
+            for (let i = 0; i < ticks.length; i++) {
+              const diff = Math.abs(ticks[i] - event.tick);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closestIndex = i;
+              }
+            }
+            return [closestIndex, 50]; // Middle of chart
+          }),
+          symbolSize: 20,
+          itemStyle: {
+            color: 'transparent',
+          },
+          label: {
+            show: false,
+          },
+          tooltip: {
+            show: false,
+          },
+        }] : []),
+        // Invisible series for image clicks
+        ...(showImages && validImages.length > 0 ? [{
+          name: 'Images',
+          type: 'scatter' as const,
+          data: validImages.map((image) => {
+            let closestIndex = 0;
+            let minDiff = Math.abs(ticks[0] - image.tick);
+            for (let i = 0; i < ticks.length; i++) {
+              const diff = Math.abs(ticks[i] - image.tick);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closestIndex = i;
+              }
+            }
+            return [closestIndex, 50]; // Middle of chart
+          }),
+          symbolSize: 20,
+          itemStyle: {
+            color: 'transparent',
+          },
+          label: {
+            show: false,
+          },
+          tooltip: {
+            show: false,
+          },
+        }] : []),
+      ],
+    };
+  };
+
+  // Prepare gene chart data
+  const geneTicks = data.map((d) => d.tick);
+
+  // Create gene chart options
+  const creatureSizeChartOption = createGeneChartOption(
+    'Creature Size',
+    'Mean Size',
+    data.map((d) => {
+      const row = rows.find((r) => r.tick === d.tick);
+      return row?.creature_size_mean ?? row?.creature_size_avg ?? 0;
+    }),
+    geneTicks,
+    '#4a90e2'
+  );
+
+  // Prepare stacked boolean data for Can Kill
+  const canKillTrueData = data.map((d) => {
+    const row = rows.find((r) => r.tick === d.tick);
+    return (row?.can_kill_true_fraction ?? row?.can_kill_average ?? 0) * 100; // Convert to percentage
+  });
+  const canKillFalseData = data.map((d) => {
+    const row = rows.find((r) => r.tick === d.tick);
+    const trueFraction = row?.can_kill_true_fraction ?? row?.can_kill_average ?? 0;
+    return (1 - trueFraction) * 100; // False = 100% - true%
+  });
+  const canKillChartOption = createStackedBooleanChartOption(
+    'Can Kill',
+    canKillTrueData,
+    canKillFalseData,
+    geneTicks
+  );
+
+  // Prepare stacked boolean data for Can Move
+  const canMoveTrueData = data.map((d) => {
+    const row = rows.find((r) => r.tick === d.tick);
+    return (row?.can_move_true_fraction ?? row?.can_move_average ?? 0) * 100; // Convert to percentage
+  });
+  const canMoveFalseData = data.map((d) => {
+    const row = rows.find((r) => r.tick === d.tick);
+    const trueFraction = row?.can_move_true_fraction ?? row?.can_move_average ?? 0;
+    return (1 - trueFraction) * 100; // False = 100% - true%
+  });
+  const canMoveChartOption = createStackedBooleanChartOption(
+    'Can Move',
+    canMoveTrueData,
+    canMoveFalseData,
+    geneTicks
+  );
+
+  // Create age and health chart options
+  const ageChartOption = createGeneChartOption(
+    'Age',
+    'Mean Age',
+    data.map((d) => {
+      const row = rows.find((r) => r.tick === d.tick);
+      return row?.age_mean ?? row?.age_avg ?? 0;
+    }),
+    geneTicks,
+    '#ffc107'
+  );
+
+  const healthChartOption = createGeneChartOption(
+    'Health',
+    'Mean Health',
+    data.map((d) => {
+      const row = rows.find((r) => r.tick === d.tick);
+      return row?.health_mean ?? row?.health_avg ?? 0;
+    }),
+    geneTicks,
+    '#17a2b8'
+  );
+
   return (
     <div style={{ display: 'flex', gap: '20px', width: '100%' }}>
       {/* Left Sidebar */}
@@ -764,6 +1186,9 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
           borderRadius: '8px',
           padding: '15px',
           height: 'fit-content',
+          position: 'sticky',
+          top: '20px',
+          alignSelf: 'flex-start',
         }}
       >
         <h6 className="text-light mb-3" style={{ fontSize: '14px', fontWeight: 'bold' }}>Controls</h6>
@@ -881,7 +1306,7 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
       <div
         style={{
           width: '100%',
-          height: '600px',
+          height: '300px',
           border: '2px solid #444',
           borderRadius: '8px',
           padding: '10px',
@@ -903,7 +1328,7 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
         <div
           style={{
             width: '100%',
-            height: '600px',
+            height: '300px',
             border: '2px solid #444',
             borderRadius: '8px',
             padding: '10px',
@@ -920,6 +1345,127 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
             }}
           />
         </div>
+      )}
+
+      {/* Genes Section */}
+      {rows.length > 0 && (
+        <>
+          <h5 className="text-light mt-4 mb-3" style={{ fontSize: '18px', fontWeight: 'bold' }}>Genes</h5>
+          <div style={{ display: 'flex', gap: '15px', width: '100%', marginBottom: '20px' }}>
+            {/* Creature Size Chart */}
+            <div
+              style={{
+                flex: 1,
+                height: '200px',
+                border: '2px solid #444',
+                borderRadius: '8px',
+                padding: '10px',
+                backgroundColor: '#1a1a1a',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+              }}
+            >
+              <ReactECharts
+                option={creatureSizeChartOption}
+                style={{ height: '100%', width: '100%' }}
+                onEvents={{
+                  click: onChartClick,
+                }}
+              />
+            </div>
+
+            {/* Can Kill Chart */}
+            <div
+              style={{
+                flex: 1,
+                height: '200px',
+                border: '2px solid #444',
+                borderRadius: '8px',
+                padding: '10px',
+                backgroundColor: '#1a1a1a',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+              }}
+            >
+              <ReactECharts
+                option={canKillChartOption}
+                style={{ height: '100%', width: '100%' }}
+                onEvents={{
+                  click: onChartClick,
+                }}
+              />
+            </div>
+
+            {/* Can Move Chart */}
+            <div
+              style={{
+                flex: 1,
+                height: '200px',
+                border: '2px solid #444',
+                borderRadius: '8px',
+                padding: '10px',
+                backgroundColor: '#1a1a1a',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+              }}
+            >
+              <ReactECharts
+                option={canMoveChartOption}
+                style={{ height: '100%', width: '100%' }}
+                onEvents={{
+                  click: onChartClick,
+                }}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Creatures Section */}
+      {rows.length > 0 && (
+        <>
+          <h5 className="text-light mt-4 mb-3" style={{ fontSize: '18px', fontWeight: 'bold' }}>Creatures</h5>
+          <div style={{ display: 'flex', gap: '15px', width: '100%', marginBottom: '20px' }}>
+            {/* Age Chart */}
+            <div
+              style={{
+                flex: 1,
+                height: '200px',
+                border: '2px solid #444',
+                borderRadius: '8px',
+                padding: '10px',
+                backgroundColor: '#1a1a1a',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+              }}
+            >
+              <ReactECharts
+                option={ageChartOption}
+                style={{ height: '100%', width: '100%' }}
+                onEvents={{
+                  click: onChartClick,
+                }}
+              />
+            </div>
+
+            {/* Health Chart */}
+            <div
+              style={{
+                flex: 1,
+                height: '200px',
+                border: '2px solid #444',
+                borderRadius: '8px',
+                padding: '10px',
+                backgroundColor: '#1a1a1a',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+              }}
+            >
+              <ReactECharts
+                option={healthChartOption}
+                style={{ height: '100%', width: '100%' }}
+                onEvents={{
+                  click: onChartClick,
+                }}
+              />
+            </div>
+          </div>
+        </>
       )}
       </div>
     </div>

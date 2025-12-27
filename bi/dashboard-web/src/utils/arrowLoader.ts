@@ -15,6 +15,16 @@ export interface StatsRow {
   original_color_top4_count?: number | null;
   original_color_top5?: string | null;
   original_color_top5_count?: number | null;
+  creature_size_mean?: number | null;
+  creature_size_avg?: number | null;
+  can_kill_true_fraction?: number | null;
+  can_kill_average?: number | null;
+  can_move_true_fraction?: number | null;
+  can_move_average?: number | null;
+  health_mean?: number | null;
+  health_avg?: number | null;
+  age_mean?: number | null;
+  age_avg?: number | null;
 }
 
 export async function loadStatsArrow(url: string): Promise<StatsRow[]> {
@@ -42,6 +52,20 @@ export async function loadStatsArrow(url: string): Promise<StatsRow[]> {
   const colorTop4CountColumn = table.getChild('original_color_top4_count');
   const colorTop5Column = table.getChild('original_color_top5');
   const colorTop5CountColumn = table.getChild('original_color_top5_count');
+  
+  // Gene columns (may not exist in all files)
+  const creatureSizeMeanColumn = table.getChild('creature_size_mean');
+  const creatureSizeAvgColumn = table.getChild('creature_size_avg');
+  const canKillTrueFractionColumn = table.getChild('can_kill_true_fraction');
+  const canKillAverageColumn = table.getChild('can_kill_average');
+  const canMoveTrueFractionColumn = table.getChild('can_move_true_fraction');
+  const canMoveAverageColumn = table.getChild('can_move_average');
+  
+  // Health and age columns (may not exist in all files)
+  const healthMeanColumn = table.getChild('health_mean');
+  const healthAvgColumn = table.getChild('health_avg');
+  const ageMeanColumn = table.getChild('age_mean');
+  const ageAvgColumn = table.getChild('age_avg');
   
   if (!tickColumn || !creaturesCountColumn || !colonyWidthColumn || !colonyHeightColumn) {
     throw new Error('Missing required columns in stats.arrow file');
@@ -75,6 +99,16 @@ export async function loadStatsArrow(url: string): Promise<StatsRow[]> {
         original_color_top4_count: colorTop4CountColumn?.get(i) ? Number(colorTop4CountColumn.get(i)) : null,
         original_color_top5: colorTop5Column?.get(i) ?? null,
         original_color_top5_count: colorTop5CountColumn?.get(i) ? Number(colorTop5CountColumn.get(i)) : null,
+        creature_size_mean: creatureSizeMeanColumn?.get(i) !== null && creatureSizeMeanColumn?.get(i) !== undefined ? Number(creatureSizeMeanColumn.get(i)) : null,
+        creature_size_avg: creatureSizeAvgColumn?.get(i) !== null && creatureSizeAvgColumn?.get(i) !== undefined ? Number(creatureSizeAvgColumn.get(i)) : null,
+        can_kill_true_fraction: canKillTrueFractionColumn?.get(i) !== null && canKillTrueFractionColumn?.get(i) !== undefined ? Number(canKillTrueFractionColumn.get(i)) : null,
+        can_kill_average: canKillAverageColumn?.get(i) !== null && canKillAverageColumn?.get(i) !== undefined ? Number(canKillAverageColumn.get(i)) : null,
+        can_move_true_fraction: canMoveTrueFractionColumn?.get(i) !== null && canMoveTrueFractionColumn?.get(i) !== undefined ? Number(canMoveTrueFractionColumn.get(i)) : null,
+        can_move_average: canMoveAverageColumn?.get(i) !== null && canMoveAverageColumn?.get(i) !== undefined ? Number(canMoveAverageColumn.get(i)) : null,
+        health_mean: healthMeanColumn?.get(i) !== null && healthMeanColumn?.get(i) !== undefined ? Number(healthMeanColumn.get(i)) : null,
+        health_avg: healthAvgColumn?.get(i) !== null && healthAvgColumn?.get(i) !== undefined ? Number(healthAvgColumn.get(i)) : null,
+        age_mean: ageMeanColumn?.get(i) !== null && ageMeanColumn?.get(i) !== undefined ? Number(ageMeanColumn.get(i)) : null,
+        age_avg: ageAvgColumn?.get(i) !== null && ageAvgColumn?.get(i) !== undefined ? Number(ageAvgColumn.get(i)) : null,
       });
     }
   }

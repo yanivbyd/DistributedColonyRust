@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """
-Stats shots and Events → Parquet and Arrow converter for Distributed Colony.
+Stats shots and Events → Arrow converter for Distributed Colony.
 
 Responsibilities:
 - Discover colony IDs with stats shots and events in S3 (or process a single colony when requested).
 - Download and parse stats shot and event JSON files (plain JSON or gzip-compressed).
 - Normalize them into wide, analytics-friendly tabular schemas (one row per snapshot/event).
-- Write per-colony Parquet and Arrow files under the local `output/bi/<colony_id>/` directory:
-  - `stats.parquet` and `stats.arrow` for stats snapshots
-  - `events.parquet` and `events.arrow` for colony events
-  - `images.parquet` and `images.arrow` for image metadata
-- Optionally upload each Parquet file to S3 under `<colony_id>/stats_parquet/` and `<colony_id>/events_parquet/`.
+- Write per-colony Arrow files under the local `output/bi/<colony_id>/` directory:
+  - `stats.arrow` for stats snapshots
+  - `events.arrow` for colony events
+  - `images.arrow` for image metadata
 
 Configuration is intentionally simple and mostly hard-coded, matching the spec.
 """
@@ -44,16 +43,8 @@ STATS_SHOTS_PREFIX = ""  # we derive <colony_id>/stats_shots/ per colony
 # Local S3 directory (checked first before S3)
 LOCAL_S3_DIR = os.path.join("output", "s3", "distributed-colony")
 
-# Local output directory for Parquet files (created if missing)
+# Local output directory for Arrow files (created if missing)
 LOCAL_ANALYTICS_DIR = os.path.join("output", "bi")
-
-# S3 layout for Parquet outputs:
-#   s3://distributed-colony/<colony_id>/stats_parquet/<colony_id>.parquet
-#   s3://distributed-colony/<colony_id>/events_parquet/<colony_id>.parquet
-#   s3://distributed-colony/<colony_id>/images_parquet/<colony_id>.parquet
-STATS_PARQUET_S3_SUBPATH = "stats_parquet"
-EVENTS_PARQUET_S3_SUBPATH = "events_parquet"
-IMAGES_PARQUET_S3_SUBPATH = "images_parquet"
 
 
 # --------------------------
@@ -764,8 +755,7 @@ def process_colony(
     Process all stats snapshots, events, and images for a single colony:
     - Download & parse JSON
     - Normalize to rows
-    - Write Parquet locally (stats.parquet, events.parquet, and images.parquet)
-    - Optionally upload Parquet files to S3
+    - Write Arrow files locally (stats.arrow, events.arrow, and images.arrow)
     """
     colony_dir = os.path.join(LOCAL_ANALYTICS_DIR, colony_id)
     os.makedirs(colony_dir, exist_ok=True)
@@ -796,28 +786,18 @@ def process_colony(
         if stats_rows:
             df = pd.DataFrame(stats_rows)
             stats_count = len(df)
-            
-            # Write Parquet file
-            local_parquet_path = os.path.join(colony_dir, "stats.parquet")
-            log(f"[{colony_id}] Writing stats Parquet to {local_parquet_path}")
-            df.to_parquet(local_parquet_path, engine="pyarrow", compression="snappy", index=False)
 
-            # Write Arrow file with same schema and data
+            # Write Arrow file
             local_arrow_path = os.path.join(colony_dir, "stats.arrow")
             log(f"[{colony_id}] Writing stats Arrow to {local_arrow_path}")
             table = pa.Table.from_pandas(df)
             feather.write_feather(table, local_arrow_path, compression="uncompressed")
 
-            if upload:
-                parquet_s3_key = f"{colony_id}/{STATS_PARQUET_S3_SUBPATH}/{colony_id}.parquet"
-                log(f"[{colony_id}] Uploading stats Parquet to s3://{BUCKET_NAME}/{parquet_s3_key}")
-                client.upload_file(local_parquet_path, BUCKET_NAME, parquet_s3_key)
-            else:
-                log(f"[{colony_id}] Upload disabled; stats Parquet and Arrow only written locally.")
+            log(f"[{colony_id}] Stats Arrow written locally.")
         else:
-            log(f"[{colony_id}] No rows produced from stats_shots JSON; skipping stats.parquet.")
+            log(f"[{colony_id}] No rows produced from stats_shots JSON; skipping stats.arrow.")
     else:
-        log(f"[{colony_id}] No stats_shots objects found; skipping stats.parquet.")
+        log(f"[{colony_id}] No stats_shots objects found; skipping stats.arrow.")
 
     # Process events
     event_keys = list_event_objects_for_colony(client, BUCKET_NAME, colony_id)
@@ -860,11 +840,6 @@ def process_colony(
                 if col in df.columns:
                     df[col] = df[col].astype(dtype)
             
-            # Write Parquet file
-            local_parquet_path = os.path.join(colony_dir, "events.parquet")
-            log(f"[{colony_id}] Writing events Parquet to {local_parquet_path}")
-            df.to_parquet(local_parquet_path, engine="pyarrow", compression="snappy", index=False)
-
             # Write Arrow file with same schema and data
             # First convert to Arrow table, then ensure proper schema (avoid null-only columns)
             local_arrow_path = os.path.join(colony_dir, "events.arrow")
@@ -893,16 +868,11 @@ def process_colony(
             table = table.cast(new_schema)
             feather.write_feather(table, local_arrow_path, compression="uncompressed")
 
-            if upload:
-                parquet_s3_key = f"{colony_id}/{EVENTS_PARQUET_S3_SUBPATH}/{colony_id}.parquet"
-                log(f"[{colony_id}] Uploading events Parquet to s3://{BUCKET_NAME}/{parquet_s3_key}")
-                client.upload_file(local_parquet_path, BUCKET_NAME, parquet_s3_key)
-            else:
-                log(f"[{colony_id}] Upload disabled; events Parquet and Arrow only written locally.")
+            log(f"[{colony_id}] Events Arrow written locally.")
         else:
-            log(f"[{colony_id}] No rows produced from event JSON; skipping events.parquet.")
+            log(f"[{colony_id}] No rows produced from event JSON; skipping events.arrow.")
     else:
-        log(f"[{colony_id}] No event objects found; skipping events.parquet.")
+        log(f"[{colony_id}] No event objects found; skipping events.arrow.")
 
     # Process images
     image_keys = list_image_objects_for_colony(client, BUCKET_NAME, colony_id)
@@ -944,43 +914,33 @@ def process_colony(
         if image_rows:
             df = pd.DataFrame(image_rows)
             images_count = len(df)
-            
-            # Write Parquet file
-            local_parquet_path = os.path.join(colony_dir, "images.parquet")
-            log(f"[{colony_id}] Writing images Parquet to {local_parquet_path}")
-            df.to_parquet(local_parquet_path, engine="pyarrow", compression="snappy", index=False)
 
-            # Write Arrow file with same schema and data
+            # Write Arrow file
             local_arrow_path = os.path.join(colony_dir, "images.arrow")
             log(f"[{colony_id}] Writing images Arrow to {local_arrow_path}")
             table = pa.Table.from_pandas(df)
             feather.write_feather(table, local_arrow_path, compression="uncompressed")
 
-            if upload:
-                parquet_s3_key = f"{colony_id}/{IMAGES_PARQUET_S3_SUBPATH}/{colony_id}.parquet"
-                log(f"[{colony_id}] Uploading images Parquet to s3://{BUCKET_NAME}/{parquet_s3_key}")
-                client.upload_file(local_parquet_path, BUCKET_NAME, parquet_s3_key)
-            else:
-                log(f"[{colony_id}] Upload disabled; images Parquet and Arrow only written locally.")
+            log(f"[{colony_id}] Images Arrow written locally.")
         else:
-            log(f"[{colony_id}] No rows produced from image files; skipping images.parquet.")
+            log(f"[{colony_id}] No rows produced from image files; skipping images.arrow.")
     else:
-        log(f"[{colony_id}] No image objects found; skipping images.parquet.")
+        log(f"[{colony_id}] No image objects found; skipping images.arrow.")
 
     # Log summary of record counts at the end
-    log(f"[{colony_id}] Summary - Parquet files written:")
+    log(f"[{colony_id}] Summary - Arrow files written:")
     if stats_count is not None:
-        log(f"[{colony_id}]   stats.parquet: {stats_count} records")
+        log(f"[{colony_id}]   stats.arrow: {stats_count} records")
     if events_count is not None:
-        log(f"[{colony_id}]   events.parquet: {events_count} records")
+        log(f"[{colony_id}]   events.arrow: {events_count} records")
     if images_count is not None:
-        log(f"[{colony_id}]   images.parquet: {images_count} records")
+        log(f"[{colony_id}]   images.arrow: {images_count} records")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Convert stats_shots JSON snapshots, event JSON files, and image files from S3 into Parquet for analytics. "
+            "Convert stats_shots JSON snapshots, event JSON files, and image files from S3 into Arrow for analytics. "
             "By default processes all colonies; use --colony-id to limit to one."
         )
     )
@@ -993,12 +953,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--upload",
         action="store_true",
-        help=(
-            "If set, upload the generated Parquet files to S3 under "
-            "<colony_id>/stats_parquet/<colony_id>.parquet, "
-            "<colony_id>/events_parquet/<colony_id>.parquet, and "
-            "<colony_id>/images_parquet/<colony_id>.parquet."
-        ),
+        help="Deprecated: Arrow files are only written locally.",
     )
 
     args = parser.parse_args(argv)
