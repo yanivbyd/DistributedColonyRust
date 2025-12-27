@@ -5,6 +5,16 @@ export interface StatsRow {
   creatures_count: number;
   colony_width: number;
   colony_height: number;
+  original_color_top1?: string | null;
+  original_color_top1_count?: number | null;
+  original_color_top2?: string | null;
+  original_color_top2_count?: number | null;
+  original_color_top3?: string | null;
+  original_color_top3_count?: number | null;
+  original_color_top4?: string | null;
+  original_color_top4_count?: number | null;
+  original_color_top5?: string | null;
+  original_color_top5_count?: number | null;
 }
 
 export async function loadStatsArrow(url: string): Promise<StatsRow[]> {
@@ -20,6 +30,18 @@ export async function loadStatsArrow(url: string): Promise<StatsRow[]> {
   const creaturesCountColumn = table.getChild('creatures_count');
   const colonyWidthColumn = table.getChild('colony_width');
   const colonyHeightColumn = table.getChild('colony_height');
+  
+  // Color columns (may not exist in all files)
+  const colorTop1Column = table.getChild('original_color_top1');
+  const colorTop1CountColumn = table.getChild('original_color_top1_count');
+  const colorTop2Column = table.getChild('original_color_top2');
+  const colorTop2CountColumn = table.getChild('original_color_top2_count');
+  const colorTop3Column = table.getChild('original_color_top3');
+  const colorTop3CountColumn = table.getChild('original_color_top3_count');
+  const colorTop4Column = table.getChild('original_color_top4');
+  const colorTop4CountColumn = table.getChild('original_color_top4_count');
+  const colorTop5Column = table.getChild('original_color_top5');
+  const colorTop5CountColumn = table.getChild('original_color_top5_count');
   
   if (!tickColumn || !creaturesCountColumn || !colonyWidthColumn || !colonyHeightColumn) {
     throw new Error('Missing required columns in stats.arrow file');
@@ -43,6 +65,16 @@ export async function loadStatsArrow(url: string): Promise<StatsRow[]> {
         creatures_count: Number(creatures_count),
         colony_width: Number(colony_width),
         colony_height: Number(colony_height),
+        original_color_top1: colorTop1Column?.get(i) ?? null,
+        original_color_top1_count: colorTop1CountColumn?.get(i) ? Number(colorTop1CountColumn.get(i)) : null,
+        original_color_top2: colorTop2Column?.get(i) ?? null,
+        original_color_top2_count: colorTop2CountColumn?.get(i) ? Number(colorTop2CountColumn.get(i)) : null,
+        original_color_top3: colorTop3Column?.get(i) ?? null,
+        original_color_top3_count: colorTop3CountColumn?.get(i) ? Number(colorTop3CountColumn.get(i)) : null,
+        original_color_top4: colorTop4Column?.get(i) ?? null,
+        original_color_top4_count: colorTop4CountColumn?.get(i) ? Number(colorTop4CountColumn.get(i)) : null,
+        original_color_top5: colorTop5Column?.get(i) ?? null,
+        original_color_top5_count: colorTop5CountColumn?.get(i) ? Number(colorTop5CountColumn.get(i)) : null,
       });
     }
   }

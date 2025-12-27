@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { loadStatsArrow, loadEventsArrow, loadImagesArrow, EventData, ImageData } from '../utils/arrowLoader';
-import { transformStatsData, ChartDataPoint } from '../utils/dataTransform';
+import { transformStatsData, transformColorCountData, ChartDataPoint, ColorCountDataPoint } from '../utils/dataTransform';
 
 interface CreatureCoverageChartProps {
   colonyId: string | null;
@@ -9,6 +9,8 @@ interface CreatureCoverageChartProps {
 
 export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) {
   const [data, setData] = useState<ChartDataPoint[]>([]);
+  const [colorData, setColorData] = useState<ColorCountDataPoint[]>([]);
+  const [colorMap, setColorMap] = useState<Map<string, string>>(new Map());
   const [events, setEvents] = useState<EventData[]>([]);
   const [images, setImages] = useState<ImageData[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
@@ -17,10 +19,15 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
   const [showImages, setShowImages] = useState<boolean>(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imageModalPosition, setImageModalPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     if (!colonyId) {
       setData([]);
+      setColorData([]);
+      setColorMap(new Map());
       setEvents([]);
       setImages([]);
       setSelectedEvent(null);
@@ -44,12 +51,17 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
         ]);
         
         const transformed = transformStatsData(rows);
+        const { data: colorCountData, colors } = transformColorCountData(rows);
         setData(transformed);
+        setColorData(colorCountData);
+        setColorMap(colors);
         setEvents(eventData);
         setImages(imageData);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load data');
         setData([]);
+        setColorData([]);
+        setColorMap(new Map());
         setEvents([]);
         setImages([]);
       } finally {
@@ -59,6 +71,64 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
 
     loadData();
   }, [colonyId]);
+
+  // Handle image modal drag
+  const handleImageModalMouseDown = (e: React.MouseEvent) => {
+    if (selectedImage) {
+      setIsDragging(true);
+      const modalDialog = (e.currentTarget as HTMLElement).closest('.modal-dialog') as HTMLElement;
+      if (modalDialog) {
+        const rect = modalDialog.getBoundingClientRect();
+        setDragStart({
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        });
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDragging && selectedImage) {
+        const newX = e.clientX - dragStart.x;
+        const newY = e.clientY - dragStart.y;
+        
+        // Keep modal within viewport bounds (600px width, ~500px height)
+        const modalWidth = 600;
+        const modalHeight = 500;
+        const maxX = window.innerWidth - modalWidth;
+        const maxY = window.innerHeight - modalHeight;
+        
+        setImageModalPosition({
+          x: Math.max(0, Math.min(newX, maxX)),
+          y: Math.max(0, Math.min(newY, maxY)),
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, dragStart, selectedImage]);
+
+  // Reset position when image modal opens
+  useEffect(() => {
+    if (selectedImage) {
+      // Center the modal initially (600px width, ~500px height)
+      const centerX = window.innerWidth / 2 - 300;
+      const centerY = window.innerHeight / 2 - 250;
+      setImageModalPosition({ x: centerX, y: centerY });
+    }
+  }, [selectedImage]);
 
   if (!colonyId) {
     return (
@@ -446,6 +516,242 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
     }
   };
 
+  // Helper function to create mark lines for events and images
+  const createMarkLines = (ticks: number[]) => {
+    const lines: any[] = [];
+    
+    if (showEvents) {
+      validEvents.forEach((event) => {
+        let closestTick = ticks[0];
+        let minDiff = Math.abs(ticks[0] - event.tick);
+        
+        for (const tick of ticks) {
+          const diff = Math.abs(tick - event.tick);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestTick = tick;
+          }
+        }
+        
+        const eventColor = getEventColor(event.event_type);
+        
+        lines.push({
+          xAxis: String(closestTick),
+          lineStyle: {
+            color: eventColor,
+            width: 3,
+            type: 'dashed' as const,
+            opacity: 0.9,
+          },
+          label: {
+            show: true,
+            position: 'end',
+            formatter: event.event_type,
+            color: eventColor,
+            fontSize: 10,
+          },
+        });
+      });
+    }
+    
+    if (showImages) {
+      validImages.forEach((image) => {
+        let closestTick = ticks[0];
+        let minDiff = Math.abs(ticks[0] - image.tick);
+        
+        for (const tick of ticks) {
+          const diff = Math.abs(tick - image.tick);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestTick = tick;
+          }
+        }
+        
+        const imageColor = '#6a1b9a';
+        
+        lines.push({
+          xAxis: String(closestTick),
+          lineStyle: {
+            color: imageColor,
+            width: 2,
+            type: 'solid' as const,
+            opacity: 0.8,
+          },
+          label: {
+            show: true,
+            position: 'start',
+            formatter: '📷',
+            color: imageColor,
+            fontSize: 12,
+          },
+        });
+      });
+    }
+    
+    return lines;
+  };
+
+  // Create color count chart option
+  const colorTicks = colorData.map((d) => d.tick);
+  const colorNames = Array.from(colorMap.keys());
+  
+  const colorChartOption = {
+    backgroundColor: 'transparent',
+    textStyle: {
+      color: '#e0e0e0',
+    },
+    title: {
+      text: `Creature Count by Color`,
+      left: 'center',
+      textStyle: {
+        color: '#ffffff',
+      },
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {
+        type: 'cross',
+      },
+      backgroundColor: '#2d2d2d',
+      borderColor: '#444',
+      textStyle: {
+        color: '#e0e0e0',
+      },
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      top: '10%',
+      containLabel: true,
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: colorTicks,
+      name: 'Tick',
+      nameTextStyle: {
+        color: '#e0e0e0',
+      },
+      axisLine: {
+        lineStyle: {
+          color: '#666',
+        },
+      },
+      axisLabel: {
+        color: '#b0b0b0',
+      },
+    },
+    yAxis: {
+      type: 'value',
+      name: 'Creature Count',
+      nameTextStyle: {
+        color: '#e0e0e0',
+      },
+      axisLine: {
+        lineStyle: {
+          color: '#666',
+        },
+      },
+      axisLabel: {
+        color: '#b0b0b0',
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#333',
+        },
+      },
+    },
+    series: [
+      ...colorNames.map((colorName, index) => ({
+        name: colorName,
+        type: 'line' as const,
+        data: colorData.map((point) => point[colorName] || 0),
+        smooth: true,
+        areaStyle: {
+          color: colorMap.get(colorName) || '#808080',
+          opacity: 0.3,
+        },
+        lineStyle: {
+          color: colorMap.get(colorName) || '#808080',
+          width: 2,
+        },
+        itemStyle: {
+          color: colorMap.get(colorName) || '#808080',
+        },
+        // Add mark lines only to the first series
+        ...(index === 0 && createMarkLines(colorTicks).length > 0 ? {
+          markLine: {
+            data: createMarkLines(colorTicks),
+            silent: false,
+            symbol: ['none', 'none'],
+            animation: false,
+          }
+        } : {}),
+      })),
+      // Invisible series for event clicks (only if events are shown)
+      ...(showEvents && validEvents.length > 0 ? [{
+        name: 'Events',
+        type: 'scatter' as const,
+        data: validEvents.map((event) => {
+          let closestIndex = 0;
+          let minDiff = Math.abs(colorTicks[0] - event.tick);
+          for (let i = 0; i < colorTicks.length; i++) {
+            const diff = Math.abs(colorTicks[i] - event.tick);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestIndex = i;
+            }
+          }
+          const midValue = colorData[closestIndex] ? 
+            Object.values(colorData[closestIndex]).reduce((sum: number, val) => 
+              typeof val === 'number' ? sum + val : sum, 0) / 2 : 0;
+          return [closestIndex, midValue];
+        }),
+        symbolSize: 20,
+        itemStyle: {
+          color: 'transparent',
+        },
+        label: {
+          show: false,
+        },
+        tooltip: {
+          show: false,
+        },
+      }] : []),
+      // Invisible series for image clicks (only if images are shown)
+      ...(showImages && validImages.length > 0 ? [{
+        name: 'Images',
+        type: 'scatter' as const,
+        data: validImages.map((image) => {
+          let closestIndex = 0;
+          let minDiff = Math.abs(colorTicks[0] - image.tick);
+          for (let i = 0; i < colorTicks.length; i++) {
+            const diff = Math.abs(colorTicks[i] - image.tick);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestIndex = i;
+            }
+          }
+          const midValue = colorData[closestIndex] ? 
+            Object.values(colorData[closestIndex]).reduce((sum: number, val) => 
+              typeof val === 'number' ? sum + val : sum, 0) / 2 : 0;
+          return [closestIndex, midValue];
+        }),
+        symbolSize: 20,
+        itemStyle: {
+          color: 'transparent',
+        },
+        label: {
+          show: false,
+        },
+        tooltip: {
+          show: false,
+        },
+      }] : []),
+    ],
+  };
+
   return (
     <>
       <div className="mb-3">
@@ -508,30 +814,46 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
       )}
       {selectedImage && (
         <div className="modal show d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={() => setSelectedImage(null)}>
-          <div className="modal-dialog modal-dialog-centered modal-lg" onClick={(e) => e.stopPropagation()}>
+          <div 
+            className="modal-dialog" 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute',
+              left: `${imageModalPosition.x}px`,
+              top: `${imageModalPosition.y}px`,
+              margin: 0,
+              transform: 'none',
+              maxWidth: '600px',
+              width: '600px',
+            }}
+          >
             <div className="modal-content bg-dark text-light border-secondary">
-              <div className="modal-header border-secondary">
-                <h5 className="modal-title">Colony Image - Tick {selectedImage.tick}</h5>
+              <div 
+                className="modal-header border-secondary"
+                onMouseDown={handleImageModalMouseDown}
+                style={{ cursor: isDragging ? 'grabbing' : 'grab', userSelect: 'none', padding: '8px 15px' }}
+              >
+                <h6 className="modal-title mb-0">Colony Image - Tick {selectedImage.tick}</h6>
                 <button
                   type="button"
                   className="btn-close btn-close-white"
                   onClick={() => setSelectedImage(null)}
                 ></button>
               </div>
-              <div className="modal-body text-center">
+              <div className="modal-body text-center" style={{ padding: '10px', maxHeight: '450px', overflow: 'auto' }}>
                 <img
                   src={`/bi/${colonyId}/images/${selectedImage.file_name}`}
                   alt={`Colony at tick ${selectedImage.tick}`}
-                  style={{ maxWidth: '100%', height: 'auto' }}
+                  style={{ maxWidth: '100%', maxHeight: '450px', height: 'auto', objectFit: 'contain' }}
                   onError={(e) => {
                     (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><text x="50%25" y="50%25" fill="white">Image not found</text></svg>';
                   }}
                 />
               </div>
-              <div className="modal-footer border-secondary">
+              <div className="modal-footer border-secondary" style={{ padding: '8px 15px' }}>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn btn-secondary btn-sm"
                   onClick={() => setSelectedImage(null)}
                 >
                   Close
@@ -560,6 +882,30 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
           }}
         />
       </div>
+      
+      {/* Color Count Chart */}
+      {colorData.length > 0 && colorNames.length > 0 && (
+        <div
+          style={{
+            width: '100%',
+            height: '600px',
+            border: '2px solid #444',
+            borderRadius: '8px',
+            padding: '10px',
+            backgroundColor: '#1a1a1a',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+            marginTop: '20px',
+          }}
+        >
+          <ReactECharts
+            option={colorChartOption}
+            style={{ height: '100%', width: '100%' }}
+            onEvents={{
+              click: onChartClick,
+            }}
+          />
+        </div>
+      )}
     </>
   );
 }
