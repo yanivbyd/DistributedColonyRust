@@ -196,6 +196,26 @@
             "runOptions": {
                 "reevaluateOnRerun": false
             }
+        },
+        {
+            "label": "react bi",
+            "type": "shell",
+            "command": "if [ ! -d dist ]; then npm run build; fi && lsof -ti:3001 | xargs kill -9 2>/dev/null || true && npm run server & sleep 4 && open http://localhost:3001",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/bi/dashboard-web"
+            },
+            "isBackground": true,
+            "runOptions": {
+                "reevaluateOnRerun": false
+            }
         }
     ],
     "inputs": [
