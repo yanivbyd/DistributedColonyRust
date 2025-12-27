@@ -97,3 +97,46 @@ export async function loadEventsArrow(url: string): Promise<EventData[]> {
   }
 }
 
+export interface ImageData {
+  tick: number;
+  file_name: string;
+}
+
+export async function loadImagesArrow(url: string): Promise<ImageData[]> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      // Images file might not exist, return empty array
+      return [];
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const table = tableFromIPC(arrayBuffer);
+    
+    const tickColumn = table.getChild('tick');
+    const fileNameColumn = table.getChild('file_name');
+    
+    if (!tickColumn || !fileNameColumn) {
+      return [];
+    }
+    
+    const images: ImageData[] = [];
+    for (let i = 0; i < table.numRows; i++) {
+      const tick = tickColumn.get(i);
+      const fileName = fileNameColumn.get(i);
+      
+      if (tick !== null && tick !== undefined && fileName !== null && fileName !== undefined) {
+        images.push({
+          tick: Number(tick),
+          file_name: String(fileName),
+        });
+      }
+    }
+    
+    return images;
+  } catch (err) {
+    // If images file doesn't exist or can't be loaded, return empty array
+    return [];
+  }
+}
+

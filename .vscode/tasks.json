@@ -200,7 +200,7 @@
         {
             "label": "react bi",
             "type": "shell",
-            "command": "set -e; if [ ! -d dist ]; then echo 'Building...' && npm run build || exit 1; fi && echo 'Killing existing server...' && (lsof -ti:3001 | xargs kill -9 2>/dev/null || true) && echo 'Starting server...' && nohup npm run server > /tmp/react-bi-server.log 2>&1 & SERVER_PID=$! && sleep 3 && if kill -0 $SERVER_PID 2>/dev/null; then echo 'Server started (PID: $SERVER_PID)' && echo 'Server logs: tail -f /tmp/react-bi-server.log' && open http://localhost:3001; else echo 'Server failed to start! Check logs:' && tail -20 /tmp/react-bi-server.log && exit 1; fi",
+            "command": "npm run dev",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -211,7 +211,8 @@
             "problemMatcher": [],
             "options": {
                 "cwd": "${workspaceFolder}/bi/dashboard-web"
-            }
+            },
+            "isBackground": true
         }
     ],
     "inputs": [

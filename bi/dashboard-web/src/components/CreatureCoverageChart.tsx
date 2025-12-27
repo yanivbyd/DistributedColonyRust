@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { loadStatsArrow, loadEventsArrow, EventData } from '../utils/arrowLoader';
+import { loadStatsArrow, loadEventsArrow, loadImagesArrow, EventData, ImageData } from '../utils/arrowLoader';
 import { transformStatsData, ChartDataPoint } from '../utils/dataTransform';
 
 interface CreatureCoverageChartProps {
@@ -10,8 +10,11 @@ interface CreatureCoverageChartProps {
 export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) {
   const [data, setData] = useState<ChartDataPoint[]>([]);
   const [events, setEvents] = useState<EventData[]>([]);
+  const [images, setImages] = useState<ImageData[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
+  const [selectedImage, setSelectedImage] = useState<ImageData | null>(null);
   const [showEvents, setShowEvents] = useState<boolean>(true);
+  const [showImages, setShowImages] = useState<boolean>(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,7 +22,9 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
     if (!colonyId) {
       setData([]);
       setEvents([]);
+      setImages([]);
       setSelectedEvent(null);
+      setSelectedImage(null);
       setError(null);
       return;
     }
@@ -30,19 +35,23 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
         setError(null);
         const statsUrl = `/bi/${colonyId}/stats.arrow`;
         const eventsUrl = `/bi/${colonyId}/events.arrow`;
+        const imagesUrl = `/bi/${colonyId}/images.arrow`;
         
-        const [rows, eventData] = await Promise.all([
+        const [rows, eventData, imageData] = await Promise.all([
           loadStatsArrow(statsUrl),
           loadEventsArrow(eventsUrl),
+          loadImagesArrow(imagesUrl),
         ]);
         
         const transformed = transformStatsData(rows);
         setData(transformed);
         setEvents(eventData);
+        setImages(imageData);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load data');
         setData([]);
         setEvents([]);
+        setImages([]);
       } finally {
         setLoading(false);
       }
@@ -90,10 +99,11 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
   const creaturePcts = data.map((d) => d.creaturePct);
   const emptyCellsPcts = data.map((d) => d.emptyCellsPct);
 
-  // Filter events to only those within the chart's tick range
+  // Filter events and images to only those within the chart's tick range
   const minTick = Math.min(...ticks);
   const maxTick = Math.max(...ticks);
   const validEvents = events.filter((event) => event.tick >= minTick && event.tick <= maxTick);
+  const validImages = images.filter((image) => image.tick >= minTick && image.tick <= maxTick);
 
   // Get color for event type
   const getEventColor = (eventType: string): string => {
@@ -142,6 +152,43 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
       },
       // Store event data for click handler
       eventData: event,
+    };
+  });
+
+  // Create markLines for images (purple vertical lines)
+  const imageMarkLines = validImages.map((image) => {
+    // Find the closest tick in the stats data
+    let closestTick = ticks[0];
+    let minDiff = Math.abs(ticks[0] - image.tick);
+    
+    for (const tick of ticks) {
+      const diff = Math.abs(tick - image.tick);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestTick = tick;
+      }
+    }
+    
+    // Use dark purple color for images
+    const imageColor = '#6a1b9a';
+    
+    return {
+      xAxis: String(closestTick),
+      lineStyle: {
+        color: imageColor,
+        width: 2,
+        type: 'solid' as const,
+        opacity: 0.8,
+      },
+      label: {
+        show: true,
+        position: 'start',
+        formatter: '📷',
+        color: imageColor,
+        fontSize: 12,
+      },
+      // Store image data for click handler
+      imageData: image,
     };
   });
 
@@ -253,8 +300,11 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
         },
         data: creaturePcts,
         smooth: true,
-        markLine: showEvents && eventMarkLines.length > 0 ? {
-          data: eventMarkLines.map(({ eventData, ...line }) => line),
+        markLine: (showEvents && eventMarkLines.length > 0) || (showImages && imageMarkLines.length > 0) ? {
+          data: [
+            ...(showEvents ? eventMarkLines.map(({ eventData, ...line }) => line) : []),
+            ...(showImages ? imageMarkLines.map(({ imageData, ...line }) => line) : []),
+          ],
           silent: false,
           symbol: ['none', 'none'],
           animation: false,
@@ -306,6 +356,36 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
         // Store event data for click handler
         eventData: validEvents,
       }] : []),
+      // Invisible series for image clicks (only if images are shown)
+      ...(showImages && validImages.length > 0 ? [{
+        name: 'Images',
+        type: 'scatter' as const,
+        data: validImages.map((image) => {
+          // Find closest tick index
+          let closestIndex = 0;
+          let minDiff = Math.abs(ticks[0] - image.tick);
+          for (let i = 0; i < ticks.length; i++) {
+            const diff = Math.abs(ticks[i] - image.tick);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestIndex = i;
+            }
+          }
+          return [closestIndex, 50]; // Position at middle of chart
+        }),
+        symbolSize: 20,
+        itemStyle: {
+          color: 'transparent',
+        },
+        label: {
+          show: false,
+        },
+        tooltip: {
+          show: false,
+        },
+        // Store image data for click handler
+        imageData: validImages,
+      }] : []),
     ],
   };
 
@@ -317,20 +397,44 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
         setSelectedEvent(validEvents[eventIndex]);
       }
     }
+    // Check if click is on the Images series (invisible scatter points)
+    else if (params.seriesName === 'Images' && params.dataIndex !== undefined) {
+      const imageIndex = params.dataIndex;
+      if (imageIndex >= 0 && imageIndex < validImages.length) {
+        setSelectedImage(validImages[imageIndex]);
+      }
+    }
     // Also check if click is near a markLine
     else if (params.componentType === 'markLine') {
       const clickedValue = params.value;
       if (clickedValue !== undefined) {
         const clickedTick = typeof clickedValue === 'number' ? clickedValue : Number(clickedValue);
         
-        // Find the event with the closest tick
+        // First check if it's an image
+        let closestImage: ImageData | null = null;
+        let minImageDiff = Infinity;
+        
+        for (const image of validImages) {
+          const diff = Math.abs(image.tick - clickedTick);
+          if (diff < minImageDiff && diff < 200) {
+            minImageDiff = diff;
+            closestImage = image;
+          }
+        }
+        
+        if (closestImage) {
+          setSelectedImage(closestImage);
+          return;
+        }
+        
+        // Then check if it's an event
         let closestEvent: EventData | null = null;
-        let minDiff = Infinity;
+        let minEventDiff = Infinity;
         
         for (const event of validEvents) {
           const diff = Math.abs(event.tick - clickedTick);
-          if (diff < minDiff && diff < 200) {
-            minDiff = diff;
+          if (diff < minEventDiff && diff < 200) {
+            minEventDiff = diff;
             closestEvent = event;
           }
         }
@@ -345,7 +449,7 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
   return (
     <>
       <div className="mb-3">
-        <div className="form-check">
+        <div className="form-check form-check-inline me-3">
           <input
             className="form-check-input"
             type="checkbox"
@@ -354,7 +458,19 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
             onChange={(e) => setShowEvents(e.target.checked)}
           />
           <label className="form-check-label text-light" htmlFor="showEventsCheckbox">
-            Show Events
+            Show Events ({validEvents.length})
+          </label>
+        </div>
+        <div className="form-check form-check-inline">
+          <input
+            className="form-check-input"
+            type="checkbox"
+            id="showImagesCheckbox"
+            checked={showImages}
+            onChange={(e) => setShowImages(e.target.checked)}
+          />
+          <label className="form-check-label text-light" htmlFor="showImagesCheckbox">
+            Show Images ({validImages.length})
           </label>
         </div>
       </div>
@@ -382,6 +498,41 @@ export function CreatureCoverageChart({ colonyId }: CreatureCoverageChartProps) 
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => setSelectedEvent(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {selectedImage && (
+        <div className="modal show d-block" tabIndex={-1} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onClick={() => setSelectedImage(null)}>
+          <div className="modal-dialog modal-dialog-centered modal-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content bg-dark text-light border-secondary">
+              <div className="modal-header border-secondary">
+                <h5 className="modal-title">Colony Image - Tick {selectedImage.tick}</h5>
+                <button
+                  type="button"
+                  className="btn-close btn-close-white"
+                  onClick={() => setSelectedImage(null)}
+                ></button>
+              </div>
+              <div className="modal-body text-center">
+                <img
+                  src={`/bi/${colonyId}/images/${selectedImage.file_name}`}
+                  alt={`Colony at tick ${selectedImage.tick}`}
+                  style={{ maxWidth: '100%', height: 'auto' }}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><text x="50%25" y="50%25" fill="white">Image not found</text></svg>';
+                  }}
+                />
+              </div>
+              <div className="modal-footer border-secondary">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setSelectedImage(null)}
                 >
                   Close
                 </button>
